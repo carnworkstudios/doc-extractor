@@ -1,7 +1,7 @@
 /**
  * fileUpload.js
  * Handles file input events, loads PDF documents, drives extraction via the
- * OS Worker Broker (backend → local WASM fallback), and populates all views.
+ * OS Worker Broker (backend → local geometry worker fallback), and populates all views.
  */
 
 import $ from 'jquery';
@@ -16,25 +16,57 @@ import { cwsBroker } from '@os/worker-broker.js';
 
 let brokerReady = false;
 
-/**
- * Lazily create the local pipeline worker only when explicitly needed.
- * The ONNX model is 258MB — we don't want to download it on page load.
- */
-function ensureLocalWorker() {
-    if (!cwsBroker._localWorker) {
-        const w = new Worker(
-            new URL('../workers/pipelineWorker.js', import.meta.url),
-            { type: 'module' }
+// Lazily created geometry worker for local (offline) table extraction
+let _geoWorker = null;
+
+function ensureGeometryWorker() {
+    if (!_geoWorker) {
+        _geoWorker = new Worker(
+            new URL('../workers/geometryWorker.js', import.meta.url),
+            { type: 'module' },
         );
-        cwsBroker.registerLocalWorker(w);
     }
+    return _geoWorker;
+}
+
+/**
+ * Run the local vector extraction pipeline via geometryWorker.
+ * Returns { html, tableCount } on success; throws on error.
+ */
+function extractViaGeometryWorker(bytes, onProgress) {
+    return new Promise((resolve, reject) => {
+        const worker = ensureGeometryWorker();
+
+        const timeout = setTimeout(() => {
+            reject(new Error('Local extraction timed out (>3min).'));
+        }, 180_000);
+
+        worker.onmessage = (e) => {
+            const msg = e.data;
+            if (msg.type === 'progress' && onProgress) {
+                onProgress(`Extracting page ${msg.page}/${msg.total}…`);
+            } else if (msg.type === 'complete') {
+                clearTimeout(timeout);
+                resolve({ html: msg.html, tableCount: msg.tableCount });
+            } else if (msg.type === 'error') {
+                clearTimeout(timeout);
+                reject(new Error(msg.error));
+            }
+        };
+
+        worker.onerror = (err) => {
+            clearTimeout(timeout);
+            reject(new Error('Geometry worker crashed: ' + (err.message || err)));
+        };
+
+        worker.postMessage({ type: 'process', bytes });
+    });
 }
 
 export function initFileInputs() {
-    // Initialize the broker (pings backend, discovers if online)
     cwsBroker.init().then(() => {
         brokerReady = true;
-        const mode = cwsBroker.getBackendStatus() ? 'Cloud Backend' : 'Offline (backend required)';
+        const mode = cwsBroker.getBackendStatus() ? 'Cloud Backend' : 'Offline (local geometry worker)';
         console.log(`[FileUpload] Broker ready — mode: ${mode}`);
     });
 
@@ -47,11 +79,6 @@ export function initFileInputs() {
     });
 }
 
-/**
- * Unified handler for both PDF slots. Uses the Worker Broker which
- * automatically tries backend first, falls back to local WASM worker,
- * and enforces timeouts on both paths.
- */
 async function handleFile(file, pdfIndex) {
     const pdfState = pdfIndex === 1 ? state.pdf1 : state.pdf2;
     const label = pdfIndex === 1 ? 'file1' : 'file2';
@@ -65,13 +92,11 @@ async function handleFile(file, pdfIndex) {
         const buf = await file.arrayBuffer();
         pdfState.bytes = new Uint8Array(buf.slice(0));
 
-        // Render PDF canvas (primary file only)
         if (pdfIndex === 1) {
             const { wrappers, numPages } = await renderPDFToCanvas(pdfState.bytes, 'pdf-canvas-container');
             registerPages(wrappers, numPages);
         }
 
-        // Build FormData for the broker
         const formData = new FormData();
         formData.append('file', file);
 
@@ -82,37 +107,28 @@ async function handleFile(file, pdfIndex) {
             if (apiKey) formData.append('api_key', apiKey);
         }
 
-        // Wait for broker init if it hasn't completed yet
         if (!brokerReady) {
             showStatus('Connecting to extraction service…');
             await cwsBroker.init();
             brokerReady = true;
         }
 
-        // Backend is required for extraction (Docling + AI pipeline).
-        // The local ONNX fallback (258MB model) is opt-in only.
-        if (!cwsBroker.getBackendStatus()) {
-            hideStatus();
-            showToast(
-                'Backend offline. Start the FastAPI server (cd backend && python main.py) or set the Cloud Run URL.',
-                'error'
-            );
-            return;
-        }
+        let data;
 
-        // Extract via backend
-        const data = await cwsBroker.extractPdf(formData, (msg) => showStatus(msg));
-
-        // If backend failed and broker fell back to local worker, parse the docTags
-        if (data.source === 'local' && data.text && !data.html) {
-            const { parseDocTags } = await import('../extraction/parser/index.js');
-            const parsed = parseDocTags(data.text);
-            data.html = parsed.html;
-            data.text = parsed.text;
+        if (cwsBroker.getBackendStatus()) {
+            // ── Backend path (orchestrator or legacy) ────────────────────────
+            data = await cwsBroker.extractPdf(formData, (msg) => showStatus(
+                typeof msg === 'string' ? msg : (msg.message || 'Processing…'),
+            ));
+        } else {
+            // ── Local geometry worker fallback ────────────────────────────────
+            showStatus('Backend offline — running local vector extraction…');
+            const result = await extractViaGeometryWorker(pdfState.bytes, (msg) => showStatus(msg));
+            data = { html: result.html, source: 'local', tableCount: result.tableCount };
         }
 
         pdfState.extractedHTML = data.html;
-        pdfState.extractedText = data.text;
+        pdfState.extractedText = data.text || '';
 
         if (pdfIndex === 1) {
             populateHTMLPreview(pdfState.extractedHTML, 'html-preview');
@@ -124,9 +140,12 @@ async function handleFile(file, pdfIndex) {
             enableDiffTab();
         }
 
-        const source = data.source === 'local' ? 'Local WASM' : 'Cloud Backend';
+        const source = data.source === 'local' ? 'Local (vector tables only)' : 'Cloud Backend';
         const warnSuffix = data.warning ? ` (${data.warning})` : '';
-        showToast(`PDF loaded via ${source}${warnSuffix}`, 'success');
+        const tableSuffix = data.source === 'local' && data.tableCount != null
+            ? ` — ${data.tableCount} table${data.tableCount !== 1 ? 's' : ''} detected`
+            : '';
+        showToast(`PDF loaded via ${source}${tableSuffix}${warnSuffix}`, 'success');
         hideStatus();
 
     } catch (err) {
@@ -137,30 +156,6 @@ async function handleFile(file, pdfIndex) {
     }
 }
 
-async function handleExtractionComplete(index, docTagsStr) {
-    const pdfState = index === 1 ? state.pdf1 : state.pdf2;
-    
-    // Parse using our Stage 1, 2, 3 parser
-    const { parseDocTags } = await import('../extraction/parser/index.js');
-    const { html, text } = parseDocTags(docTagsStr);
-    
-    pdfState.extractedHTML = html;
-    pdfState.extractedText = text;
-    
-    if (index === 1) {
-        populateHTMLPreview(pdfState.extractedHTML, 'html-preview');
-        state.monacoEditor?.getModel()?.setValue(pdfState.extractedHTML);
-        markDiffDirty();
-        showToast('PDF loaded successfully', 'success');
-        
-        if (state.pdf2.bytes) refreshCodeDiff();
-    } else {
-        refreshCodeDiff();
-        enableDiffTab();
-        showToast('Comparison PDF loaded', 'success');
-    }
-}
-
 export function populateHTMLPreview(html, containerId = 'html-preview') {
     const el = document.getElementById(containerId);
     if (!el) return;
@@ -168,13 +163,13 @@ export function populateHTMLPreview(html, containerId = 'html-preview') {
         ? DOMPurify.sanitize(html, { ADD_TAGS: ['img'], ALLOW_DATA_ATTR: true })
         : html;
     el.innerHTML = clean;
+    // VisualGridMapper is invoked here via initTableFeatures → initCrosshair,
+    // enabling crosshair highlight and column features on merged-cell tables.
     initTableFeatures(el);
 }
 
 function refreshCodeDiff() {
-    import('../ui/diffViewController.js').then(m => {
-        m.refreshCompareDiff();
-    });
+    import('../ui/diffViewController.js').then(m => m.refreshCompareDiff());
 }
 
 export function downloadExtractedHTML() {
@@ -182,7 +177,7 @@ export function downloadExtractedHTML() {
     if (!html) { showToast('No extracted HTML yet; load a PDF first', 'error'); return; }
     const blob = new Blob(
         [`<!doctype html><html><head><meta charset="utf-8"/></head><body>\n${html}\n</body></html>`],
-        { type: 'text/html' }
+        { type: 'text/html' },
     );
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);

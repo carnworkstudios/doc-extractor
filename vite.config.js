@@ -7,34 +7,50 @@ const require = createRequire(import.meta.url)
 const monacoEditorPlugin = require('vite-plugin-monaco-editor').default
 
 export default defineConfig({
-    root: path.resolve(__dirname, 'src'),
+    // Project root = pdf-processor/ so editor/index.html is served at /tools/pdf-processor/editor/
+    root: path.resolve(__dirname),
+
+    // Match the <base href="/tools/pdf-processor/"> in the HTML files so
+    // relative asset references (src/styles.css, ./src/app.js) resolve correctly
+    // in both dev and production builds.
+    base: '/tools/pdf-processor/',
+
     resolve: {
         alias: {
             '@os': path.resolve(__dirname, '../../assets/os'),
         },
     },
+
     server: {
         port: 5173,
-        open: true
+        open: '/tools/pdf-processor/editor/',
     },
+
     optimizeDeps: {
-        // Prevent Vite from pre-bundling the mupdf WASM module; it must be
-        // loaded natively so the browser can stream-compile the .wasm binary.
         exclude: ['mupdf'],
     },
+
     build: {
-        outDir: '../dist',
+        // Now relative to project root (was '../dist' when root was src/)
+        outDir: path.resolve(__dirname, 'dist'),
         emptyOutDir: true,
-        target: 'esnext',  // Required for mupdf top-level await
+        target: 'esnext',
+        rollupOptions: {
+            input: {
+                editor: path.resolve(__dirname, 'editor/index.html'),
+            },
+        },
     },
+
     worker: {
         format: 'es',
         plugins: () => [wasm()],
     },
+
     plugins: [
         wasm(),
         monacoEditorPlugin({
-            languageWorkers: ['editorWorkerService', 'html', 'css']
+            languageWorkers: ['editorWorkerService', 'html', 'css'],
         }),
-    ]
+    ],
 })
