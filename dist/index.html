@@ -19,23 +19,168 @@
             }
           };
         })({
-  "editorWorkerService": "/monacoeditorwork/editor.worker.bundle.js",
-  "html": "/monacoeditorwork/html.worker.bundle.js",
-  "css": "/monacoeditorwork/css.worker.bundle.js",
-  "less": "/monacoeditorwork/css.worker.bundle.js",
-  "scss": "/monacoeditorwork/css.worker.bundle.js",
-  "handlebars": "/monacoeditorwork/html.worker.bundle.js",
-  "razor": "/monacoeditorwork/html.worker.bundle.js"
+  "editorWorkerService": "/tools/pdf-processor/monacoeditorwork/editor.worker.bundle.js",
+  "html": "/tools/pdf-processor/monacoeditorwork/html.worker.bundle.js",
+  "css": "/tools/pdf-processor/monacoeditorwork/css.worker.bundle.js",
+  "less": "/tools/pdf-processor/monacoeditorwork/css.worker.bundle.js",
+  "scss": "/tools/pdf-processor/monacoeditorwork/css.worker.bundle.js",
+  "handlebars": "/tools/pdf-processor/monacoeditorwork/html.worker.bundle.js",
+  "razor": "/tools/pdf-processor/monacoeditorwork/html.worker.bundle.js"
 });</script>
 
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>PDF Extractor</title>
+    <!-- ── Icons ── -->
+    <link rel="icon" type="image/png" href="/assets/images/Ginexys_Logo.png">
+    <title>Free Online PDF to HTML Extractor — Browser OCR, Zero Upload · GINEXYS</title>
+    <meta name="description" content="Free browser-based PDF extractor that converts PDF to structured HTML with OCR. Layout-preserving extraction, AI-assisted grid mapping, and side-by-side diff view — no file upload, no install, 100% private.">
+    <meta name="keywords" content="PDF to HTML online, PDF extractor free, browser OCR no upload, extract text from PDF online, PDF table extractor, convert PDF to structured HTML, local PDF parsing, Tesseract OCR online, PDF layout extraction, PDF to markdown, GINEXYS">
+    <meta name="author" content="GINEXYS">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://ginexys.com/tools/pdf-processor/index.html">
+
+    <!-- ── Open Graph ── -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="GINEXYS">
+    <meta property="og:title" content="Free PDF to HTML Extractor — Browser OCR, Zero Upload · GINEXYS">
+    <meta property="og:description" content="Extract structured HTML from any PDF in your browser. OCR support, layout preservation, AI-assisted grid mapping, side-by-side diff. No file upload — your data never leaves your device.">
+    <meta property="og:url" content="https://ginexys.com/tools/pdf-processor/index.html">
+    <meta property="og:image" content="https://ginexys.com/assets/images/og-image.png">
+
+    <!-- ── Twitter / X Card ── -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Free PDF to HTML Extractor — Browser OCR, Zero Upload · GINEXYS">
+    <meta name="twitter:description" content="Convert PDF to structured HTML with OCR — all in your browser. Zero upload, zero install. Layout-preserving with AI-assisted table extraction.">
+    <meta name="twitter:image" content="https://ginexys.com/assets/images/og-image.png">
+    <meta name="twitter:site" content="@GINEXYS">
+
+    <!-- ── Structured Data ── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://ginexys.com/tools/pdf-processor/#software",
+          "name": "PDF Extractor",
+          "url": "https://ginexys.com/tools/pdf-processor/index.html",
+          "applicationCategory": "DeveloperApplication",
+          "applicationSubCategory": "PDF Extractor, OCR Tool, Document Converter",
+          "operatingSystem": "Web Browser",
+          "description": "Free browser-based PDF extractor that converts PDFs to structured HTML with high-accuracy OCR. Features layout-preserving extraction, AI-assisted table/grid mapping, side-by-side diff view, and a zero-upload policy — all processing happens client-side in your browser.",
+          "featureList": [
+            "Convert PDF to structured HTML in the browser",
+            "OCR support via Tesseract — extract text from scanned PDFs",
+            "AI-assisted grid mapping for complex table layouts",
+            "Side-by-side PDF vs HTML diff view for accuracy checking",
+            "Interactive HTML preview and inline editor",
+            "Extract PDF tables to editable HTML",
+            "Layout-preserving extraction with column and row detection",
+            "Zero upload policy — files never leave your device",
+            "No install, no account, 100% private",
+            "Export extracted content to HTML, Markdown, or CSV"
+          ],
+          "author": {
+            "@type": "Organization",
+            "name": "GINEXYS",
+            "url": "https://ginexys.com"
+          },
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+          },
+          "isPartOf": {
+            "@type": "WebSite",
+            "name": "GINEXYS",
+            "url": "https://ginexys.com"
+          }
+        },
+        {
+          "@type": "BreadcrumbList",
+          "itemListElement": [
+            {
+              "@type": "ListItem",
+              "position": 1,
+              "name": "Home",
+              "item": "https://ginexys.com/"
+            },
+            {
+              "@type": "ListItem",
+              "position": 2,
+              "name": "PDF Extractor",
+              "item": "https://ginexys.com/tools/pdf-processor/index.html"
+            }
+          ]
+        }
+      ]
+    }
+    </script>
+
+    <!-- ── FAQ Structured Data (AEO / Perplexity targeting) ── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I extract text from a PDF online without uploading it?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The Ginexys PDF Extractor runs entirely in your browser using client-side OCR (Tesseract). Your file is never uploaded to a server — paste or open a PDF and the extraction happens locally on your device at ginexys.com/tools/pdf-processor."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I convert a PDF table to HTML or CSV online for free?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Use the Ginexys PDF Extractor to convert PDF tables to structured HTML in your browser. The AI-assisted grid mapping identifies table rows and columns accurately. You can then export the result to HTML, Markdown, or CSV — no upload required."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the best free OCR tool that works entirely in the browser?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Ginexys PDF Extractor uses Tesseract OCR running client-side in the browser — no server processing, no data upload. It supports both regular and scanned PDFs with layout-preserving extraction."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I extract data from a scanned PDF without Adobe Acrobat?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The Ginexys PDF Extractor includes Tesseract OCR for scanned documents, all running in the browser. You get a structured HTML output with the text and layout preserved — no Adobe Acrobat or desktop software needed."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I compare my PDF and the extracted HTML side by side?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. The Ginexys PDF Extractor includes a side-by-side diff view so you can compare the original PDF rendering against the extracted HTML output to check accuracy and correct any layout issues."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is there a free PDF to Markdown converter that doesn't upload files?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. The Ginexys PDF Extractor converts PDFs to structured HTML which you can then export as Markdown. All processing is local in your browser — your PDF never leaves your device."
+          }
+        }
+      ]
+    }
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/assets/index-CIAYRKC3.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-cg0xwv7Q.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/tools/pdf-processor/assets/app-Cpx9Kj28.js"></script>
+  <link rel="stylesheet" crossorigin href="/tools/pdf-processor/assets/app-CktzJq57.css">
+  <link rel="stylesheet" crossorigin href="/tools/pdf-processor/assets/main-ByU7rUEc.css">
 </head>
 <body>
 
@@ -72,6 +217,15 @@
                 <span id="file2-name">Compare PDF</span>
                 <input id="file2-input" type="file" accept="application/pdf" />
             </label>
+
+            <!-- AI Open Core Premium Features UI -->
+            <div style="display: flex; gap: 8px; align-items: center; margin-left: 16px; border-left: 1px solid #e5e7eb; padding-left: 16px;">
+                <label style="cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: #4B5563;" title="Pass Docling markdown to OpenRouter AI for responsive Bootstrap grid mapping">
+                    <input type="checkbox" id="ai-layout-toggle" style="cursor: pointer;">
+                    ✨ Premium AI Grid
+                </label>
+                <!-- <input type="password" id="ai-api-key" placeholder="OpenRouter Key (or .env)" style="border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 12px; width: 160px; outline: none;"> -->
+            </div>
         </div>
 
         <nav class="tab-bar" role="tablist">
@@ -121,9 +275,31 @@
             <button class="tool-btn" id="btn-ol" title="Numbered list">1. List</button>
         </div>
         <div class="toolbar-sep"></div>
+        <!-- Alignment -->
+        <div class="toolbar-group" aria-label="Alignment">
+            <button class="tool-btn" id="btn-align-left"    title="Align left">⇤</button>
+            <button class="tool-btn" id="btn-align-center"  title="Align center">≡</button>
+            <button class="tool-btn" id="btn-align-right"   title="Align right">⇥</button>
+            <button class="tool-btn" id="btn-align-justify" title="Justify">⇔</button>
+        </div>
+        <div class="toolbar-sep"></div>
+        <!-- Distribute -->
+        <div class="toolbar-group" aria-label="Distribute children of current block">
+            <button class="tool-btn" id="btn-dist-h" title="Distribute horizontally (row, space-between)">⇆</button>
+            <button class="tool-btn" id="btn-dist-v" title="Distribute vertically (column, even gap)">⇅</button>
+        </div>
+        <div class="toolbar-sep"></div>
         <div class="toolbar-group">
             <button class="tool-btn" id="btn-add-page" title="Add blank page">+ Page</button>
             <button class="tool-btn" id="btn-2col"     title="Toggle 2-column layout">⊟ 2-col</button>
+        </div>
+        <div class="toolbar-sep"></div>
+        <!-- PDF zoom -->
+        <div class="toolbar-group" id="pdf-zoom-group" aria-label="PDF zoom">
+            <button class="tool-btn" id="btn-zoom-out" title="Zoom out">−</button>
+            <span class="page-counter" id="zoom-pct">100%</span>
+            <button class="tool-btn" id="btn-zoom-in"  title="Zoom in">+</button>
+            <button class="tool-btn" id="btn-zoom-fit" title="Fit width">↔</button>
         </div>
         <div class="toolbar-sep"></div>
         <!-- Page navigation -->
@@ -264,6 +440,39 @@
     <!-- OS Bridge (no-op when standalone, connects to kernel when in iframe) -->
     <script src="/assets/os/contracts.js"></script>
     <script src="/assets/os/bridge.js"></script>
-
+
+    <script>
+    // Mode routing — path-based activation + URL sync on switch
+    document.addEventListener('DOMContentLoaded', function () {
+      var p = location.pathname;
+
+      // On load: activate view matching the current path
+      var viewMap = {
+        'visual-diff': 'visual-diff',
+        'compare':     'diff',
+        'editor':      'editor',
+      };
+      var matched = Object.keys(viewMap).find(function (k) { return p.includes('/' + k + '/'); });
+      if (matched) {
+        var btn = document.querySelector('.tab-btn[data-view="' + viewMap[matched] + '"]');
+        if (btn && !btn.disabled) btn.click();
+      }
+
+      // On switch: keep URL in sync
+      var urlMap = {
+        'editor':      '/tools/pdf-processor/editor/',
+        'visual-diff': '/tools/pdf-processor/visual-diff/',
+        'diff':        '/tools/pdf-processor/compare/',
+        'pdf':         '/tools/pdf-processor/',
+        'html':        '/tools/pdf-processor/',
+      };
+      document.addEventListener('click', function (e) {
+        var btn = e.target.closest('.tab-btn');
+        if (btn && urlMap[btn.dataset.view]) {
+          history.replaceState({}, '', urlMap[btn.dataset.view]);
+        }
+      });
+    });
+    </script>
 </body>
 </html>

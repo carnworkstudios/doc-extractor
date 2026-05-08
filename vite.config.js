@@ -36,8 +36,15 @@ export default defineConfig({
         emptyOutDir: true,
         target: 'esnext',
         rollupOptions: {
+            // Every entry HTML must be listed here, otherwise Vite skips it
+            // and the deploy serves the unbundled source — which fails in the
+            // browser the moment a bare ES module specifier (e.g.
+            // `import $ from 'jquery'`) hits the network.
             input: {
-                editor: path.resolve(__dirname, 'editor/index.html'),
+                main:       path.resolve(__dirname, 'index.html'),
+                editor:     path.resolve(__dirname, 'editor/index.html'),
+                visualDiff: path.resolve(__dirname, 'visual-diff/index.html'),
+                compare:    path.resolve(__dirname, 'compare/index.html'),
             },
         },
     },
