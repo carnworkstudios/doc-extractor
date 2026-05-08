@@ -1,3 +1,8 @@
 node_modules
 .vscode
 .claude
+
+# Build output — produced by `npm run build`. Must NOT be committed:
+# stale artifacts shadow fresh CI builds and break Cloudflare deploys
+# when the build step is skipped or silently fails.
+dist/
