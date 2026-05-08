@@ -145,7 +145,18 @@ export class LatticeReconstructor {
 
         if (filteredRows.length < 2 || filteredCols.length < 2) return null;
 
-        return { rows: filteredRows, cols: filteredCols, hLines: hMerged, vLines: vMerged };
+        return {
+            rows: filteredRows,
+            cols: filteredCols,
+            hLines: hMerged,
+            vLines: vMerged,
+            bbox: {
+                x: filteredCols[0],
+                y: filteredRows[0],
+                w: filteredCols[filteredCols.length - 1] - filteredCols[0],
+                h: filteredRows[filteredRows.length - 1] - filteredRows[0],
+            },
+        };
     }
 
     /**

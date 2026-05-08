@@ -194,9 +194,31 @@
             <button class="tool-btn" id="btn-ol" title="Numbered list">1. List</button>
         </div>
         <div class="toolbar-sep"></div>
+        <!-- Alignment -->
+        <div class="toolbar-group" aria-label="Alignment">
+            <button class="tool-btn" id="btn-align-left"    title="Align left">⇤</button>
+            <button class="tool-btn" id="btn-align-center"  title="Align center">≡</button>
+            <button class="tool-btn" id="btn-align-right"   title="Align right">⇥</button>
+            <button class="tool-btn" id="btn-align-justify" title="Justify">⇔</button>
+        </div>
+        <div class="toolbar-sep"></div>
+        <!-- Distribute -->
+        <div class="toolbar-group" aria-label="Distribute children of current block">
+            <button class="tool-btn" id="btn-dist-h" title="Distribute horizontally (row, space-between)">⇆</button>
+            <button class="tool-btn" id="btn-dist-v" title="Distribute vertically (column, even gap)">⇅</button>
+        </div>
+        <div class="toolbar-sep"></div>
         <div class="toolbar-group">
             <button class="tool-btn" id="btn-add-page" title="Add blank page">+ Page</button>
             <button class="tool-btn" id="btn-2col" title="Toggle 2-column layout">⊟ 2-col</button>
+        </div>
+        <div class="toolbar-sep"></div>
+        <!-- PDF zoom -->
+        <div class="toolbar-group" id="pdf-zoom-group" aria-label="PDF zoom">
+            <button class="tool-btn" id="btn-zoom-out" title="Zoom out">−</button>
+            <span class="page-counter" id="zoom-pct">100%</span>
+            <button class="tool-btn" id="btn-zoom-in"  title="Zoom in">+</button>
+            <button class="tool-btn" id="btn-zoom-fit" title="Fit width">↔</button>
         </div>
         <div class="toolbar-sep"></div>
         <!-- Page navigation -->

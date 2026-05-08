@@ -10,6 +10,36 @@ import * as pdfjsLib from 'pdfjs-dist';
 
 const SCALE = 1.5;
 
+// Zoom is applied as a CSS transform on rendered .page-wrapper elements;
+// the canvas keeps its rendered resolution, transform handles visual scaling.
+let _zoom = 1.0;
+
+export function getPDFZoom() { return _zoom; }
+
+export function setPDFZoom(z) {
+    _zoom = z;
+    document.documentElement.style.setProperty('--pdf-zoom', String(z));
+}
+
+/**
+ * Fit zoom so the rendered page width matches the current container's
+ * usable width. Uses the largest visible PDF container present in the DOM.
+ */
+export function fitPDFWidth() {
+    const container = document.querySelector(
+        '#view-pdf.active #pdf-canvas-container, ' +
+        '#view-visual-diff.active #visual-diff-pdf, ' +
+        '#pdf-canvas-container'
+    );
+    const firstPage = container?.querySelector('.page-wrapper');
+    if (!container || !firstPage) return;
+    const styles = getComputedStyle(container);
+    const padX = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
+    const usable = container.clientWidth - padX - 8;
+    const intrinsic = parseFloat(firstPage.style.width) || firstPage.offsetWidth / _zoom;
+    if (intrinsic > 0) setPDFZoom(Math.max(0.5, Math.min(3.0, usable / intrinsic)));
+}
+
 export async function renderPDFToCanvas(bytes, containerId = 'pdf-canvas-container') {
     const $container = $(`#${containerId}`);
     if (!$container.length) return { wrappers: [], numPages: 0 };

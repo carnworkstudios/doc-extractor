@@ -15,6 +15,7 @@
     --header-h:    48px;
     --toolbar-h:   38px;
     --status-h:    28px;
+    --pdf-zoom:    1;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -235,6 +236,7 @@ body {
 .canvas-scroll {
     flex: 1;
     overflow-y: auto;
+    overflow-x: auto;
     /* display: flex; */
     /* flex-direction: column; */
     align-items: center;
@@ -249,6 +251,10 @@ body {
     position: relative;
     overflow: hidden;
     scroll-margin-top: 24px;
+    /* CSS zoom property: causes real layout reflow (scrollHeight updates),
+       so the visual-diff scroll sync stays accurate. Supported in all
+       modern browsers as of 2024. */
+    zoom: var(--pdf-zoom, 1);
 }
 
 .page-wrapper canvas { display: block; }
@@ -303,6 +309,47 @@ body {
     text-align: left;
 }
 .prose-area th { background: #f9fafb; font-weight: 600; }
+
+/* ── PAGED HTML OUTPUT ──────────────────────────────────────────────────────
+   When the extracted HTML contains <section class="pdf-page-content">,
+   render the prose area as a stack of page-cards (gray frame + white cards
+   with shadow) so the editable output mirrors the original PDF pagination. */
+.prose-area:has(.pdf-page-content) {
+    background: #e5e7eb;
+    padding: 32px 0;
+}
+
+.prose-area .pdf-page-content {
+    background: #fff;
+    max-width: 800px;
+    margin: 0 auto 24px;
+    padding: 64px 72px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.1);
+    border-radius: 4px;
+    min-height: 1100px;
+    position: relative;
+    scroll-margin-top: 24px;
+}
+
+.prose-area .pdf-page-content > .page-label {
+    position: absolute;
+    top: 12px;
+    right: 24px;
+    margin: 0;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* When the prose area is itself the visual-diff right pane,
+   shrink the card to fit the narrower column. */
+#visual-diff-html.prose-area .pdf-page-content {
+    max-width: none;
+    margin: 0 16px 16px;
+    padding: 48px 40px;
+}
 
 /* Crosshair table highlight (from tableLogic) */
 .prose-area td.highlight-row,
@@ -596,4 +643,50 @@ body {
     font-weight: 500;
     padding: 3px 0;
     text-align: right;
+}
+
+/* ── RESPONSIVE ─────────────────────────────────────────────────────────────
+   Tablet ≤1024px → stack visual-diff vertically.
+   Phone  ≤640px  → wrap header, hide non-essential toolbar groups, slimmer
+                    card padding, shorter status bar. */
+@media (max-width: 1024px) {
+    .visual-diff-layout { flex-direction: column; }
+    .vd-divider {
+        width: 100%;
+        height: 1px;
+        cursor: row-resize;
+    }
+    .vd-divider:hover, .vd-divider.dragging { width: 100%; height: 2px; }
+    .analyze-body { flex-direction: column; }
+    .analyze-stats-wrap { width: 100%; border-top: 1px solid var(--border); }
+    .analyze-canvas-wrap { border-right: none; }
+}
+
+@media (max-width: 768px) {
+    .app-header {
+        height: auto;
+        flex-wrap: wrap;
+        padding: 6px 10px;
+        gap: 6px;
+    }
+    .header-center { flex: 1 1 100%; order: 3; flex-wrap: wrap; }
+    .tab-bar { order: 2; flex-wrap: wrap; gap: 4px; margin-left: 0; }
+    .header-right { order: 4; margin-left: auto; }
+    .toolbar-bar { padding: 0 6px; }
+    .toolbar-sep { margin: 0 4px; }
+    .prose-area { padding: 20px 16px; }
+    .prose-area .pdf-page-content {
+        padding: 32px 24px;
+        margin: 0 12px 16px;
+    }
+    .canvas-scroll { padding: 12px 6px; }
+}
+
+@media (max-width: 480px) {
+    /* Hide the formatting groups that aren't critical on phones; keep
+       alignment, page nav, and zoom usable. */
+    .toolbar-bar #btn-add-page,
+    .toolbar-bar #btn-2col,
+    .toolbar-bar #sel-block { display: none; }
+    .tab-btn { padding: 4px 8px; font-size: 11px; }
 }

@@ -6,6 +6,7 @@
 
 import * as monaco from 'monaco-editor';
 import { state } from '../state.js';
+import { applyHtmlEverywhere, isSyncing } from '../ui/htmlSync.js';
 
 /**
  * Initialize the Monaco HTML editor in #monaco-editor-container.
@@ -30,27 +31,13 @@ export function initMonacoEditor() {
 
     state.monacoEditor = editor;
 
-    // Sync editor changes → HTML Preview
+    // Monaco edits → state + previews. The isSyncing() guard skips the
+    // synchronous re-fire that occurs when applyHtmlEverywhere itself
+    // calls model.setValue() during a cross-surface mirror.
     editor.onDidChangeModelContent(() => {
-        const html = editor.getValue();
-        updateHTMLPreview(html);
-        // Keep state in sync
-        state.pdf1.extractedHTML = html;
+        if (isSyncing()) return;
+        applyHtmlEverywhere(editor.getValue(), null);
     });
 
     return editor;
-}
-
-function updateHTMLPreview(html) {
-    const preview = document.getElementById('html-preview');
-    preview.contentEditable = true; // Allow text selection
-    if (!preview) return;
-    try {
-        const clean = typeof DOMPurify !== 'undefined'
-            ? DOMPurify.sanitize(html, { ADD_TAGS: ['img'], ALLOW_DATA_ATTR: true })
-            : html;
-        preview.innerHTML = clean;
-    } catch {
-        // Silent; editor may produce incomplete HTML mid-type
-    }
 }

@@ -11,6 +11,7 @@ import { showStatus, hideStatus, enableDiffTab, disableDiffTab } from './viewCon
 import { registerPages } from './pageNav.js';
 import { markDiffDirty } from './visualDiff.js';
 import { initTableFeatures } from '../utils/tableLogic.js';
+import { applyHtmlEverywhere } from './htmlSync.js';
 import { showToast } from './toast.js';
 import { cwsBroker } from '@os/worker-broker.js';
 import { runAnalysis } from './analyzePanel.js';
@@ -153,20 +154,9 @@ async function handleFile(file, pdfIndex) {
         pdfState.extractedText = data.text || '';
 
         if (pdfIndex === 1) {
-            // If the HTML only has the "no tables" placeholder but we have clean text,
-            // promote the plain text into paragraph HTML for the preview.
-            if (data.source === 'local' && data.tableCount === 0 && pdfState.extractedText) {
-                const { rebuildText } = await import('../extraction/vector/textRebuilder.js');
-                // Already rebuilt in the worker; convert stored text → <p> blocks for display
-                const paragraphHtml = pdfState.extractedText
-                    .split(/\n\n+/)
-                    .map(p => `<p>${p.replace(/\n/g, ' ').trim()}</p>`)
-                    .filter(p => p.length > 7)
-                    .join('\n');
-                if (paragraphHtml) pdfState.extractedHTML = paragraphHtml;
-            }
-            populateHTMLPreview(pdfState.extractedHTML, 'html-preview');
-            state.monacoEditor?.getModel()?.setValue(pdfState.extractedHTML);
+            // Push the freshly-extracted HTML to ALL surfaces in one shot:
+            // state, both contenteditable previews, and the Monaco model.
+            applyHtmlEverywhere(pdfState.extractedHTML, null);
             markDiffDirty();
             if (state.pdf2.bytes) refreshCodeDiff();
         } else {
