@@ -130,7 +130,7 @@ export function extractPaths(opList, viewport, OPS) {
                 addRect(subArgs[ai], subArgs[ai + 1], subArgs[ai + 2], subArgs[ai + 3]);
                 ai += 4;
             } else if (sf === OPS.curveTo) {
-                // Skip cubic — advance to endpoint
+                // TODO: Opt-in flattenCurves for SchemaPipeline. Currently skips cubic and advances to endpoint.
                 const [x, y] = toViewport(subArgs[ai + 4], subArgs[ai + 5]);
                 pendingX = x; pendingY = y;
                 ai += 6;

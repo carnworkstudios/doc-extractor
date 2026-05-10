@@ -216,7 +216,7 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
             case RegionType.TABLE: {
                 if (!region.lattice) break;
                 const scopedItems = region.textItemIndices.map(i => textItems[i]);
-                const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set());
+                const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set(), region.proximityPx);
                 if (tableHtml) {
                     parts.push(tableHtml);
                     tableCount++;

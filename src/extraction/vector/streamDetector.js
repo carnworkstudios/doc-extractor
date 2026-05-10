@@ -120,7 +120,7 @@ function _clusterByX(items, tol) {
  * Find X ranges where fewer than minFrac of bands have text coverage.
  * Returns gutter center X positions — used as column boundary candidates.
  */
-function _detectGutters(bands, minFrac = 0.6) {
+function _detectGutters(bands, minFrac = 0.6, minGutterPx = 4) {
     if (!bands.length) return [];
     const allItems = bands.flatMap(b => b.items);
     if (!allItems.length) return [];
@@ -148,7 +148,7 @@ function _detectGutters(bands, minFrac = 0.6) {
         if (bandCount[x] < threshold) {
             if (gStart === null) gStart = x;
         } else if (gStart !== null) {
-            if (x - gStart >= 4) gutters.push((gStart + x) / 2);
+            if (x - gStart >= minGutterPx) gutters.push((gStart + x) / 2);
             gStart = null;
         }
     }
@@ -242,7 +242,7 @@ function _buildCandidate(bands, scale) {
     if (confidence < scale.STREAM_CONFIDENCE) return null;
 
     // ── Build column boundaries ───────────────────────────────────────────────
-    const gutters     = _detectGutters(participating, 0.6);
+    const gutters     = _detectGutters(participating, 0.6, scale.S * 0.15);
     const pad         = scale.S * 0.3;
     const rightExtent = tagged.reduce((m, i) => Math.max(m, i.vx + i.vWidth), -Infinity) + pad;
 
@@ -309,6 +309,7 @@ export function detectStreamTables(textMeta, scale, latticeRegions = []) {
         const candidate = _buildCandidate(group, scale);
         if (!candidate) continue;
         if (_overlapsLattice(candidate.bbox, latticeRegions)) continue;
+        if (_overlapsLattice(candidate.bbox, results)) continue;
         results.push(candidate);
     }
 

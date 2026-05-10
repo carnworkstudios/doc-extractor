@@ -71,7 +71,7 @@ function toViewportPoint(vpTransform, pdfX, pdfY) {
  * @param {number} [eps=6]  — boundary-presence tolerance in px (increased for jitter)
  * @returns {string}  — HTML string; empty string if lattice is degenerate
  */
-export function buildTable(lattice, textItems, viewport, assignedItems = new Set()) {
+export function buildTable(lattice, textItems, viewport, assignedItems = new Set(), proximityPx = 15) {
     const { rows, cols, hLines, vLines } = lattice;
     const numRows = rows.length - 1;
     const numCols = cols.length - 1;
@@ -126,7 +126,7 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
 
         // Assign to the closest cell if it's within a reasonable threshold (e.g., 15px)
         // This acts as our "KD-tree" proximity lookup without the heavy data structure
-        if (bestR !== -1 && bestC !== -1 && minDist < 15 && !assignedItems.has(idx)) {
+        if (bestR !== -1 && bestC !== -1 && minDist < proximityPx && !assignedItems.has(idx)) {
             assignedItems.add(idx);
             cells[bestR][bestC].push({ text: item.str.trim(), x: sx });
         }
@@ -159,7 +159,10 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
     // not from lines that don't exist.
     const isBorderless = hLines.length === 0 && vLines.length === 0;
 
-    let html = '<table class="tablecoil">\n<tbody>\n';
+    let html = '<div class="panel" style="display: block; overflow: auto;">\n';
+    html += isBorderless
+        ? '<table class="tablecoil borderless">\n<tbody>\n'
+        : '<table class="tablecoil">\n<tbody>\n';
 
     for (let r = 0; r < numRows; r++) {
         html += '<tr>';
@@ -167,28 +170,48 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
         for (let c = 0; c < numCols; c++) {
             if (visited[r][c]) continue;
 
-            // ── Determine colspan ────────────────────────────────────────────
             let colspan = 1;
-            if (!isBorderless) {
+            const hasVLines = vLines.length > 0;
+            const hasHLines = hLines.length > 0;
+
+            if (hasVLines) {
                 while (c + colspan < numCols) {
                     if (vLinePresent(vLines, cols[c + colspan], rows[r], rows[r + 1], eps)) break;
+                    colspan++;
+                }
+            } else {
+                // Borderless table or horizontal slat table: consume subsequent empty cells
+                while (c + colspan < numCols && cells[r][c + colspan].length === 0) {
                     colspan++;
                 }
             }
 
             // ── Determine rowspan ────────────────────────────────────────────
             let rowspan = 1;
-            if (!isBorderless) {
+            if (hasHLines) {
                 while (r + rowspan < numRows) {
                     if (hLinePresent(hLines, rows[r + rowspan], cols[c], cols[c + colspan], eps)) break;
                     rowspan++;
                 }
             }
 
+            // ── Re-verify colspan for spanned rows ───────────────────────────
+            let effectiveColspan = colspan;
+            if (hasVLines && rowspan > 1) {
+                for (let dr = 1; dr < rowspan; dr++) {
+                    let narrowed = 1;
+                    while (narrowed < effectiveColspan) {
+                        if (vLinePresent(vLines, cols[c + narrowed], rows[r + dr], rows[r + dr + 1], eps)) break;
+                        narrowed++;
+                    }
+                    effectiveColspan = Math.min(effectiveColspan, narrowed);
+                }
+            }
+
             // ── Accumulate content from all spanned sub-cells ────────────────
             const allItems = [];
             for (let dr = 0; dr < rowspan; dr++) {
-                for (let dc = 0; dc < colspan; dc++) {
+                for (let dc = 0; dc < effectiveColspan; dc++) {
                     const cellItems = cells[r + dr]?.[c + dc];
                     if (cellItems?.length) {
                         allItems.push(...cellItems);
@@ -199,7 +222,7 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
 
             const cellContent = esc(allItems.map(i => i.text).join(' ').trim());
             const tag = r === 0 ? 'th' : 'td';
-            const colAttr = colspan > 1 ? ` colspan="${colspan}"` : '';
+            const colAttr = effectiveColspan > 1 ? ` colspan="${effectiveColspan}"` : '';
             const rowAttr = rowspan > 1 ? ` rowspan="${rowspan}"` : '';
             html += `<${tag}${colAttr}${rowAttr}>${cellContent}</${tag}>`;
         }
@@ -207,6 +230,6 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
         html += '</tr>\n';
     }
 
-    html += '</tbody>\n</table>';
+    html += '</tbody>\n</table>\n</div>';
     return html;
 }

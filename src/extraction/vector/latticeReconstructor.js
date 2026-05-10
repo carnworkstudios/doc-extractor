@@ -31,6 +31,8 @@ export class LatticeReconstructor {
         this.minLen = opts.minLen ?? DEFAULT_OPTS.minLen;
         this.minLines = opts.minLines ?? DEFAULT_OPTS.minLines;
         this.pageWidthFraction = opts.pageWidthFraction ?? DEFAULT_OPTS.pageWidthFraction;
+        this.scale = opts.scale;
+        this.textMeta = opts.textMeta || [];
 
         // Estimate page width from segment extents
         if (segments.length) {
@@ -112,46 +114,61 @@ export class LatticeReconstructor {
         const hMerged = this._mergeH(hRaw, eps);
         const vMerged = this._mergeV(vRaw, eps);
 
-        if (hMerged.length < minLines || vMerged.length < minLines) return null;
+        if (hMerged.length < minLines && vMerged.length < minLines) return null;
 
-        // 3. Find intersections
-        const intersections = [];
-        for (const h of hMerged) {
-            for (const v of vMerged) {
-                if (v.x >= h.xMin - eps && v.x <= h.xMax + eps &&
-                    h.y >= v.yMin - eps && h.y <= v.yMax + eps) {
-                    intersections.push({ x: v.x, y: h.y });
+        let filteredRows = [];
+        let filteredCols = [];
+        const clusterEps = eps * 3;
+
+        if (hMerged.length >= minLines && vMerged.length >= minLines) {
+            // 3. Find intersections
+            const intersections = [];
+            for (const h of hMerged) {
+                for (const v of vMerged) {
+                    if (v.x >= h.xMin - eps && v.x <= h.xMax + eps &&
+                        h.y >= v.yMin - eps && h.y <= v.yMax + eps) {
+                        intersections.push({ x: v.x, y: h.y });
+                    }
                 }
             }
+
+            if (intersections.length < 4) return null;
+
+            // 4. Cluster into grid lines with adaptive tolerance
+            const rows = this._clusterValues(intersections.map(p => p.y), clusterEps);
+            const cols = this._clusterValues(intersections.map(p => p.x), clusterEps);
+
+            if (rows.length < 2 || cols.length < 2) return null;
+
+            // 5. Validate grid quality
+            const gridCells = (rows.length - 1) * (cols.length - 1);
+            if (gridCells < 2) return null;
+
+            filteredRows = this._filterGridLines(rows, cols, intersections, 'y', 'x', clusterEps);
+            filteredCols = this._filterGridLines(cols, rows, intersections, 'x', 'y', clusterEps);
+
+            if (filteredRows.length < 2 || filteredCols.length < 2) return null;
+
+            const gridPoints = filteredRows.length * filteredCols.length;
+            if (intersections.length / gridPoints < 0.25) return null;
+
+        } else if (hMerged.length >= minLines && vMerged.length < minLines) {
+            // Horizontal slat table
+            filteredRows = this._clusterValues(hMerged.map(p => p.y), clusterEps);
+            if (filteredRows.length < 2) return null;
+            filteredCols = this._inferColsFromText(filteredRows, hMerged);
+            if (!filteredCols || filteredCols.length < 2) return null;
+
+        } else if (vMerged.length >= minLines && hMerged.length < minLines) {
+            // Vertical slat table
+            filteredCols = this._clusterValues(vMerged.map(p => p.x), clusterEps);
+            if (filteredCols.length < 2) return null;
+            filteredRows = this._inferRowsFromText(filteredCols, vMerged);
+            if (!filteredRows || filteredRows.length < 2) return null;
+            
+        } else {
+            return null;
         }
-
-        if (intersections.length < 4) return null;
-
-        // 4. Cluster into grid lines with adaptive tolerance
-        const clusterEps = eps * 3;
-        const rows = this._clusterValues(intersections.map(p => p.y), clusterEps);
-        const cols = this._clusterValues(intersections.map(p => p.x), clusterEps);
-
-        if (rows.length < 2 || cols.length < 2) return null;
-
-        // 5. Validate grid quality
-        // Each row should have intersections with at least 40% of columns
-        const gridCells = (rows.length - 1) * (cols.length - 1);
-        if (gridCells < 2) return null;
-
-        // Filter out rows/cols that have very few intersections (noise)
-        const filteredRows = this._filterGridLines(rows, cols, intersections, 'y', 'x', clusterEps);
-        const filteredCols = this._filterGridLines(cols, rows, intersections, 'x', 'y', clusterEps);
-
-        if (filteredRows.length < 2 || filteredCols.length < 2) return null;
-
-        // Intersection density check.
-        // For a real table most grid points have intersections (density 0.6–1.0).
-        // Outer-frame ghost grids (page borders, TOC decoration) only have intersections
-        // at the outer edges: density ≈ 2*(R+C)/(R*C) — for a 39×11 grid that's ~0.22.
-        // Reject anything below 0.25 as a phantom lattice.
-        const gridPoints = filteredRows.length * filteredCols.length;
-        if (intersections.length / gridPoints < 0.25) return null;
 
         return {
             rows: filteredRows,
@@ -168,6 +185,114 @@ export class LatticeReconstructor {
                 h: filteredRows[filteredRows.length - 1] - filteredRows[0],
             },
         };
+    }
+
+    _inferColsFromText(rows, hMerged) {
+        if (!this.textMeta || !this.textMeta.length) return null;
+        
+        const yMin = rows[0] - 10;
+        const yMax = rows[rows.length - 1] + 10;
+        const xMin = Math.min(...hMerged.map(h => h.xMin));
+        const xMax = Math.max(...hMerged.map(h => h.xMax));
+        
+        const items = this.textMeta.filter(tm => 
+            tm.vy >= yMin && tm.vy <= yMax && tm.vx >= xMin && tm.vx <= xMax && tm.str.trim()
+        );
+        
+        if (items.length < 2) return null;
+        
+        const colTol = this.scale ? this.scale.colTolPx : 10;
+        
+        const sorted = [...items].sort((a, b) => a.vx - b.vx);
+        const clusters = [];
+        for (const item of sorted) {
+            let placed = false;
+            for (const cluster of clusters) {
+                const meanX = cluster.reduce((s, i) => s + i.vx, 0) / cluster.length;
+                if (Math.abs(item.vx - meanX) <= colTol) {
+                    cluster.push(item);
+                    placed = true;
+                    break;
+                }
+            }
+            if (!placed) clusters.push([item]);
+        }
+        
+        if (clusters.length < 2) return null;
+        
+        clusters.sort((a, b) => a[0].vx - b[0].vx);
+        
+        const pad = this.scale ? this.scale.S * 0.3 : 4;
+        const cols = [Math.max(xMin, clusters[0][0].vx - pad)];
+        
+        for (let i = 1; i < clusters.length; i++) {
+            const maxRight = Math.max(...clusters[i-1].map(tm => tm.vx + (tm.vWidth||0)));
+            const minLeft = Math.min(...clusters[i].map(tm => tm.vx));
+            const gap = minLeft - maxRight;
+            if (gap > 0) {
+                cols.push((maxRight + minLeft) / 2);
+            } else {
+                const mean1 = clusters[i-1].reduce((s, tm) => s + tm.vx, 0) / clusters[i-1].length;
+                const mean2 = clusters[i].reduce((s, tm) => s + tm.vx, 0) / clusters[i].length;
+                cols.push((mean1 + mean2) / 2);
+            }
+        }
+        
+        const lastCluster = clusters[clusters.length - 1];
+        const lastMaxRight = Math.max(...lastCluster.map(tm => tm.vx + (tm.vWidth||0)));
+        cols.push(Math.min(xMax, lastMaxRight + pad));
+        
+        return cols;
+    }
+
+    _inferRowsFromText(cols, vMerged) {
+        if (!this.textMeta || !this.textMeta.length) return null;
+        
+        const xMin = cols[0] - 10;
+        const xMax = cols[cols.length - 1] + 10;
+        const yMin = Math.min(...vMerged.map(v => v.yMin));
+        const yMax = Math.max(...vMerged.map(v => v.yMax));
+        
+        const items = this.textMeta.filter(tm => 
+            tm.vx >= xMin && tm.vx <= xMax && tm.vy >= yMin && tm.vy <= yMax && tm.str.trim()
+        );
+        
+        if (items.length < 2) return null;
+        
+        const rowTol = this.scale ? this.scale.yBandTolPx : 5;
+        
+        const sorted = [...items].sort((a, b) => a.vy - b.vy);
+        const clusters = [];
+        for (const item of sorted) {
+            let placed = false;
+            for (const cluster of clusters) {
+                const meanY = cluster.reduce((s, i) => s + i.vy, 0) / cluster.length;
+                if (Math.abs(item.vy - meanY) <= rowTol) {
+                    cluster.push(item);
+                    placed = true;
+                    break;
+                }
+            }
+            if (!placed) clusters.push([item]);
+        }
+        
+        if (clusters.length < 2) return null;
+        
+        clusters.sort((a, b) => a[0].vy - b[0].vy);
+        
+        const pad = this.scale ? this.scale.S * 0.6 : 8;
+        const rows = [Math.max(yMin, clusters[0][0].vy - pad)];
+        
+        for (let i = 1; i < clusters.length; i++) {
+            const mean1 = clusters[i-1].reduce((s, tm) => s + tm.vy, 0) / clusters[i-1].length;
+            const mean2 = clusters[i].reduce((s, tm) => s + tm.vy, 0) / clusters[i].length;
+            rows.push((mean1 + mean2) / 2);
+        }
+        
+        const lastMean = clusters[clusters.length - 1].reduce((s, tm) => s + tm.vy, 0) / clusters[clusters.length - 1].length;
+        rows.push(Math.min(yMax, lastMean + pad));
+        
+        return rows;
     }
 
     /**
@@ -282,8 +407,8 @@ export class LatticeReconstructor {
         }
         const sortedY = [...yBuckets.keys()].sort((a, b) => a - b);
 
-        // Gap must be significant (at least 40px or 10% of page height)
-        const gapThreshold = Math.max(40, yRange * 0.10);
+        // Gap must be significant
+        const gapThreshold = this.scale ? this.scale.clusterYGap(yRange) : Math.max(40, yRange * 0.10);
         const splitPoints = [];
 
         for (let i = 1; i < sortedY.length; i++) {
@@ -303,6 +428,58 @@ export class LatticeReconstructor {
                 return yc > lo && yc < hi;
             });
             if (cluster.length >= 8) clusters.push(cluster); // need enough segs for a table
+        }
+
+        const finalClusters = [];
+        for (const cluster of clusters.length ? clusters : [segments]) {
+            const xSubs = this._xSplitCluster(cluster);
+            finalClusters.push(...xSubs);
+        }
+
+        return finalClusters;
+    }
+
+    _xSplitCluster(segments) {
+        if (segments.length < 4) return [segments];
+
+        let xMin = Infinity, xMax = -Infinity;
+        for (const s of segments) {
+            const xc = (s.x1 + s.x2) / 2;
+            if (xc < xMin) xMin = xc;
+            if (xc > xMax) xMax = xc;
+        }
+        const xRange = xMax - xMin;
+
+        if (xRange < 50) return [segments];
+
+        const xBuckets = new Map();
+        for (const s of segments) {
+            const xc = (s.x1 + s.x2) / 2;
+            const key = Math.round(xc / 5) * 5; // 5px buckets
+            xBuckets.set(key, (xBuckets.get(key) || 0) + 1);
+        }
+        const sortedX = [...xBuckets.keys()].sort((a, b) => a - b);
+
+        const gapThreshold = this.scale ? this.scale.clusterXGap(xRange) : Math.max(40, xRange * 0.08);
+        const splitPoints = [];
+
+        for (let i = 1; i < sortedX.length; i++) {
+            if (sortedX[i] - sortedX[i - 1] > gapThreshold) {
+                splitPoints.push((sortedX[i] + sortedX[i - 1]) / 2);
+            }
+        }
+
+        if (!splitPoints.length) return [segments];
+
+        const boundaries = [-Infinity, ...splitPoints, Infinity];
+        const clusters = [];
+        for (let i = 0; i < boundaries.length - 1; i++) {
+            const lo = boundaries[i], hi = boundaries[i + 1];
+            const cluster = segments.filter(s => {
+                const xc = (s.x1 + s.x2) / 2;
+                return xc > lo && xc < hi;
+            });
+            if (cluster.length >= 8) clusters.push(cluster);
         }
 
         return clusters.length ? clusters : [segments];

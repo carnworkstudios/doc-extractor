@@ -134,7 +134,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = 
     const tableSegs = segments.filter(s => !underlineSegIds.has(s.id));
 
     // ── 3. Detect lattice table regions ──────────────────────────────────────
-    const reconstructor = new LatticeReconstructor(tableSegs, { eps: 5 });
+    const reconstructor = new LatticeReconstructor(tableSegs, { eps: 5, scale, textMeta });
     const lattices = reconstructor.reconstructAll();
 
     const regions = [];
@@ -167,6 +167,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = 
             lattice,
             textItemIndices: tableTextIndices,
             columnIndex: -1,   // patched to correct column in step 6 once split point is known
+            proximityPx: scale.proximityPx,
         });
     }
 
@@ -205,6 +206,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = 
             lattice,
             textItemIndices: tableTextIndices,
             columnIndex: -1,
+            proximityPx: scale.proximityPx,
         });
     }
 
