@@ -60,8 +60,9 @@ function extractViaGeometryWorker(bytes, onProgress) {
                 totalTables += msg.tables || 0;
             } else if (msg.type === 'complete') {
                 clearTimeout(timeout);
+                const styleBlock = msg.styles ? `<style>\n${msg.styles}\n</style>\n` : '';
                 const html = htmlParts.length > 0
-                    ? htmlParts.join('\n')
+                    ? styleBlock + htmlParts.join('\n')
                     : '<p class="no-tables-msg">No table structures detected. This PDF may use text-only layout.</p>';
                 const text = textParts.join('\n\n--- page break ---\n\n');
                 resolve({ html, text, tableCount: msg.tableCount ?? totalTables });

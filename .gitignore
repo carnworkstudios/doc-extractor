@@ -6,3 +6,4 @@ node_modules
 # stale artifacts shadow fresh CI builds and break Cloudflare deploys
 # when the build step is skipped or silently fails.
 dist/
+Users

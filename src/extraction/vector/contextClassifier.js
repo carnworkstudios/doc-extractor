@@ -7,16 +7,22 @@
 // segments and text items that belong to it.
 //
 // Key algorithms:
-//   1. Underline detection    — KD-tree proximity between H-segments and text baselines
+//   1. Underline detection    — proximity between H-segments and text baselines
 //   2. Table region detection — lattice bboxes scope segments + text items
-//   3. Heading detection      — font size > 1.25× body average
-//   4. List detection         — lines starting with bullet/number patterns
-//   5. Column detection       — page-level left/right split via coverage gaps
-//   6. Paragraph detection    — remaining text grouped by Y-band
+//   3. Stream table detection — column-anchor + gutter clustering (borderless)
+//   4. Heading detection      — font size > 1.25× body average
+//   5. List detection         — lines starting with bullet/number patterns
+//   6. Column detection       — page-level left/right split via coverage gaps
+//   7. Paragraph detection    — remaining text grouped by Y-band
+//
+// Returns { regions, textMeta } so pageAssembler has access to viewport-space
+// font info for styling without re-deriving coordinates.
 //
 // Safe to run inside a Web Worker.
 
 import { LatticeReconstructor } from './latticeReconstructor.js';
+import { detectStreamTables } from './streamDetector.js';
+import { PageScale } from './pageScale.js';
 
 // ── Region types ─────────────────────────────────────────────────────────────
 
@@ -28,11 +34,8 @@ export const RegionType = {
     IMAGE:     'IMAGE',
 };
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Transform a PDF user-space point to viewport space.
- */
 function toViewport(vpTransform, pdfX, pdfY) {
     return [
         vpTransform[0] * pdfX + vpTransform[2] * pdfY + vpTransform[4],
@@ -40,32 +43,16 @@ function toViewport(vpTransform, pdfX, pdfY) {
     ];
 }
 
-/**
- * Check if a point (px, py) is inside a bbox with optional padding.
- */
 function insideBBox(px, py, bbox, pad = 0) {
     return px >= bbox.x - pad && px <= bbox.x + bbox.w + pad &&
            py >= bbox.y - pad && py <= bbox.y + bbox.h + pad;
 }
 
-/**
- * Compute the average "body" font size from text items.
- * Uses the median to be robust against headings / footnotes.
- */
-function computeBodyFontSize(items) {
-    const sizes = items
-        .filter(i => i.str?.trim())
-        .map(i => Math.abs(i.transform?.[3] || i.height || 12));
-    if (!sizes.length) return 12;
-    sizes.sort((a, b) => a - b);
-    return sizes[Math.floor(sizes.length / 2)]; // median
-}
-
 // Bullet / numbered-list patterns
-const BULLET_RE = /^[\u2022\u2023\u25E6\u25AA\u25AB\u2013\u2014\u2015•–—·○◦◉▪▫-]\s/;
+const BULLET_RE = /^[•‣◦▪▫–—―•–—·○◦◉▪▫-]\s/;
 const ORDERED_RE = /^(?:\d{1,3}[.)]\s|[a-zA-Z][.)]\s|[ivxIVX]+[.)]\s)/;
 
-// ── Public API ───────────────────────────────────────────────────────────────
+// ── Public API ────────────────────────────────────────────────────────────────
 
 /**
  * Classify a single page into typed regions.
@@ -75,37 +62,37 @@ const ORDERED_RE = /^(?:\d{1,3}[.)]\s|[a-zA-Z][.)]\s|[ivxIVX]+[.)]\s)/;
  * @param {object}         viewport    — { width, height, transform }
  * @param {number}         pageWidthPt — page width in PDF points
  * @param {object}         [opts]      — classification options
- * @returns {PageRegion[]}  sorted top→bottom
+ * @returns {{ regions: PageRegion[], textMeta: TextMetaItem[] }}
  */
 export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = {}) {
     const vpT = viewport.transform;
-    // Viewport scale: vpT = [scaleX, 0, 0, -scaleY, ox, oy] for an unrotated viewport.
-    // Text widths and font sizes from PDF.js are in PDF user-space; positions
-    // (tm.vx, tm.vy) we compute below are in viewport space. We must scale
-    // widths/fonts by the viewport scale before comparing against viewport coords,
-    // otherwise X-spans, Y-bands, and column-coverage all undershoot by 1/scale.
     const scaleX = Math.hypot(vpT[0], vpT[1]) || 1;
     const scaleY = Math.hypot(vpT[2], vpT[3]) || 1;
-    const bodyFontSize = computeBodyFontSize(textItems);   // PDF-points
-    const bodyFontVp   = bodyFontSize * scaleY;            // viewport pixels
-    const headingScale = opts.headingScale ?? 1.25;
-    const underlineTol = opts.underlineTol ?? 5;   // px: max distance text baseline → H-line
-    const tablePad     = opts.tablePad ?? 4;        // px: padding around table bbox for text capture
 
     // ── 1. Convert all text items to viewport coordinates ────────────────────
+    // fontName is included so pageAssembler can build the CSS font registry
+    // without re-reading textItems (which are in PDF user-space).
     const textMeta = textItems.map((item, idx) => {
         const [vx, vy] = toViewport(vpT, item.transform[4], item.transform[5]);
-        const fontSizePt = Math.abs(item.transform?.[3] || 12);   // PDF-points
+        const fontSizePt = Math.abs(item.transform?.[3] || 12);
         const widthPt    = item.width || (fontSizePt * 0.5 * (item.str?.length || 1));
         return {
             idx,
             vx, vy,
-            vWidth: widthPt * scaleX,    // viewport pixels — for vx-relative checks
-            vFont:  fontSizePt * scaleY, // viewport pixels — for vy-relative checks
-            fontSize: fontSizePt,        // PDF-points — for ratio comparisons
-            str: item.str || '',
+            vWidth:    widthPt * scaleX,
+            vFont:     fontSizePt * scaleY,
+            fontSize:  fontSizePt,
+            fontName:  item.fontName || '',
+            str:       item.str || '',
+            underlined: false,
         };
     });
+
+    // Natural-unit scale: S = median body font in viewport-px.
+    // All thresholds derive from S — no hardcoded px values below.
+    const scale = new PageScale(textMeta, viewport);
+    if (opts.headingScale !== undefined) scale.HEADING_SCALE = opts.headingScale;
+    const tablePad = opts.tablePad ?? scale.tablePadPx;
 
     // ── 2. Classify H-segments: underline vs. table border ───────────────────
     const eps = 4;
@@ -119,33 +106,34 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = 
         else if (dx <= eps && dy > eps)  vSegs.push(s);
     }
 
-    // KD-tree proximity: for each H-segment, check if there's text just above it
     for (const h of hSegs) {
-        const hY = (h.y1 + h.y2) / 2;
+        const hY    = (h.y1 + h.y2) / 2;
         const hXMin = Math.min(h.x1, h.x2);
         const hXMax = Math.max(h.x1, h.x2);
-        const hLen = hXMax - hXMin;
+        const hLen  = hXMax - hXMin;
 
         for (const tm of textMeta) {
             if (!tm.str.trim()) continue;
             const textBottom = tm.vy;
-            const textXEnd = tm.vx + tm.vWidth;
-            const yDist = hY - textBottom; // positive = line is below text
+            const textXEnd   = tm.vx + tm.vWidth;
+            const yDist      = hY - textBottom;
 
-            // Underline: line is 0–5px below the text baseline, overlapping X span
-            if (yDist >= -1 && yDist <= underlineTol &&
+            // Underline: line sits 0→(35% of cap height) below text baseline,
+            // overlapping the text X span, and no wider than 1.2× the text width.
+            const itemUnderlineTol = opts.underlineTol ?? (tm.vFont * scale.R_UNDERLINE);
+            if (yDist >= -1 && yDist <= itemUnderlineTol &&
                 tm.vx <= hXMax + 2 && textXEnd >= hXMin - 2 &&
-                hLen < tm.vWidth * 2.5) { // underline shouldn't be wildly wider than text
+                hLen < tm.vWidth * 1.2) {
                 underlineSegIds.add(h.id);
-                break; // one match is enough to tag this segment
+                tm.underlined = true;
+                break;
             }
         }
     }
 
-    // Segments that are NOT underlines are available for table detection
     const tableSegs = segments.filter(s => !underlineSegIds.has(s.id));
 
-    // ── 3. Detect table regions (lattice grids) ──────────────────────────────
+    // ── 3. Detect lattice table regions ──────────────────────────────────────
     const reconstructor = new LatticeReconstructor(tableSegs, { eps: 5 });
     const lattices = reconstructor.reconstructAll();
 
@@ -154,9 +142,15 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = 
 
     for (const lattice of lattices) {
         if (!lattice?.bbox) continue;
-        const bbox = lattice.bbox;
 
-        // Collect text items inside this table's bbox
+        // Skip single-column lattices (cols.length == 2 → numCols == 1).
+        // A bordered single-column structure is a formatted list or label column,
+        // not a table. Skipping it keeps items available for stream detection and
+        // paragraph extraction, preventing the lattice from stealing items that
+        // belong to a multi-column borderless table (e.g. sparktoro domain names).
+        if ((lattice.cols?.length ?? 0) <= 2) continue;
+
+        const bbox = lattice.bbox;
         const tableTextIndices = [];
         for (const tm of textMeta) {
             if (!tm.str.trim()) continue;
@@ -166,7 +160,6 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = 
                 assignedTextIndices.add(tm.idx);
             }
         }
-
         regions.push({
             type: RegionType.TABLE,
             bbox,
@@ -176,8 +169,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = 
         });
     }
 
-    // ── 4. Detect image regions ──────────────────────────────────────────────
-    // (Passed in from pdfAnalyzer or detected separately; here we accept them as opts)
+    // ── 4. Detect image regions ───────────────────────────────────────────────
     const imageRegions = opts.imageRegions || [];
     for (const img of imageRegions) {
         regions.push({
@@ -188,31 +180,56 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = 
         });
     }
 
-    // ── 5. Page-level column detection ───────────────────────────────────────
-    // Find large vertical gaps in X-coverage to split into left/right columns.
-    const remainingMeta = textMeta.filter(tm => !assignedTextIndices.has(tm.idx) && tm.str.trim());
-    const columnSplits = _detectPageColumns(remainingMeta, viewport);
+    // ── 5. Stream table detection (borderless tables) ────────────────────────
+    const unclaimedMeta = textMeta.filter(
+        tm => !assignedTextIndices.has(tm.idx) && tm.str.trim(),
+    );
+    const streamTables = detectStreamTables(unclaimedMeta, scale, regions);
+    for (const lattice of streamTables) {
+        if (!lattice?.bbox) continue;
+        const bbox = lattice.bbox;
+        const tableTextIndices = [];
+        for (const tm of unclaimedMeta) {
+            if (assignedTextIndices.has(tm.idx)) continue;
+            if (insideBBox(tm.vx, tm.vy, bbox, tablePad)) {
+                tableTextIndices.push(tm.idx);
+                assignedTextIndices.add(tm.idx);
+            }
+        }
+        regions.push({
+            type: RegionType.TABLE,
+            bbox,
+            yCenter: bbox.y + bbox.h / 2,
+            lattice,
+            textItemIndices: tableTextIndices,
+        });
+    }
 
-    // ── 6. Classify remaining text by column, then by type ───────────────────
+    // ── 6. Page-level column detection ───────────────────────────────────────
+    const remainingMeta = textMeta.filter(
+        tm => !assignedTextIndices.has(tm.idx) && tm.str.trim(),
+    );
+    const columnSplits = _detectPageColumns(remainingMeta, viewport, scale);
     const columnBuckets = _splitByColumns(remainingMeta, columnSplits);
 
+    // ── 7. Classify remaining text by column, then by type ───────────────────
+    const bodyFontSizePt = scale.S / scaleY; // back to PDF points for ratio comparisons
+
     for (const bucket of columnBuckets) {
-        // Group by Y-band (visual lines) — tolerance in viewport pixels
-        const lines = _groupByYBand(bucket, bodyFontVp * 0.45);
+        const lines = _groupByYBand(bucket, scale.yBandTolPx);
 
         let currentBlock = [];
-        let currentType = null;
+        let currentType  = null;
 
         for (let li = 0; li < lines.length; li++) {
-            const line = lines[li];
+            const line    = lines[li];
             const lineStr = line.items.map(tm => tm.str.trim()).join(' ').trim();
             if (!lineStr) continue;
 
             const lineFontSize = line.items.reduce((s, tm) => s + tm.fontSize, 0) / line.items.length;
 
-            // Determine line type
             let lineType;
-            if (lineFontSize > bodyFontSize * headingScale && line.items.length <= 3) {
+            if (lineFontSize > bodyFontSizePt * scale.HEADING_SCALE && line.items.length <= 3) {
                 lineType = RegionType.HEADING;
             } else if (BULLET_RE.test(lineStr) || ORDERED_RE.test(lineStr)) {
                 lineType = RegionType.LIST;
@@ -220,11 +237,10 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = 
                 lineType = RegionType.PARAGRAPH;
             }
 
-            // If type changed or there's a large Y gap, flush current block (gap in viewport px)
-            const hasGap = li > 0 && Math.abs(line.y - lines[li - 1].y) > bodyFontVp * 1.8;
+            const hasGap = li > 0 && Math.abs(line.y - lines[li - 1].y) > scale.paraGapPx;
 
             if (currentType !== null && (lineType !== currentType || hasGap)) {
-                _flushBlock(regions, currentBlock, currentType, bodyFontSize);
+                _flushBlock(regions, currentBlock, currentType);
                 currentBlock = [];
             }
 
@@ -232,27 +248,25 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = 
             currentBlock.push(line);
         }
 
-        // Flush last block
         if (currentBlock.length) {
-            _flushBlock(regions, currentBlock, currentType, bodyFontSize);
+            _flushBlock(regions, currentBlock, currentType);
         }
     }
 
-    // ── 7. Sort all regions top→bottom (by yCenter) ──────────────────────────
+    // ── 8. Sort all regions top→bottom ───────────────────────────────────────
     regions.sort((a, b) => a.yCenter - b.yCenter);
 
-    return regions;
+    return { regions, textMeta };
 }
 
-// ── Internal helpers ─────────────────────────────────────────────────────────
+// ── Internal helpers ──────────────────────────────────────────────────────────
 
-function _flushBlock(regions, lines, type, bodyFontSize) {
+function _flushBlock(regions, lines, type) {
     if (!lines.length) return;
 
     const allIndices = lines.flatMap(l => l.items.map(tm => tm.idx));
-    const allItems = lines.flatMap(l => l.items);
+    const allItems   = lines.flatMap(l => l.items);
 
-    // bbox in viewport space — must use vWidth/vFont, not raw PDF widths/font sizes
     let yMin = Infinity, yMax = -Infinity, xMin = Infinity, xMax = -Infinity;
     for (const tm of allItems) {
         if (tm.vy < yMin) yMin = tm.vy;
@@ -269,7 +283,7 @@ function _flushBlock(regions, lines, type, bodyFontSize) {
         bbox: { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin + avgFontVp },
         yCenter: (yMin + yMax) / 2,
         textItemIndices: allIndices,
-        fontSize: avgFontSize, // PDF-points, kept for downstream heading-tag selection
+        fontSize: avgFontSize,
         listOrdered: type === RegionType.LIST
             ? ORDERED_RE.test(lines[0].items.map(tm => tm.str.trim()).join(' '))
             : undefined,
@@ -278,7 +292,7 @@ function _flushBlock(regions, lines, type, bodyFontSize) {
 
 function _groupByYBand(items, yTol) {
     const sorted = [...items].sort((a, b) => a.vy - b.vy);
-    const lines = [];
+    const lines  = [];
 
     for (const tm of sorted) {
         let band = null;
@@ -294,25 +308,16 @@ function _groupByYBand(items, yTol) {
         }
     }
 
-    // Sort items within each band left-to-right
-    for (const l of lines) {
-        l.items.sort((a, b) => a.vx - b.vx);
-    }
-
-    // Sort bands top-to-bottom
+    for (const l of lines) l.items.sort((a, b) => a.vx - b.vx);
     lines.sort((a, b) => a.y - b.y);
     return lines;
 }
 
-/**
- * Detect page-level column boundaries from text item X-positions.
- * Returns an array of X split points (in viewport space).
- */
-function _detectPageColumns(textMeta, viewport) {
+function _detectPageColumns(textMeta, viewport, scale) {
     if (!textMeta.length || !viewport?.width) return [];
 
-    const vpWidth = viewport.width;
-    const w = Math.ceil(vpWidth);
+    const vpWidth  = viewport.width;
+    const w        = Math.ceil(vpWidth);
     const coverage = new Float32Array(w);
 
     for (const tm of textMeta) {
@@ -321,8 +326,7 @@ function _detectPageColumns(textMeta, viewport) {
         for (let x = x1; x <= x2; x++) coverage[x]++;
     }
 
-    // Find zero-coverage gaps of minimum width (20px in viewport space)
-    const minGap = 20;
+    const minGap   = Math.max(20, scale.colGapMinPx);
     const candidates = [];
     let gStart = null;
 
@@ -335,21 +339,16 @@ function _detectPageColumns(textMeta, viewport) {
         }
     }
 
-    // Only keep splits that bisect a meaningful region (not page margins)
-    // The split must be between 15% and 85% of the page width
     return candidates.filter(sx =>
-        sx > vpWidth * 0.15 && sx < vpWidth * 0.85,
+        sx > vpWidth * scale.MARGIN_FLOOR && sx < vpWidth * (1 - scale.MARGIN_FLOOR),
     );
 }
 
-/**
- * Split text items into column buckets based on X split points.
- */
 function _splitByColumns(textMeta, splits) {
     if (!splits.length) return [textMeta];
 
     const boundaries = [-Infinity, ...splits, Infinity];
-    const buckets = boundaries.slice(0, -1).map(() => []);
+    const buckets    = boundaries.slice(0, -1).map(() => []);
 
     for (const tm of textMeta) {
         for (let ci = 0; ci < buckets.length; ci++) {
@@ -360,6 +359,5 @@ function _splitByColumns(textMeta, splits) {
         }
     }
 
-    // Process columns left-to-right (each column is independent)
     return buckets.filter(b => b.length > 0);
 }

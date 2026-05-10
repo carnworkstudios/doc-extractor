@@ -20,7 +20,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { extractPaths } from '../extraction/vector/ctmAdapter.js';
 import { classifyPage } from '../extraction/vector/contextClassifier.js';
-import { assemblePage } from '../extraction/vector/pageAssembler.js';
+import { assemblePage, createFontRegistry, generateDocumentStyles } from '../extraction/vector/pageAssembler.js';
 
 // pdfjs-dist v4 — point to the ESM worker bundle.
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -35,6 +35,7 @@ self.onmessage = async (e) => {
         const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
         const numPages = pdf.numPages;
         let totalTables = 0;
+        const fontRegistry = createFontRegistry();
 
         for (let p = 1; p <= numPages; p++) {
             self.postMessage({ type: 'progress', page: p, total: numPages, status: 'Extracting…' });
@@ -52,7 +53,7 @@ self.onmessage = async (e) => {
             const segments = extractPaths(opList, viewport, OPS);
 
             // ── Phase 2: Region classification ───────────────────────────────
-            const regions = classifyPage(
+            const { regions, textMeta } = classifyPage(
                 segments,
                 textContent.items,
                 viewport,
@@ -62,10 +63,12 @@ self.onmessage = async (e) => {
             // ── Phase 3+4: Scoped extraction + assembly ─────────────────────
             const result = assemblePage(
                 regions,
+                textMeta,
                 textContent.items,
                 viewport,
                 pageWidthPt,
                 p,
+                fontRegistry,
             );
 
             totalTables += result.tableCount;
@@ -83,7 +86,12 @@ self.onmessage = async (e) => {
             page.cleanup();
         }
 
-        self.postMessage({ type: 'complete', pageCount: numPages, tableCount: totalTables });
+        self.postMessage({
+            type: 'complete',
+            pageCount: numPages,
+            tableCount: totalTables,
+            styles: generateDocumentStyles(fontRegistry),
+        });
     } catch (err) {
         self.postMessage({ type: 'error', error: err.message || String(err) });
     }

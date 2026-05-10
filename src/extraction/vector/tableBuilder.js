@@ -71,12 +71,18 @@ function toViewportPoint(vpTransform, pdfX, pdfY) {
  * @param {number} [eps=6]  — boundary-presence tolerance in px (increased for jitter)
  * @returns {string}  — HTML string; empty string if lattice is degenerate
  */
-export function buildTable(lattice, textItems, viewport, assignedItems = new Set(), eps = 6) {
+export function buildTable(lattice, textItems, viewport, assignedItems = new Set()) {
     const { rows, cols, hLines, vLines } = lattice;
     const numRows = rows.length - 1;
     const numCols = cols.length - 1;
 
     if (numRows < 1 || numCols < 1) return '';
+
+    // Use the same cluster tolerance that built the rows/cols arrays.
+    // The old hardcoded 6px was half of clusterEps (12px), so valid interior
+    // hLines/vLines up to 12px from a clustered row/col value were silently missed,
+    // causing rowspan and colspan to expand to the full grid size.
+    const eps = lattice.clusterEps ?? 12;
 
     const vpTransform = viewport.transform;
 
@@ -126,6 +132,15 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
         }
     }
 
+    // Degenerate table safety net.
+    // If every text item landed in cells[0][0] and nowhere else, this lattice is
+    // a phantom (outer-frame border or TOC decoration) that slipped through the
+    // density check. Returning '' lets the content fall through to paragraph extraction.
+    const hasSpread = cells.some((row, ri) =>
+        row.some((cell, ci) => (ri > 0 || ci > 0) && cell.length > 0),
+    );
+    if (!hasSpread && numRows > 2 && numCols > 2 && cells[0][0].length > 0) return '';
+
     // Sort items within each cell by X position (left-to-right reading order)
     for (let r = 0; r < numRows; r++) {
         for (let c = 0; c < numCols; c++) {
@@ -137,6 +152,13 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
     // visited[r][c] = true once that slot is consumed by a spanning cell origin
     const visited = Array.from({ length: numRows }, () => new Uint8Array(numCols));
 
+    // Borderless (stream-detected) tables carry no physical line data.
+    // Without hLines or vLines, every colspan/rowspan expansion loop runs to
+    // the grid edge, collapsing all 87+ items into a single <th colspan=N rowspan=M>.
+    // Borderless cells are always standalone — spanning is inferred from geometry,
+    // not from lines that don't exist.
+    const isBorderless = hLines.length === 0 && vLines.length === 0;
+
     let html = '<table class="tablecoil">\n<tbody>\n';
 
     for (let r = 0; r < numRows; r++) {
@@ -146,21 +168,21 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
             if (visited[r][c]) continue;
 
             // ── Determine colspan ────────────────────────────────────────────
-            // Extend right while the vertical line separating col c+span from c+span+1
-            // at Y band [rows[r], rows[r+1]] is absent.
             let colspan = 1;
-            while (c + colspan < numCols) {
-                if (vLinePresent(vLines, cols[c + colspan], rows[r], rows[r + 1], eps)) break;
-                colspan++;
+            if (!isBorderless) {
+                while (c + colspan < numCols) {
+                    if (vLinePresent(vLines, cols[c + colspan], rows[r], rows[r + 1], eps)) break;
+                    colspan++;
+                }
             }
 
             // ── Determine rowspan ────────────────────────────────────────────
-            // Extend down while the horizontal line at rows[r+rowspan]
-            // covering [cols[c], cols[c+colspan]] is absent.
             let rowspan = 1;
-            while (r + rowspan < numRows) {
-                if (hLinePresent(hLines, rows[r + rowspan], cols[c], cols[c + colspan], eps)) break;
-                rowspan++;
+            if (!isBorderless) {
+                while (r + rowspan < numRows) {
+                    if (hLinePresent(hLines, rows[r + rowspan], cols[c], cols[c + colspan], eps)) break;
+                    rowspan++;
+                }
             }
 
             // ── Accumulate content from all spanned sub-cells ────────────────

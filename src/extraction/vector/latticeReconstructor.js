@@ -145,11 +145,22 @@ export class LatticeReconstructor {
 
         if (filteredRows.length < 2 || filteredCols.length < 2) return null;
 
+        // Intersection density check.
+        // For a real table most grid points have intersections (density 0.6–1.0).
+        // Outer-frame ghost grids (page borders, TOC decoration) only have intersections
+        // at the outer edges: density ≈ 2*(R+C)/(R*C) — for a 39×11 grid that's ~0.22.
+        // Reject anything below 0.25 as a phantom lattice.
+        const gridPoints = filteredRows.length * filteredCols.length;
+        if (intersections.length / gridPoints < 0.25) return null;
+
         return {
             rows: filteredRows,
             cols: filteredCols,
             hLines: hMerged,
             vLines: vMerged,
+            // Pass the cluster tolerance downstream so tableBuilder uses the same
+            // tolerance for hLinePresent/vLinePresent that was used to build rows/cols.
+            clusterEps,
             bbox: {
                 x: filteredCols[0],
                 y: filteredRows[0],
