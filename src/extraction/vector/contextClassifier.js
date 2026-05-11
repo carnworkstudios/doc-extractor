@@ -262,7 +262,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = 
     // ── 8. Sort all regions top→bottom ───────────────────────────────────────
     regions.sort((a, b) => a.yCenter - b.yCenter);
 
-    return { regions, textMeta };
+    return { regions, textMeta, columnSplits };
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────

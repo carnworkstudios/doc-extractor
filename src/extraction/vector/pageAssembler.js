@@ -203,26 +203,113 @@ const ALIGN_CLASS = { left: 'ta-l', center: 'ta-c', right: 'ta-r', justify: 'ta-
  * @param {number}             pageWidthPt  — page width in PDF points
  * @param {number}             pageNum      — 1-based page number
  * @param {Map}                fontRegistry — shared registry; mutated in place
+ * @param {number[]}           columnSplits — array of X coordinates for column gutters
  * @returns {{ html: string, text: string, tableCount: number }}
  */
-export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt, pageNum, fontRegistry) {
+export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt, pageNum, fontRegistry, columnSplits = []) {
     const parts      = [];
     const textParts  = [];
     let tableCount   = 0;
 
-    for (const region of regions) {
-        switch (region.type) {
+    // 1. Group regions into horizontal Y-zones
+    const zones = [];
+    let currentZone = [];
+    let currentIsFullWidth = null;
 
-            case RegionType.TABLE: {
-                if (!region.lattice) break;
-                const scopedItems = region.textItemIndices.map(i => textItems[i]);
-                const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set(), region.proximityPx);
-                if (tableHtml) {
-                    parts.push(tableHtml);
-                    tableCount++;
-                }
-                break;
+    for (const region of regions) {
+        const isFullWidth = region.columnIndex === -1;
+        if (currentIsFullWidth === null) {
+            currentIsFullWidth = isFullWidth;
+        } else if (currentIsFullWidth !== isFullWidth) {
+            zones.push({ isFullWidth: currentIsFullWidth, regions: currentZone });
+            currentZone = [];
+            currentIsFullWidth = isFullWidth;
+        }
+        currentZone.push(region);
+    }
+    if (currentZone.length > 0) {
+        zones.push({ isFullWidth: currentIsFullWidth, regions: currentZone });
+    }
+
+    // 2. Render each zone
+    for (const zone of zones) {
+        if (zone.isFullWidth) {
+            // Render sequentially
+            for (const region of zone.regions) {
+                const { html, text, tables } = _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry);
+                if (html) parts.push(html);
+                if (text) textParts.push(text);
+                tableCount += tables;
             }
+        } else {
+            // Render as CSS Grid multi-column layout
+            const cols = [];
+            for (const region of zone.regions) {
+                const ci = region.columnIndex;
+                if (!cols[ci]) cols[ci] = [];
+                cols[ci].push(region);
+            }
+
+            const numCols = columnSplits.length + 1;
+            const frValues = [];
+            const vpWidth = viewport.width || 1;
+            
+            for (let i = 0; i < numCols; i++) {
+                const left = i === 0 ? 0 : columnSplits[i - 1];
+                const right = i === columnSplits.length ? vpWidth : columnSplits[i];
+                const width = right - left;
+                const pct = ((width / vpWidth) * 100).toFixed(1);
+                frValues.push(`${pct}%`);
+            }
+
+            const gridTemplate = frValues.join(' ');
+            parts.push(`<div class="pdf-row" style="display: grid; grid-template-columns: ${gridTemplate}; gap: 20px;">`);
+            
+            for (let i = 0; i < numCols; i++) {
+                parts.push(`<div class="pdf-col" data-col="${i}">`);
+                const colRegions = cols[i] || [];
+                // Sort column regions strictly by Y to preserve reading order
+                colRegions.sort((a, b) => a.yCenter - b.yCenter);
+                
+                for (const region of colRegions) {
+                    const { html, text, tables } = _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry);
+                    if (html) parts.push(html);
+                    if (text) textParts.push(text);
+                    tableCount += tables;
+                }
+                
+                parts.push(`</div>`);
+            }
+            parts.push(`</div>`);
+        }
+    }
+
+    const hasContent = parts.length > 0;
+    const html = hasContent
+        ? `<section class="pdf-page-content" data-page="${pageNum}">\n` +
+          `<h4 class="page-label">Page ${pageNum}</h4>\n` +
+          parts.join('\n') + '\n</section>'
+        : '';
+
+    return { html, text: textParts.join('\n\n'), tableCount };
+}
+
+function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry) {
+    let html = '';
+    let text = '';
+    let tables = 0;
+
+    switch(region.type) {
+        case RegionType.TABLE: {
+            if (!region.lattice) break;
+            const scopedItems = region.textItemIndices.map(i => textItems[i]);
+            const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set(), region.proximityPx);
+            if (tableHtml) {
+                html = tableHtml;
+                tables = 1;
+            }
+            break;
+        }
 
             case RegionType.HEADING: {
                 const scopedItems = region.textItemIndices.map(i => textItems[i]);
@@ -239,8 +326,8 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
                 const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox)] || 'ta-l';
                 const tag        = (region.fontSize || 14) > 18 ? 'h3' : 'h4';
 
-                parts.push(`<${tag} class="${fontClass} ${alignClass}">${esc(headingText)}</${tag}>`);
-                textParts.push(headingText);
+                html = `<${tag} class="${fontClass} ${alignClass}">${esc(headingText)}</${tag}>`;
+                text = headingText;
                 break;
             }
 
@@ -255,8 +342,8 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
                 // Inject class onto the list tag
                 const listHtml = rawList.replace(/^<(ul|ol)>/, `<$1 class="${fontClass}">`);
 
-                parts.push(listHtml);
-                textParts.push(scopedItems.map(i => i.str?.trim()).filter(Boolean).join('\n'));
+                html = listHtml;
+                text = scopedItems.map(i => i.str?.trim()).filter(Boolean).join('\n');
                 break;
             }
 
@@ -273,35 +360,25 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
                 // Wrap in a <div> that carries the font + alignment classes.
                 // CSS inheritance propagates font-family, font-size, text-align
                 // down to the <p> children without touching each <p>'s attributes.
-                parts.push(`<div class="${fontClass} ${alignClass}">${paraHtml}</div>`);
+                html = `<div class="${fontClass} ${alignClass}">${paraHtml}</div>`;
 
-                const plainText = rebuildText(scopedItems, pageWidthPt, { format: 'text' });
-                textParts.push(plainText);
+                text = rebuildText(scopedItems, pageWidthPt, { format: 'text' });
                 break;
             }
 
             case RegionType.IMAGE: {
                 const { w, h } = region.bbox;
-                parts.push(
+                html = 
                     `<figure class="pdf-image-region" ` +
                     `style="width:${Math.round(w)}px;height:${Math.round(h)}px" ` +
                     `data-original-width="${Math.round(w)}" data-original-height="${Math.round(h)}">` +
                     `<figcaption>Image region (${Math.round(w)}×${Math.round(h)}px)</figcaption>` +
-                    `</figure>`,
-                );
+                    `</figure>`;
                 break;
             }
         }
-    }
 
-    const hasContent = parts.length > 0;
-    const html = hasContent
-        ? `<section class="pdf-page-content" data-page="${pageNum}">\n` +
-          `<h4 class="page-label">Page ${pageNum}</h4>\n` +
-          parts.join('\n') + '\n</section>'
-        : '';
-
-    return { html, text: textParts.join('\n\n'), tableCount };
+    return { html, text, tables };
 }
 
 // ── List builder ──────────────────────────────────────────────────────────────

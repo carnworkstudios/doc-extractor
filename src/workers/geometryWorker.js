@@ -53,7 +53,7 @@ self.onmessage = async (e) => {
             const segments = extractPaths(opList, viewport, OPS);
 
             // ── Phase 2: Region classification ───────────────────────────────
-            const { regions, textMeta } = classifyPage(
+            const { regions, textMeta, columnSplits } = classifyPage(
                 segments,
                 textContent.items,
                 viewport,
@@ -69,6 +69,7 @@ self.onmessage = async (e) => {
                 pageWidthPt,
                 p,
                 fontRegistry,
+                columnSplits,
             );
 
             totalTables += result.tableCount;
