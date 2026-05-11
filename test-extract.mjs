@@ -5,6 +5,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import os from 'os';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 import { extractPaths }                                          from './src/extraction/vector/ctmAdapter.js';
@@ -17,7 +18,7 @@ const __dir = path.dirname(fileURLToPath(import.meta.url));
 pdfjsLib.GlobalWorkerOptions.workerSrc =
     path.join(__dir, 'node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs');
 
-const DL     = '../Downloads/';
+const DL     = path.join(os.homedir(), 'Downloads/');
 const OUTDIR = path.join(__dir, 'test-out');
 mkdirSync(OUTDIR, { recursive: true });
 
@@ -84,8 +85,8 @@ async function processPDF(filePath, slug, label) {
             page.getTextContent(),
         ]);
 
-        const segments  = extractPaths(opList, viewport, OPS);
-        const { regions, textMeta } = classifyPage(segments, textContent.items, viewport, pageWidthPt);
+        const { segments, imageMeta }  = extractPaths(opList, viewport, OPS);
+        const { regions, textMeta, columnSplits } = classifyPage(segments, textContent.items, viewport, pageWidthPt, imageMeta);
 
         const hSegs    = segments.filter(s => Math.abs(s.y2-s.y1) <= 4 && Math.abs(s.x2-s.x1) > 4);
         const vSegs    = segments.filter(s => Math.abs(s.x2-s.x1) <= 4 && Math.abs(s.y2-s.y1) > 4);
@@ -287,7 +288,8 @@ async function processPDF(filePath, slug, label) {
         }
 
         // ── Assemble HTML ─────────────────────────────────────────────────────
-        const result = assemblePage(regions, textMeta, textContent.items, viewport, pageWidthPt, p, fontRegistry);
+        const extractedImages = {}; // No OffscreenCanvas in Node.js, emit empty bitmaps
+        const result = assemblePage(regions, textMeta, textContent.items, viewport, pageWidthPt, p, fontRegistry, columnSplits, extractedImages);
         if (result.html) htmlParts.push(result.html);
 
         page.cleanup();

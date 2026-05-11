@@ -61,6 +61,7 @@ export function extractPaths(opList, viewport, OPS) {
     const THIN_RECT_THRESHOLD = 3;
 
     const segments = [];
+    const imageMeta = [];
 
     const addSeg = (ax, ay, bx, by, sw) => {
         const dx = Math.abs(bx - ax);
@@ -189,11 +190,27 @@ export function extractPaths(opList, viewport, OPS) {
                 pendingX = subpathStartX;
                 pendingY = subpathStartY;
                 break;
+            case OPS.paintImageXObject:
+            case OPS.paintImageMaskXObject:
+            case OPS.paintJpegXObject: {
+                const imgId = args[0];
+                const [x1, y1] = toViewport(0, 0);
+                const [x2, y2] = toViewport(1, 1);
+                
+                const left = Math.min(x1, x2), right = Math.max(x1, x2);
+                const top = Math.min(y1, y2), bottom = Math.max(y1, y2);
+                
+                imageMeta.push({
+                    id: imgId,
+                    bbox: { x: left, y: top, w: right - left, h: bottom - top }
+                });
+                break;
+            }
             // Strokes/fills don't affect segment extraction — we capture on moveTo/lineTo
             default:
                 break;
         }
     }
 
-    return segments;
+    return { segments, imageMeta };
 }

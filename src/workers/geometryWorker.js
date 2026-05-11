@@ -50,7 +50,49 @@ self.onmessage = async (e) => {
             ]);
 
             // ── Phase 1: Page inventory (ctmAdapter) ─────────────────────────
-            const segments = extractPaths(opList, viewport, OPS);
+            const { segments, imageMeta } = extractPaths(opList, viewport, OPS);
+
+            // ── Phase 1.5: Image Bitmap Extraction ───────────────────────────
+            // PDF.js only pushes pixel data into page.objs when the page is
+            // rendered — there is no other trigger. We render to a throwaway
+            // OffscreenCanvas solely to populate page.objs, then read each
+            // image XObject directly from page.objs at native resolution.
+            // This gives clean, isolated pixels with no content bleed and
+            // preserves the native image dimensions regardless of viewport scale.
+            const extractedImages = {};
+            if (imageMeta.length > 0 && typeof OffscreenCanvas !== 'undefined') {
+                try {
+                    const pageCanvas = new OffscreenCanvas(Math.round(viewport.width), Math.round(viewport.height));
+                    await page.render({ canvasContext: pageCanvas.getContext('2d'), viewport }).promise;
+
+                    for (const meta of imageMeta) {
+                        try {
+                            const obj = page.objs.get(meta.id); // safe now — render populated objs
+                            if (!obj || !obj.data || !obj.width || !obj.height) continue;
+
+                            const { width: w, height: h, data } = obj;
+                            const rgba = new Uint8ClampedArray(w * h * 4);
+                            if (data.length === w * h * 4) {
+                                rgba.set(data);
+                            } else if (data.length === w * h * 3) {
+                                for (let i = 0, j = 0; i < data.length; i += 3, j += 4) {
+                                    rgba[j] = data[i]; rgba[j+1] = data[i+1]; rgba[j+2] = data[i+2]; rgba[j+3] = 255;
+                                }
+                            } else if (data.length === w * h) {
+                                for (let i = 0, j = 0; i < data.length; i++, j += 4) {
+                                    rgba[j] = rgba[j+1] = rgba[j+2] = data[i]; rgba[j+3] = 255;
+                                }
+                            } else continue;
+
+                            const imgCanvas = new OffscreenCanvas(w, h);
+                            imgCanvas.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0);
+                            extractedImages[meta.id] = await imgCanvas.convertToBlob({ type: 'image/png' });
+                        } catch (_) {}
+                    }
+                } catch (e) {
+                    console.warn('[geometryWorker] image extraction failed:', e.message);
+                }
+            }
 
             // ── Phase 2: Region classification ───────────────────────────────
             const { regions, textMeta, columnSplits } = classifyPage(
@@ -58,6 +100,7 @@ self.onmessage = async (e) => {
                 textContent.items,
                 viewport,
                 pageWidthPt,
+                imageMeta
             );
 
             // ── Phase 3+4: Scoped extraction + assembly ─────────────────────
@@ -70,6 +113,7 @@ self.onmessage = async (e) => {
                 p,
                 fontRegistry,
                 columnSplits,
+                extractedImages
             );
 
             totalTables += result.tableCount;
@@ -81,6 +125,7 @@ self.onmessage = async (e) => {
                 html: result.html,
                 text: result.text.trim(),
                 tables: result.tableCount,
+                images: extractedImages,
             });
 
             // Release page resources

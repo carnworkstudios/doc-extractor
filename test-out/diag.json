@@ -1,0 +1,955 @@
+[
+  {
+    "pdf": "59MN7C",
+    "page": 1,
+    "segs": {
+      "total": 4140,
+      "h": 95,
+      "v": 146,
+      "diag": 17
+    },
+    "textItems": 99,
+    "regions": [
+      {
+        "type": "HEADING",
+        "items": 1
+      },
+      {
+        "type": "HEADING",
+        "items": 1
+      },
+      {
+        "type": "HEADING",
+        "items": 1
+      },
+      {
+        "type": "HEADING",
+        "items": 1
+      },
+      {
+        "type": "HEADING",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 5
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 64
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 6
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 5
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      }
+    ]
+  },
+  {
+    "pdf": "59MN7C",
+    "page": 2,
+    "segs": {
+      "total": 1,
+      "h": 1,
+      "v": 0,
+      "diag": 0
+    },
+    "textItems": 74,
+    "regions": [
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "HEADING",
+        "items": 1
+      },
+      {
+        "type": "HEADING",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 4
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "LIST",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 4
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      }
+    ]
+  },
+  {
+    "pdf": "59MN7C",
+    "page": 3,
+    "segs": {
+      "total": 391,
+      "h": 96,
+      "v": 149,
+      "diag": 12
+    },
+    "textItems": 195,
+    "regions": [
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 4
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 5
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 4
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 36
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 28
+      },
+      {
+        "type": "TABLE",
+        "items": 9,
+        "rows": 3,
+        "cols": 4,
+        "method": "lattice",
+        "border": true,
+        "conf": "—"
+      },
+      {
+        "type": "HEADING",
+        "items": 1
+      },
+      {
+        "type": "HEADING",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 20
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      }
+    ]
+  },
+  {
+    "pdf": "59MN7C",
+    "page": 4,
+    "segs": {
+      "total": 309,
+      "h": 126,
+      "v": 97,
+      "diag": 42
+    },
+    "textItems": 243,
+    "regions": [
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 3
+      },
+      {
+        "type": "HEADING",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 30
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 9
+      },
+      {
+        "type": "TABLE",
+        "items": 41,
+        "rows": 5,
+        "cols": 18,
+        "method": "lattice",
+        "border": true,
+        "conf": "—"
+      },
+      {
+        "type": "TABLE",
+        "items": 46,
+        "rows": 9,
+        "cols": 11,
+        "method": "lattice",
+        "border": true,
+        "conf": "—"
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 3
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 11
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 7
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 5
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      }
+    ]
+  },
+  {
+    "pdf": "59MN7C",
+    "page": 5,
+    "segs": {
+      "total": 2736,
+      "h": 191,
+      "v": 446,
+      "diag": 74
+    },
+    "textItems": 260,
+    "regions": [
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "HEADING",
+        "items": 3
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "LIST",
+        "items": 3
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "LIST",
+        "items": 3
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 4
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 5
+      },
+      {
+        "type": "HEADING",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 4
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 9
+      },
+      {
+        "type": "LIST",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 6
+      },
+      {
+        "type": "LIST",
+        "items": 1
+      },
+      {
+        "type": "TABLE",
+        "items": 54,
+        "rows": 6,
+        "cols": 7,
+        "method": "lattice",
+        "border": true,
+        "conf": "—"
+      },
+      {
+        "type": "TABLE",
+        "items": 20,
+        "rows": 9,
+        "cols": 9,
+        "method": "lattice",
+        "border": true,
+        "conf": "—"
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "LIST",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 12
+      },
+      {
+        "type": "LIST",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 4
+      },
+      {
+        "type": "LIST",
+        "items": 3
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 6
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 3
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      }
+    ]
+  },
+  {
+    "pdf": "59MN7C",
+    "page": 6,
+    "segs": {
+      "total": 1438,
+      "h": 241,
+      "v": 300,
+      "diag": 95
+    },
+    "textItems": 204,
+    "regions": [
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 3
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 14
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 4
+      },
+      {
+        "type": "TABLE",
+        "items": 65,
+        "rows": 23,
+        "cols": 15,
+        "method": "lattice",
+        "border": true,
+        "conf": "—"
+      },
+      {
+        "type": "HEADING",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 15
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 4
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 3
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "LIST",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      }
+    ]
+  },
+  {
+    "pdf": "sparktoro",
+    "page": 1,
+    "segs": {
+      "total": 305,
+      "h": 101,
+      "v": 102,
+      "diag": 64
+    },
+    "textItems": 21,
+    "regions": [
+      {
+        "type": "HEADING",
+        "items": 1
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 2
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "TABLE",
+        "items": 4,
+        "rows": 4,
+        "cols": 3,
+        "method": "lattice",
+        "border": true,
+        "conf": "—"
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      }
+    ]
+  },
+  {
+    "pdf": "sparktoro",
+    "page": 2,
+    "segs": {
+      "total": 370,
+      "h": 150,
+      "v": 120,
+      "diag": 52
+    },
+    "textItems": 130,
+    "regions": [
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "TABLE",
+        "items": 66,
+        "rows": 13,
+        "cols": 8,
+        "method": "stream",
+        "border": false,
+        "conf": "0.79"
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "IMAGE",
+        "items": 0
+      },
+      {
+        "type": "HEADING",
+        "items": 1
+      },
+      {
+        "type": "TABLE",
+        "items": 1,
+        "rows": 4,
+        "cols": 4,
+        "method": "lattice",
+        "border": true,
+        "conf": "—"
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 1
+      },
+      {
+        "type": "PARAGRAPH",
+        "items": 4
+      }
+    ]
+  }
+]

@@ -61,10 +61,11 @@ const ORDERED_RE = /^(?:\d{1,3}[.)]\s|[a-zA-Z][.)]\s|[ivxIVX]+[.)]\s)/;
  * @param {TextItem[]}     textItems   — from page.getTextContent().items
  * @param {object}         viewport    — { width, height, transform }
  * @param {number}         pageWidthPt — page width in PDF points
+ * @param {Array}          imageMeta   — from ctmAdapter
  * @param {object}         [opts]      — classification options
- * @returns {{ regions: PageRegion[], textMeta: TextMetaItem[] }}
+ * @returns {{ regions: PageRegion[], textMeta: TextMetaItem[], columnSplits: number[] }}
  */
-export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = {}) {
+export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMeta = [], opts = {}) {
     const vpT = viewport.transform;
     const scaleX = Math.hypot(vpT[0], vpT[1]) || 1;
     const scaleY = Math.hypot(vpT[2], vpT[3]) || 1;
@@ -131,13 +132,33 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, opts = 
         }
     }
 
-    const tableSegs = segments.filter(s => !underlineSegIds.has(s.id));
+    const imageBBoxes = imageMeta.map(img => img.bbox);
+    const isInsideImage = (x, y) => imageBBoxes.some(b => x >= b.x - 5 && x <= b.x + b.w + 5 && y >= b.y - 5 && y <= b.y + b.h + 5);
+
+    const tableSegs = segments.filter(s => {
+        if (underlineSegIds.has(s.id)) return false;
+        if (isInsideImage(s.x1, s.y1) && isInsideImage(s.x2, s.y2)) return false;
+        return true;
+    });
+    const regions = [];
+
+    // ── 2.5: Inject explicit image regions ───────────────────────────────────
+    for (const img of imageMeta) {
+        regions.push({
+            type: RegionType.IMAGE,
+            id: img.id,
+            bbox: img.bbox,
+            textItemIndices: [],
+            yCenter: img.bbox.y + img.bbox.h / 2,
+            columnIndex: -1 // Will be patched if narrow enough
+        });
+    }
 
     // ── 3. Detect lattice table regions ──────────────────────────────────────
     const reconstructor = new LatticeReconstructor(tableSegs, { eps: 5, scale, textMeta });
     const lattices = reconstructor.reconstructAll();
 
-    const regions = [];
+
     const assignedTextIndices = new Set();
 
     for (const lattice of lattices) {

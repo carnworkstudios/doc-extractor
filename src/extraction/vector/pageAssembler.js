@@ -41,7 +41,7 @@ function _normalizeFontFamily(rawName) {
     // Strip 6-char uppercase subset prefix e.g. "ABCDEF+"
     const name = rawName.replace(/^[A-Z]{6}\+/, '');
 
-    const bold   = /bold|heavy|black/i.test(name);
+    const bold = /bold|heavy|black/i.test(name);
     const italic = /italic|oblique|slanted/i.test(name);
 
     // Strip variant suffixes before family matching
@@ -51,19 +51,19 @@ function _normalizeFontFamily(rawName) {
 
     let family = 'inherit';
 
-    if      (/arial|helvetica|freesans|nimbus.sans/i.test(base))  family = 'Arial, sans-serif';
-    else if (/times|timesnewroman|cambria/i.test(base))           family = '"Times New Roman", serif';
-    else if (/courier|freemono|nimbus.mono/i.test(base))          family = '"Courier New", monospace';
-    else if (/georgia/i.test(base))                               family = 'Georgia, serif';
-    else if (/verdana/i.test(base))                               family = 'Verdana, sans-serif';
-    else if (/tahoma/i.test(base))                                family = 'Tahoma, sans-serif';
-    else if (/calibri|candara/i.test(base))                       family = 'Calibri, sans-serif';
-    else if (/trebuchet/i.test(base))                             family = '"Trebuchet MS", sans-serif';
-    else if (/garamond|ebgaramond/i.test(base))                   family = 'Garamond, serif';
-    else if (/palatino|bookantiqua/i.test(base))                  family = '"Palatino Linotype", serif';
-    else if (/lucida/i.test(base))                                family = '"Lucida Sans", sans-serif';
-    else if (/symbol|wingdings|zapf|dingbat/i.test(base))        family = 'inherit'; // non-text glyphs
-    else if (/^[a-z_][a-z0-9_]{0,6}$/i.test(base))              family = 'inherit'; // short synthetic names
+    if (/arial|helvetica|freesans|nimbus.sans/i.test(base)) family = 'Arial, sans-serif';
+    else if (/times|timesnewroman|cambria/i.test(base)) family = '"Times New Roman", serif';
+    else if (/courier|freemono|nimbus.mono/i.test(base)) family = '"Courier New", monospace';
+    else if (/georgia/i.test(base)) family = 'Georgia, serif';
+    else if (/verdana/i.test(base)) family = 'Verdana, sans-serif';
+    else if (/tahoma/i.test(base)) family = 'Tahoma, sans-serif';
+    else if (/calibri|candara/i.test(base)) family = 'Calibri, sans-serif';
+    else if (/trebuchet/i.test(base)) family = '"Trebuchet MS", sans-serif';
+    else if (/garamond|ebgaramond/i.test(base)) family = 'Garamond, serif';
+    else if (/palatino|bookantiqua/i.test(base)) family = '"Palatino Linotype", serif';
+    else if (/lucida/i.test(base)) family = '"Lucida Sans", sans-serif';
+    else if (/symbol|wingdings|zapf|dingbat/i.test(base)) family = 'inherit'; // non-text glyphs
+    else if (/^[a-z_][a-z0-9_]{0,6}$/i.test(base)) family = 'inherit'; // short synthetic names
 
     return { family, bold, italic };
 }
@@ -83,11 +83,11 @@ export function createFontRegistry() {
 
 function _registerFont(fontRegistry, family, sizePt, bold, italic) {
     const size = Math.round(sizePt) || 10;
-    const key  = `${family}|${size}|${bold ? 'b' : ''}${italic ? 'i' : ''}`;
+    const key = `${family}|${size}|${bold ? 'b' : ''}${italic ? 'i' : ''}`;
     if (!fontRegistry.has(key)) {
         const cls = `f${fontRegistry._counter++}`;
         let css = `font-size: ${size}pt; font-family: ${family};`;
-        if (bold)   css += ' font-weight: bold;';
+        if (bold) css += ' font-weight: bold;';
         if (italic) css += ' font-style: italic;';
         fontRegistry.set(key, { className: cls, cssLine: `.${cls} { ${css} }` });
     }
@@ -150,7 +150,7 @@ function _stdDev(arr) {
 
 function _groupMetaByY(items, yTol) {
     const sorted = [...items].sort((a, b) => a.vy - b.vy);
-    const lines  = [];
+    const lines = [];
     for (const tm of sorted) {
         let placed = false;
         for (const l of lines) {
@@ -174,17 +174,17 @@ function _inferAlignment(items, bbox) {
     const lines = _groupMetaByY(items, medFont * 0.45);
     if (lines.length < 2) return 'left';
 
-    const leftEdges  = lines.map(l => Math.min(...l.map(i => i.vx)));
+    const leftEdges = lines.map(l => Math.min(...l.map(i => i.vx)));
     const rightEdges = lines.map(l => Math.max(...l.map(i => i.vx + (i.vWidth || 0))));
-    const midPoints  = lines.map((l, idx) => (leftEdges[idx] + rightEdges[idx]) / 2);
+    const midPoints = lines.map((l, idx) => (leftEdges[idx] + rightEdges[idx]) / 2);
 
     const bw = bbox.w || 1;
-    const normLeft  = _stdDev(leftEdges)  / bw;
+    const normLeft = _stdDev(leftEdges) / bw;
     const normRight = _stdDev(rightEdges) / bw;
-    const normMid   = _stdDev(midPoints)  / bw;
+    const normMid = _stdDev(midPoints) / bw;
 
     if (normLeft < 0.01 && normRight < 0.03) return 'justify';
-    if (normMid  < 0.02)                     return 'center';
+    if (normMid < 0.02) return 'center';
     if (normRight < 0.01 && normLeft > 0.02) return 'right';
     return 'left';
 }
@@ -206,10 +206,10 @@ const ALIGN_CLASS = { left: 'ta-l', center: 'ta-c', right: 'ta-r', justify: 'ta-
  * @param {number[]}           columnSplits — array of X coordinates for column gutters
  * @returns {{ html: string, text: string, tableCount: number }}
  */
-export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt, pageNum, fontRegistry, columnSplits = []) {
-    const parts      = [];
-    const textParts  = [];
-    let tableCount   = 0;
+export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt, pageNum, fontRegistry, columnSplits = [], extractedImages = {}) {
+    const parts = [];
+    const textParts = [];
+    let tableCount = 0;
 
     // 1. Group regions into horizontal Y-zones
     const zones = [];
@@ -236,7 +236,7 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
         if (zone.isFullWidth) {
             // Render sequentially
             for (const region of zone.regions) {
-                const { html, text, tables } = _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry);
+                const { html, text, tables } = _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages);
                 if (html) parts.push(html);
                 if (text) textParts.push(text);
                 tableCount += tables;
@@ -253,53 +253,54 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
             const numCols = columnSplits.length + 1;
             const frValues = [];
             const vpWidth = viewport.width || 1;
-            
+
             for (let i = 0; i < numCols; i++) {
                 const left = i === 0 ? 0 : columnSplits[i - 1];
                 const right = i === columnSplits.length ? vpWidth : columnSplits[i];
                 const width = right - left;
                 const pct = ((width / vpWidth) * 100).toFixed(1);
-                frValues.push(`${pct}%`);
+                frValues.push(`${pct}fr`);
             }
 
             const gridTemplate = frValues.join(' ');
             parts.push(`<div class="pdf-row" style="display: grid; grid-template-columns: ${gridTemplate}; gap: 20px;">`);
-            
+
             for (let i = 0; i < numCols; i++) {
                 parts.push(`<div class="pdf-col" data-col="${i}">`);
                 const colRegions = cols[i] || [];
                 // Sort column regions strictly by Y to preserve reading order
                 colRegions.sort((a, b) => a.yCenter - b.yCenter);
-                
+
                 for (const region of colRegions) {
-                    const { html, text, tables } = _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry);
+                    const { html, text, tables } = _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages);
                     if (html) parts.push(html);
                     if (text) textParts.push(text);
                     tableCount += tables;
                 }
-                
+
                 parts.push(`</div>`);
             }
             parts.push(`</div>`);
         }
     }
 
+
     const hasContent = parts.length > 0;
     const html = hasContent
         ? `<section class="pdf-page-content" data-page="${pageNum}">\n` +
-          `<h4 class="page-label">Page ${pageNum}</h4>\n` +
-          parts.join('\n') + '\n</section>'
+        `<h4 class="page-label">Page ${pageNum}</h4>\n` +
+        parts.join('\n') + '\n</section>'
         : '';
 
     return { html, text: textParts.join('\n\n'), tableCount };
 }
 
-function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry) {
+function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages = {}) {
     let html = '';
     let text = '';
     let tables = 0;
 
-    switch(region.type) {
+    switch (region.type) {
         case RegionType.TABLE: {
             if (!region.lattice) break;
             const scopedItems = region.textItemIndices.map(i => textItems[i]);
@@ -311,79 +312,78 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             break;
         }
 
-            case RegionType.HEADING: {
-                const scopedItems = region.textItemIndices.map(i => textItems[i]);
-                const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
-                const headingText = scopedItems
-                    .filter(i => i.str?.trim())
-                    .sort((a, b) => a.transform[4] - b.transform[4])
-                    .map(i => i.str.trim())
-                    .join(' ');
-                if (!headingText) break;
-
-                const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
-                const fontClass  = _registerFont(fontRegistry, family, sizePt, bold, italic);
-                const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox)] || 'ta-l';
-                const tag        = (region.fontSize || 14) > 18 ? 'h3' : 'h4';
-
-                html = `<${tag} class="${fontClass} ${alignClass}">${esc(headingText)}</${tag}>`;
-                text = headingText;
-                break;
-            }
-
-            case RegionType.LIST: {
-                const scopedItems = region.textItemIndices.map(i => textItems[i]);
-                const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
-                const rawList     = _buildList(scopedItems, pageWidthPt, region.listOrdered);
-                if (!rawList) break;
-
-                const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
-                const fontClass = _registerFont(fontRegistry, family, sizePt, bold, italic);
-                // Inject class onto the list tag
-                const listHtml = rawList.replace(/^<(ul|ol)>/, `<$1 class="${fontClass}">`);
-
-                html = listHtml;
-                text = scopedItems.map(i => i.str?.trim()).filter(Boolean).join('\n');
-                break;
-            }
-
-            case RegionType.PARAGRAPH: {
-                const scopedItems = region.textItemIndices.map(i => textItems[i]);
-                const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
-                const paraHtml    = rebuildText(scopedItems, pageWidthPt, { format: 'html' });
-                if (!paraHtml.trim()) break;
-
-                const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
-                const fontClass  = _registerFont(fontRegistry, family, sizePt, bold, italic);
-                const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox)] || 'ta-l';
-
-                // Wrap in a <div> that carries the font + alignment classes.
-                // CSS inheritance propagates font-family, font-size, text-align
-                // down to the <p> children without touching each <p>'s attributes.
-                html = `<div class="${fontClass} ${alignClass}">${paraHtml}</div>`;
-
-                text = rebuildText(scopedItems, pageWidthPt, { format: 'text' });
-                break;
-            }
-
-            case RegionType.IMAGE: {
-                const { w, h } = region.bbox;
-                html = 
-                    `<figure class="pdf-image-region" ` +
-                    `style="width:${Math.round(w)}px;height:${Math.round(h)}px" ` +
-                    `data-original-width="${Math.round(w)}" data-original-height="${Math.round(h)}">` +
-                    `<figcaption>Image region (${Math.round(w)}×${Math.round(h)}px)</figcaption>` +
-                    `</figure>`;
-                break;
-            }
+        case RegionType.IMAGE: {
+            html = `<div class="pdf-image-placeholder" style="width: 100%; height: auto; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0; position: relative; overflow: auto">` +
+                `<span style="position: absolute; top: 8px; left: 8px; font-size: 10px; font-family: monospace;">[${region.id}]</span>` +
+                `<img class="extracted-pdf-image" data-img-id="${region.id}" alt="PDF Image ${region.id}" style="max-width: 100%; max-height: 100%; object-fit: contain;">` +
+                `</div>`;
+            break;
         }
+
+        case RegionType.HEADING: {
+            const scopedItems = region.textItemIndices.map(i => textItems[i]);
+            const scopedMeta = region.textItemIndices.map(i => textMeta[i]);
+            const headingText = scopedItems
+                .filter(i => i.str?.trim())
+                .sort((a, b) => a.transform[4] - b.transform[4])
+                .map(i => i.str.trim())
+                .join(' ');
+            if (!headingText) break;
+
+            const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
+            const fontClass = _registerFont(fontRegistry, family, sizePt, bold, italic);
+            const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox)] || 'ta-l';
+            const tag = (region.fontSize || 14) > 18 ? 'h3' : 'h4';
+
+            html = `<${tag} class="${fontClass} ${alignClass}">${esc(headingText)}</${tag}>`;
+            text = headingText;
+            break;
+        }
+
+        case RegionType.LIST: {
+            const scopedItems = region.textItemIndices.map(i => textItems[i]);
+            const scopedMeta = region.textItemIndices.map(i => textMeta[i]);
+            const rawList = _buildList(scopedItems, pageWidthPt, region.listOrdered);
+            if (!rawList) break;
+
+            const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
+            const fontClass = _registerFont(fontRegistry, family, sizePt, bold, italic);
+            // Inject class onto the list tag
+            const listHtml = rawList.replace(/^<(ul|ol)>/, `<$1 class="${fontClass}">`);
+
+            html = listHtml;
+            text = scopedItems.map(i => i.str?.trim()).filter(Boolean).join('\n');
+            break;
+        }
+
+        case RegionType.PARAGRAPH: {
+            const scopedItems = region.textItemIndices.map(i => textItems[i]);
+            const scopedMeta = region.textItemIndices.map(i => textMeta[i]);
+            const paraHtml = rebuildText(scopedItems, pageWidthPt, { format: 'html' });
+            if (!paraHtml.trim()) break;
+
+            const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
+            const fontClass = _registerFont(fontRegistry, family, sizePt, bold, italic);
+            const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox)] || 'ta-l';
+
+            // Wrap in a <div> that carries the font + alignment classes.
+            // CSS inheritance propagates font-family, font-size, text-align
+            // down to the <p> children without touching each <p>'s attributes.
+            html = `<div class="${fontClass} ${alignClass}">${paraHtml}</div>`;
+
+            text = rebuildText(scopedItems, pageWidthPt, { format: 'text' });
+            break;
+        }
+
+
+    }
 
     return { html, text, tables };
 }
 
 // ── List builder ──────────────────────────────────────────────────────────────
 
-const BULLET_STRIP_RE  = /^[•‣◦▪▫–—―·○◦◉▪▫-]\s*/;
+const BULLET_STRIP_RE = /^[•‣◦▪▫–—―·○◦◉▪▫-]\s*/;
 const ORDERED_STRIP_RE = /^(?:\d{1,3}[.)]\s*|[a-zA-Z][.)]\s*|[ivxIVX]+[.)]\s*)/;
 
 function _buildList(textItems, pageWidthPt, isOrdered) {
@@ -391,11 +391,11 @@ function _buildList(textItems, pageWidthPt, isOrdered) {
     if (!valid.length) return '';
 
     const fontSizes = valid.map(i => Math.abs(i.transform?.[3] || 12));
-    const avgFont   = fontSizes.reduce((a, b) => a + b, 0) / fontSizes.length;
-    const yTol      = avgFont * 0.45;
+    const avgFont = fontSizes.reduce((a, b) => a + b, 0) / fontSizes.length;
+    const yTol = avgFont * 0.45;
 
     const sorted = [...valid].sort((a, b) => b.transform[5] - a.transform[5]);
-    const lines  = [];
+    const lines = [];
 
     for (const item of sorted) {
         const y = item.transform[5];
@@ -411,7 +411,7 @@ function _buildList(textItems, pageWidthPt, isOrdered) {
 
     for (const l of lines) l.items.sort((a, b) => a.transform[4] - b.transform[4]);
 
-    const tag     = isOrdered ? 'ol' : 'ul';
+    const tag = isOrdered ? 'ol' : 'ul';
     const stripRe = isOrdered ? ORDERED_STRIP_RE : BULLET_STRIP_RE;
 
     const listItems = lines

@@ -15,6 +15,7 @@ import { applyHtmlEverywhere } from './htmlSync.js';
 import { showToast } from './toast.js';
 import { cwsBroker } from '@os/worker-broker.js';
 import { runAnalysis } from './analyzePanel.js';
+import { clearImages, saveImages, getImageBlob } from '../utils/imageStore.js';
 
 let brokerReady = false;
 
@@ -43,13 +44,14 @@ function extractViaGeometryWorker(bytes, onProgress) {
         // to avoid structured clone stack overflow on large PDFs
         const htmlParts = [];
         const textParts = [];
+        const allImages = {};
         let totalTables = 0;
 
         const timeout = setTimeout(() => {
             reject(new Error('Local extraction timed out (>5min).'));
         }, 300_000);
 
-        worker.onmessage = (e) => {
+        worker.onmessage = async (e) => {
             const msg = e.data;
             if (msg.type === 'progress' && onProgress) {
                 onProgress(`Extracting page ${msg.page}/${msg.total}…`);
@@ -57,9 +59,17 @@ function extractViaGeometryWorker(bytes, onProgress) {
                 // Per-page streaming result
                 if (msg.html) htmlParts.push(msg.html);
                 if (msg.text) textParts.push(msg.text);
+                if (msg.images) Object.assign(allImages, msg.images);
                 totalTables += msg.tables || 0;
             } else if (msg.type === 'complete') {
                 clearTimeout(timeout);
+                if (onProgress) onProgress('Caching images to IndexedDB…');
+                try {
+                    await clearImages();
+                    await saveImages(allImages);
+                } catch (err) {
+                    console.error('Failed to cache images:', err);
+                }
                 const styleBlock = msg.styles ? `<style>\n${msg.styles}\n</style>\n` : '';
                 const html = htmlParts.length > 0
                     ? styleBlock + htmlParts.join('\n')
@@ -158,6 +168,11 @@ async function handleFile(file, pdfIndex) {
             // Push the freshly-extracted HTML to ALL surfaces in one shot:
             // state, both contenteditable previews, and the Monaco model.
             applyHtmlEverywhere(pdfState.extractedHTML, null);
+            // Hydrate <img data-img-id> placeholders from IndexedDB into both preview surfaces
+            ['html-preview', 'visual-diff-html'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) hydrateImages(el);
+            });
             markDiffDirty();
             if (state.pdf2.bytes) refreshCodeDiff();
         } else {
@@ -191,24 +206,80 @@ export function populateHTMLPreview(html, containerId = 'html-preview') {
     // VisualGridMapper is invoked here via initTableFeatures → initCrosshair,
     // enabling crosshair highlight and column features on merged-cell tables.
     initTableFeatures(el);
+    hydrateImages(el);
+}
+
+const objectUrlCache = {};
+
+async function hydrateImages(containerEl) {
+    const images = containerEl.querySelectorAll('img[data-img-id]');
+    for (const img of images) {
+        const id = img.getAttribute('data-img-id');
+        
+        if (objectUrlCache[id]) {
+            img.src = objectUrlCache[id];
+            continue;
+        }
+
+        try {
+            const blob = await getImageBlob(id);
+            if (blob) {
+                const url = URL.createObjectURL(blob);
+                objectUrlCache[id] = url;
+                img.src = url;
+            }
+        } catch (e) {
+            console.warn(`Failed to hydrate image ${id}`, e);
+        }
+    }
 }
 
 function refreshCodeDiff() {
     import('../ui/diffViewController.js').then(m => m.refreshCompareDiff());
 }
 
-export function downloadExtractedHTML() {
-    const html = state.pdf1.extractedHTML;
+export async function downloadExtractedHTML() {
+    let html = state.pdf1.extractedHTML;
     if (!html) { showToast('No extracted HTML yet; load a PDF first', 'error'); return; }
+
+    showToast('Preparing standalone HTML with embedded images...', 'info');
+
+    // Inject images using Base64 for a standalone HTML file
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const images = doc.querySelectorAll('img[data-img-id]');
+    
+    for (const img of images) {
+        const id = img.getAttribute('data-img-id');
+        try {
+            const blob = await getImageBlob(id);
+            if (blob) {
+                const dataUrl = await new Promise((res) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => res(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+                img.src = dataUrl;
+                img.removeAttribute('data-img-id');
+            }
+        } catch (err) {
+            console.error(`Failed to inline image ${id} for export`, err);
+        }
+    }
+
+    // Restore body innerHTML as the document string
+    html = doc.body.innerHTML;
+
+    const title = state.pdf1.file?.name || 'Extracted PDF';
     const blob = new Blob(
-        [`<!doctype html><html><head><meta charset="utf-8"/></head><body>\n${html}\n</body></html>`],
+        [`<!doctype html><html><head><meta charset="utf-8"/><title>${title}</title><style>body{font-family:sans-serif;max-width:1000px;margin:0 auto;padding:2rem;}img{max-width:100%;}</style></head><body>\n${html}\n</body></html>`],
         { type: 'text/html' },
     );
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = (state.pdf1.file?.name?.replace(/\.pdf$/i, '') || 'extracted') + '.html';
+    a.download = (title.replace(/\.pdf$/i, '') || 'extracted') + '.html';
     a.click();
     URL.revokeObjectURL(a.href);
+    showToast('Download complete', 'success');
 }
 
 export function exportExtractedPDF() {

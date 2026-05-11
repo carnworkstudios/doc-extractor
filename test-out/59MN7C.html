@@ -1,0 +1,777 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Multi-column engineering spec</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-size: 14px; line-height: 1.5; padding: 24px; max-width: 960px; margin: 0 auto; }
+.pdf-page-content { border: 1px solid #ddd; padding: 16px; margin-bottom: 24px; border-radius: 4px; }
+.page-label { font-size: 11px; color: #888; margin-bottom: 10px; }
+.tablecoil { border-collapse: collapse; width: 100%; margin: 8px 0; }
+.tablecoil th, .tablecoil td { border: 1px solid #bbb; padding: 4px 8px; font-size: 12px; vertical-align: top; }
+.tablecoil th { background: #f4f4f4; font-weight: bold; }
+h3, h4 { margin: 10px 0 4px; }
+div + p, p + p { margin-top: 4px; }
+ul, ol { margin: 4px 0 4px 20px; }
+figure.pdf-image-region { background: #f8f8f8; display:flex; align-items:center; justify-content:center;
+  border: 1px dashed #ccc; color:#999; font-size:11px; margin:8px 0; }
+/* generated font + layout classes */
+.f0 { font-size: 14pt; font-family: inherit; }
+.f1 { font-size: 18pt; font-family: inherit; }
+.f2 { font-size: 9pt; font-family: inherit; }
+.f3 { font-size: 10pt; font-family: inherit; }
+.f4 { font-size: 8pt; font-family: inherit; }
+.f5 { font-size: 6pt; font-family: inherit; }
+.f6 { font-size: 7pt; font-family: inherit; }
+.f7 { font-size: 12pt; font-family: inherit; }
+.f8 { font-size: 15pt; font-family: inherit; }
+.f9 { font-size: 11pt; font-family: inherit; }
+.ta-l  { text-align: left; }
+.ta-c  { text-align: center; }
+.ta-r  { text-align: right; }
+.ta-j  { text-align: justify; }
+.bold  { font-weight: bold; }
+.ital  { font-style: italic; }
+.uline { text-decoration: underline; }
+.col-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.col-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+</style>
+</head>
+<body>
+<section class="pdf-page-content" data-page="1">
+<h4 class="page-label">Page 1</h4>
+<div class="pdf-row" style="display: grid; grid-template-columns: 50.2fr 49.8fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<h4 class="f0 ta-l">59MN7C</h4>
+<h4 class="f0 ta-l">Modulating, High Efficiency Condensing Gas</h4>
+<h4 class="f0 ta-l">Furnace, 4-Way Multipoise</h4>
+</div>
+<div class="pdf-col" data-col="1">
+</div>
+</div>
+<h4 class="f1 ta-l">Installation, Start-up, Operating and Service</h4>
+<div class="pdf-row" style="display: grid; grid-template-columns: 50.2fr 49.8fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<h4 class="f1 ta-l">and Maintenance Instructions</h4>
+</div>
+<div class="pdf-col" data-col="1">
+</div>
+</div>
+<div class="f2 ta-j"><p>NOTE: Read the entire instruction manual before starting the</p>
+<p>installation.</p>
+<p>Table 16 – Maximum Allowable Exposed Vent Length in Un-</p>
+<p>conditioned Space - Ft./M . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 43</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 50.2fr 49.8fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f3 ta-l"><p>TABLE OF CONTENTS</p></div>
+</div>
+<div class="pdf-col" data-col="1">
+<div class="f2 ta-j"><p>Table 17 – Hanger Spacing . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 45</p>
+<p>Table 18 – 060C17--14 – Airflow in CFM . . . . . . . . . . . . . . . . . 47</p></div>
+</div>
+</div>
+<div class="f2 ta-c"><p>REQUIRED NOTICE FOR MASSACHUSETTS INSTALLATIONS</p>
+<p>IMPORTANT . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 2</p>
+<p>Table 1 – Dimensions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3</p>
+<p>SAFETY CONSIDERATIONS . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3</p>
+<p>Table 2 – Min. Clearances to Combustible Materials - All</p>
+<p>Units . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5</p>
+<p>INTRODUCTION . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5</p>
+<p>Table 3 – Loose Parts Bag . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 6</p>
+<p>CODES AND STANDARDS. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 6</p>
+<p>ELECTROSTATIC DISCHARGE (ESD) PRECAUTIONS PROCE-</p>
+<p>DURE . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7</p>
+<p>ACCESSORIES . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7</p>
+<p>LOCATION . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7</p>
+<p>AIR FOR COMBUSTION AND VENTILATION . . . . . . . . . . . . . . 8</p>
+<p>Table 4 – Minimum Free Area Required for Each Combustion</p>
+<p>Air Opening or Duct to Outdoors . . . . . . . . . . . . . . . . . . . . . . . . . 9</p>
+<p>Table 5 – Minimum Space Volumes for 100% Combustion,</p>
+<p>Ventilation and Dilution Air from Outdoors . . . . . . . . . . . . . . . . . 9</p>
+<p>CONDENSATE TRAP. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10</p>
+<p>CONDENSATE DRAIN CONNECTION . . . . . . . . . . . . . . . . . . . . 12</p>
+<p>INSTALLATION . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14</p>
+<p>Table 6 – Opening Dimensions - In. (mm) . . . . . . . . . . . . . . . . . 17</p>
+<p>FILTER ARRANGEMENT . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18</p>
+<p>Table 7 – Filter Information. . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19</p>
+<p>Table 8 – Optional Filter Media Pressure Drop (Clean) Versus</p>
+<p>Face Velocity- in. w.c. (Pa) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20</p>
+<p>Table 9 – Air Filter Located in Filter Cabinet . . . . . . . . . . . . . . . 20</p>
+<p>AIR DUCTS . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21</p>
+<p>GAS PIPING. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21</p>
+<p>Table 10 – Maximum Capacity of Pipe . . . . . . . . . . . . . . . . . . . . 22</p>
+<p>ELECTRICAL CONNECTIONS. . . . . . . . . . . . . . . . . . . . . . . . . . . 23</p>
+<p>Table 11 – Electrical Data . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24</p>
+<p>Table 19 – 060C21--20– Airflow in CFM. . . . . . . . . . . . . . . . . . 47</p>
+<p>Table 20 – 080C17--14 – Airflow in CFM . . . . . . . . . . . . . . . . . 48</p>
+<p>Table 21 – 080C21--20 – Airflow in CFM . . . . . . . . . . . . . . . . . 48</p>
+<p>Table 22 – 100C21--22 – Airflow in CFM . . . . . . . . . . . . . . . . . 49</p>
+<p>Table 23 – 120C24--22 – Airflow in CFM . . . . . . . . . . . . . . . . . 49</p>
+<p>Table 24 – Default Airflow Settings . . . . . . . . . . . . . . . . . . . . . . 50</p>
+<p>FURNACE CONTROL PROGRAMMING</p>
+<p>AND NAVIGATION . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 50</p>
+<p>Table 25 – System Status Display Codes . . . . . . . . . . . . . . . . . . 50</p>
+<p>Table 26 – Main Menu Options . . . . . . . . . . . . . . . . . . . . . . . . . . 51</p>
+<p>SERVICE LABEL . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 53</p>
+<p>START-UP, ADJUSTMENT, AND SAFETY CHECK . . . . . . . . . 53</p>
+<p>Table 27 – Test Sequence . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 54</p>
+<p>WIRING DIAGRAM . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 55</p>
+<p>Table 28 – Altitude Derate Multiplier for U.S.A.* . . . . . . . . . . . 57</p>
+<p>Table 29 – Gas Rate (CU ft./hr). . . . . . . . . . . . . . . . . . . . . . . . . . 59</p>
+<p>Table 30 – Orifice Size and Manifold Pressure (in. w.c.) for</p>
+<p>Gas Input Rate (all except 5 Ton, 21") . . . . . . . . . . . . . . . . . . . . 60</p>
+<p>Table 31 – Orifice Size and Manifold Pressure (in. w.c.) for</p>
+<p>Gas Input Rate (5 Ton, 21" ONLY). . . . . . . . . . . . . . . . . . . . . . . 60</p>
+<p>SERVICE AND MAINTENANCE PROCEDURES. . . . . . . . . . . . 63</p>
+<p>ELECTRICAL CONTROLS AND WIRING . . . . . . . . . . . . . . . . . 63</p>
+<p>CARE AND MAINTENANCE . . . . . . . . . . . . . . . . . . . . . . . . . . . . 64</p>
+<p>WINTERIZATION. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 69</p>
+<p>SEQUENCE OF OPERATION . . . . . . . . . . . . . . . . . . . . . . . . . . . . 69</p>
+<p>TROUBLESHOOTING . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 73</p>
+<p>PARTS REPLACEMENT INFORMATION GUIDE . . . . . . . . . . . 76</p>
+<p>MODEL NOMENCLATURE . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 76</p>
+<p>To learn more about this appliance and installation via a mobile device,</p>
+<p>go to https://carrier.hvacpartners.com/NFC or use the QR code below.</p>
+<p>To access airflow tables or troubleshooting guide on your mobile device</p>
+<p>go to mlctraining.com/training/techdocs/104/ or use the QR code below.</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 50.2fr 49.8fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-c"><p>115V WIRING . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24</p>
+<p>24V WIRING . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26</p>
+<p>TEMPERATURE SENSORS. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26</p>
+<p>ACCESSORIES (See Fig. 37 and Fig. 38.) . . . . . . . . . . . . . . . . . . . 27</p>
+<p>VENTING. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28</p>
+<p>Table 12 – Vent Termination Kit for Direct Vent (2-pipe) Sys-</p></div>
+</div>
+<div class="pdf-col" data-col="1">
+<div class="pdf-image-placeholder" style="width: 79px; height: 71px; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0;">[Image Placeholder: img_p0_1]</div>
+<div class="pdf-image-placeholder" style="width: 85px; height: 69px; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0;">[Image Placeholder: img_p0_2]</div>
+</div>
+</div>
+<div class="f4 ta-l"><p>tems . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 29</p>
+<p>A230294</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 50.2fr 49.8fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>Table 13 – Approved Combustion-Air and Vent Pipe, Fitting</p>
+<p>and Cement Materials . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30</p>
+<p>Table 14 – Maximum Equivalent Vent Length . . . . . . . . . . . . . . 39</p>
+<p>Table 15 – Deductions from Maximum Equivalent Vent</p>
+<p>Length-Ft.(M) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 40</p></div>
+</div>
+<div class="pdf-col" data-col="1">
+<div class="pdf-image-placeholder" style="width: 54px; height: 54px; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0;">[Image Placeholder: img_p0_4]</div>
+<div class="pdf-image-placeholder" style="width: 33px; height: 62px; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0;">[Image Placeholder: img_p0_3]</div>
+<div class="f5 ta-l"><p>A200352</p></div>
+</div>
+</div>
+<div class="f2 ta-j"><p>Portions of the text and tables are reprinted from NFPA 54/ANSI Z223.1E, with permission of National Fire Protection Association, Quincy, MA</p>
+<p>02269 and American Gas Association, Washington DC 20001. This reprinted material is not the complete and official position of the NFPA or ANSI</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 50.2fr 49.8fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>on the referenced subject, which is represented only by the standard in its entirety.</p></div>
+</div>
+<div class="pdf-col" data-col="1">
+</div>
+</div>
+</section>
+<section class="pdf-page-content" data-page="2">
+<h4 class="page-label">Page 2</h4>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f6 ta-l"><p>59MN7C: Installation, Start-up, Operating and Service and Maintenance Instructions</p></div>
+</div>
+</div>
+<h4 class="f7 ta-l">REQUIRED NOTICE FOR MASSACHUSETTS INSTALLATIONS</h4>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<h4 class="f7 ta-l">IMPORTANT</h4>
+</div>
+</div>
+<div class="f2 ta-l"><p>The Commonwealth of Massachusetts requires compliance with regulation 248 CMR as follows:</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>5.08: Modifications to NFPA-54, Chapter 10</p></div>
+<ol class="f2">
+<li>Revise 10.8.3 by adding the following additional requirements:</li>
+</ol>
+</div>
+</div>
+<ol class="f2">
+<li>For all side wall horizontally vented gas fueled equipment installed in every dwelling, building or structure used in whole or in part for</li>
+</ol>
+<div class="f2 ta-j"><p>residential purposes, including those owned or operated by the Commonwealth and where the side wall exhaust vent termination is less than</p>
+<p>seven (7) feet above finished grade in the area of the venting, including but not limited to decks and porches, the following requirements shall</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>be satisfied:</p></div>
+</div>
+</div>
+<ol class="f2">
+<li>INSTALLATION OF CARBON MONOXIDE DETECTORS. At the time of installation of the side wall horizontal vented gas fueled equipment,</li>
+</ol>
+<div class="f2 ta-j"><p>the installing plumber or gasfitter shall observe that a hard wired carbon monoxide detector with an alarm and battery back-up is installed on the</p>
+<p>floor level where the gas equipment is to be installed. In addition, the installing plumber or gasfitter shall observe that a battery operated or hard</p>
+<p>wired carbon monoxide detector with an alarm is installed on each additional level of the dwelling, building or structure served by the side wall</p>
+<p>horizontal vented gas fueled equipment. It shall be the responsibility of the property owner to secure the services of qualified licensed</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>professionals for the installation of hard wired carbon monoxide detectors</p></div>
+</div>
+</div>
+<ol class="f2">
+<li>In the event that the side wall horizontally vented gas fueled equipment is installed in a crawl space or an attic, the hard wired carbon monoxide</li>
+</ol>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>detector with alarm and battery back-up may be installed on the next adjacent floor level.</p></div>
+</div>
+</div>
+<ol class="f2">
+<li>In the event that the requirements of this subdivision can not be met at the time of completion of installation, the owner shall have a period of</li>
+</ol>
+<div class="f2 ta-l"><p>thirty (30) days to comply with the above requirements; provided, however, that during said thirty (30) day period, a battery operated carbon</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>monoxide detector with an alarm shall be installed.</p></div>
+</div>
+</div>
+<ol class="f2">
+<li>APPROVED CARBON MONOXIDE DETECTORS. Each carbon monoxide detector as required in accordance with the above provisions shall</li>
+</ol>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>comply with NFPA 720 and be ANSI/UL 2034 listed and IAS certified.</p></div>
+</div>
+</div>
+<ol class="f2">
+<li>SIGNAGE. A metal or plastic identification plate shall be permanently mounted to the exterior of the building at a minimum height of eight (8)</li>
+</ol>
+<div class="f2 ta-j"><p>feet above grade directly in line with the exhaust vent terminal for the horizontally vented gas fueled heating appliance or equipment. The sign</p>
+<p>shall read, in print size no less than one-half (1/2) inch in size, ”GAS VENT DIRECTLY BELOW. KEEP CLEAR OF ALL OBSTRUCTIONS”.</p></div>
+<ol class="f2">
+<li>INSPECTION. The state or local gas inspector of the side wall horizontally vented gas fueled equipment shall not approve the installation unless,</li>
+</ol>
+<div class="f2 ta-l"><p>upon inspection, the inspector observes carbon monoxide detectors and signage installed in accordance with the provisions of 248 CMR</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>5.08(2)(a)1 through 4.</p></div>
+</div>
+</div>
+<ol class="f2">
+<li>EXEMPTIONS: The following equipment is exempt from 248 CMR 5.08(2)(a)1 through 4:</li>
+</ol>
+<div class="f2 ta-l"><p>(1.) The equipment listed in Chapter 10 entitled ”Equipment Not Required To Be Vented” in the most current edition of NFPA 54 as adopted</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>by the Board; and</p></div>
+</div>
+</div>
+<div class="f2 ta-l"><p>(2.) Product Approved side wall horizontally vented gas fueled equipment installed in a room or structure separate from the dwelling, building</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>or structure used in whole or in part for residential purposes.</p></div>
+</div>
+</div>
+<ol class="f2">
+<li>MANUFACTURER REQUIREMENTS - GAS EQUIPMENT VENTING SYSTEM PROVIDED. When the manufacturer of Product</li>
+</ol>
+<div class="f2 ta-l"><p>Approved side wall horizontally vented gas equipment provides a venting system design or venting system components with the equipment, the</p>
+<p>instructions provided by the manufacturer for installation of the equipment and the venting system shall include:</p></div>
+<ol class="f2">
+<li>Detailed instructions for the installation of the venting system design or the venting system components; and</li>
+</ol>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<ol class="f2">
+<li>A complete parts list for the venting system design or venting system.</li>
+</ol>
+</div>
+</div>
+<ol class="f2">
+<li>MANUFACTURER REQUIREMENTS - GAS EQUIPMENT VENTING SYSTEM NOT PROVIDED. When the manufacturer of a Product</li>
+</ol>
+<div class="f2 ta-l"><p>Approved side wall horizontally vented gas fueled equipment does not provide the parts for venting the flue gases, but identifies “special</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>venting systems”, the following requirements shall be satisfied by the manufacturer:</p></div>
+</div>
+</div>
+<ol class="f2">
+<li>The referenced “special venting system” instructions shall be included with the appliance or equipment installation instructions; and</li>
+<li>The “special venting systems” shall be Product Approved by the Board, and the instructions for that system shall include a parts list and detailed</li>
+</ol>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>installation instructions.</p></div>
+</div>
+</div>
+<ol class="f2">
+<li>A copy of all installation instructions for all Product Approved side wall horizontally vented gas fueled equipment, all venting instructions, all</li>
+</ol>
+<div class="f2 ta-l"><p>parts lists for venting instructions, and/or all venting design instructions shall remain with the appliance or equipment at the completion of the</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>installation.</p></div>
+</div>
+</div>
+<div class="f2 ta-l"><p>For questions regarding these requirements, please contact the Commonwealth of Massachusetts Board of State Examiners of Plumbers and Gas</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>Fitters, 239 Causeway Street, Boston, MA 02114. 617-727-9952.</p></div>
+</div>
+</div>
+<div class="f6 ta-l"><p>Manufacturer reserves the right to change, at any time, specifications and designs without notice and without obligations.</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 100.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f6 ta-l"><p>2</p></div>
+</div>
+</div>
+</section>
+<section class="pdf-page-content" data-page="3">
+<h4 class="page-label">Page 3</h4>
+<div class="pdf-row" style="display: grid; grid-template-columns: 26.2fr 23.0fr 50.8fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f6 ta-l"><p>59MN7C: Installation, Start-up, Operating and Service and Maintenance Instructions</p></div>
+<div class="pdf-image-placeholder" style="width: 339px; height: 275px; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0;">[Image Placeholder: img_p2_1]</div>
+<div class="pdf-image-placeholder" style="width: 339px; height: 196px; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0;">[Image Placeholder: img_p2_6]</div>
+<div class="f4 ta-l"><p>FURNACE SIZE</p></div>
+</div>
+<div class="pdf-col" data-col="1">
+<div class="pdf-image-placeholder" style="width: 43px; height: 431px; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0;">[Image Placeholder: img_p2_3]</div>
+<div class="f4 ta-l"><p>A</p>
+<p>Fig. 1 – Dimensional Drawing Table 1 – Dimensions B</p></div>
+</div>
+<div class="pdf-col" data-col="2">
+<div class="f6 ta-l"><p>I</p></div>
+<div class="pdf-image-placeholder" style="width: 467px; height: 40px; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0;">[Image Placeholder: img_p2_2]</div>
+<div class="pdf-image-placeholder" style="width: 317px; height: 119px; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0;">[Image Placeholder: img_p2_7]</div>
+<div class="pdf-image-placeholder" style="width: 170px; height: 431px; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0;">[Image Placeholder: img_p2_4]</div>
+<div class="pdf-image-placeholder" style="width: 255px; height: 353px; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0;">[Image Placeholder: img_p2_5]</div>
+<div class="f5 ta-l"><p>A210796</p></div>
+<div class="f4 ta-l"><p>C BOTTOM</p>
+<p>INLET WIDTH</p>
+<p>D SHIP WT.</p></div>
+</div>
+</div>
+<div class="f4 ta-l"><p>CABINET WIDTH</p>
+<p>OUTLET WIDTH</p>
+<p>AIR INTAKE</p>
+<p>LB (KG)</p></div>
+<div class="f4 ta-j"><p>060C17--14 060C21--20 080C17--14 080C21--20 100C21--22 120C24--22</p>
+<p>17-1/2 (445) 21 (533) 17-1/2 (445) 21 (533) 21 (533) 24-1/2 (622)</p>
+<p>15-7/8 (403) 19-3/8 (492) 15-7/8 (403) 19-3/8 (492) 19-3/8 (492) 22-7/8 (581)</p>
+<p>16 (406) 19-1/2 (495) 16 (406) 19-1/2 (495) 19-1/2 (495) 23 (584)</p>
+<p>8-3/4 (222) 10-1/2 (267) 8-3/4 (222) 10-1/2 (267) 10-1/2 (267) 12-1/4 (311)</p>
+<p>144 (65.3)</p>
+<p>160 (72.3)</p>
+<p>150 (67.8)</p>
+<p>161 (72.8)</p>
+<p>166 (75.1)</p>
+<p>184 (83.5)</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 26.2fr 23.0fr 50.8fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="panel" style="display: block; overflow: auto;">
+<table class="tablecoil">
+<tbody>
+<tr><th colspan="3">! WARNING</th></tr>
+<tr><td colspan="3">death. Carbon Monoxide (CO) is a colorless, odorless, and tasteless poisonous gas that can be fatal when inhaled. Follow all installation, maintenance, CARBON MONOXIDE POISONING HAZARD Failure to follow this warning could result in personal injury and/or and service instructions. See additional information below regarding the installation of a CO Alarm.</td></tr>
+</tbody>
+</table>
+</div>
+<div class="f2 ta-l"><p>Most states in the USA and jurisdictions in Canada have laws that</p></div>
+</div>
+<div class="pdf-col" data-col="1">
+</div>
+<div class="pdf-col" data-col="2">
+<div class="f2 ta-l"><p>with a CO Alarm(s). The Consumer Product Safety Commission</p>
+<p>recommends the use of CO Alarm(s). The CO Alarm(s) must be</p>
+<p>installed, operated, and maintained according to the CO Alarm</p>
+<p>manufacturer’s instructions. For more information about Carbon</p>
+<p>Monoxide, local laws, or to purchase a CO Alarm online, please visit the</p>
+<p>following website. https://www.kidde.com.</p></div>
+<h4 class="f7 ta-l">SAFETY CONSIDERATIONS</h4>
+<h4 class="f1 ta-l">! WARNING</h4>
+</div>
+</div>
+<div class="f2 ta-l"><p>require the use of Carbon Monoxide (CO) alarms with fuel burning FIRE, INJURY, OR DEATH HAZARD</p>
+<p>products. Examples of fuel burning products are furnaces, boilers, space Failure to follow this warning could result in property damage, personal</p>
+<p>heaters, generators, water heaters, stoves/ranges, clothes dryers, injury, or death.</p>
+<p>fireplaces, incinerators, automobiles, and other internal combustion This furnace was manufactured to operate with natural gas. When fuel</p>
+<p>engines. Even if there are no laws in your jurisdiction requiring a CO supply is Liquid Propane (LP), this furnace must be converted with a</p>
+<p>Alarm, it’s highly recommended that whenever any fuel burning product factory approved LP conversion kit. See furnace rating plate for</p>
+<p>is used in or around the home or business that the dwelling be equipped approved conversion kit.</p></div>
+<div class="f6 ta-l"><p>Manufacturer reserves the right to change, at any time, specifications and designs without notice and without obligations.</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 26.2fr 23.0fr 50.8fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+</div>
+<div class="pdf-col" data-col="1">
+</div>
+<div class="pdf-col" data-col="2">
+<div class="f6 ta-l"><p>3</p></div>
+</div>
+</div>
+</section>
+<section class="pdf-page-content" data-page="4">
+<h4 class="page-label">Page 4</h4>
+<div class="pdf-row" style="display: grid; grid-template-columns: 30.7fr 69.3fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f6 ta-l"><p>59MN7C: Installation, Start-up, Operating and Service and Maintenance Instructions</p></div>
+<h4 class="f1 ta-l">! WARNING</h4>
+</div>
+<div class="pdf-col" data-col="1">
+<div class="f2 ta-j"><p>qualified installer, service agency, or your distributor or branch for</p>
+<p>information or assistance. The qualified installer or agency must use</p>
+<p>factory-authorized kits or accessories when modifying this product.</p></div>
+</div>
+</div>
+<div class="f2 ta-l"><p>FIRE, EXPLOSION, ELECTRICAL SHOCK, AND</p>
+<p>Refer to the individual instructions packaged with the kits or accessories</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 30.7fr 69.3fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f3 ta-l"><p>CARBON MONOXIDE POISONING HAZARD</p></div>
+</div>
+<div class="pdf-col" data-col="1">
+<div class="f2 ta-l"><p>when installing.</p></div>
+</div>
+</div>
+<div class="f2 ta-l"><p>Failure to follow this warning could result in dangerous operation, Installing and servicing heating equipment can be hazardous due to gas</p>
+<p>personal injury, death, or property damage. and electrical components. Only trained and qualified personnel should</p>
+<p>Improper installation, adjustment, alteration, service, maintenance, or install, repair, or service heating equipment. Untrained personnel can</p>
+<p>use can cause carbon monoxide poisoning, explosion, fire, electrical perform basic maintenance functions such as cleaning and replacing air</p>
+<p>shock, or other conditions which may cause personal injury or property filters. All other operations must be performed by trained service</p>
+<p>damage. Consult a qualified service agency, local gas supplier, or your personnel. When working on heating equipment, observe precautions in</p>
+<p>distributor or branch for information or assistance. The qualified literature, on tags, and on labels attached to or shipped with furnace and</p>
+<p>service agency must use only factory-authorized accessories and other safety precautions that may apply.</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 30.7fr 69.3fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>replacement parts when installing and servicing this product.</p></div>
+<div class="panel" style="display: block; overflow: auto;">
+<table class="tablecoil">
+<tbody>
+<tr><th colspan="4"></th><th>!</th><th colspan="5">WARNING</th></tr>
+<tr><td colspan="7">personal injury, death, or property damage. Furnaces shall NOT be twinned (i.e. tandem or staged operation) unless approved in factory technical specifications literature for the furnace. twinning and the correct twinning kit. installed on both a common supply AND a common return duct system as shown in the Twinning Kit Installation Instructions. furnaces can be twinned on a common supply and return duct system using a factory authorized twinning kit. FIRE, EXPLOSION, ELECTRICAL SHOCK, AND CARBON MONOXIDE POISONING HAZARD Failure to follow this warning could result in dangerous operation, Consult furnace pre-sale literature for specific models approved for A factory authorized, field-supplied Twinning Kit MUST be used.</td><td colspan="2">Twinned furnaces must be</td><td>Only two</td></tr>
+<tr><td colspan="4"></td><td>!</td><td colspan="5">CAUTION</td></tr>
+<tr><td colspan="10">unit leveling, and unit sizing. Application of this furnace should be indoors with special attention given to vent sizing and material, gas input rate, air temperature rise, FURNACE RELIABILITY HAZARD Failure to follow this caution may result in unit component damage.</td></tr>
+<tr><td colspan="4"></td><td>!</td><td colspan="5">WARNING</td></tr>
+<tr><td>property damage. Solvents, cements and primers are combustible. Keep away from heat, sparks breathing in vapor or allowing contact with skin or eyes. FIRE HAZARD Failure to follow this warning could result in personal injury, death, or</td><td>and</td><td>open</td><td colspan="2">flame.</td><td>Use</td><td>only in</td><td>well-ventilated</td><td colspan="2">areas. Avoid</td></tr>
+<tr><td colspan="4"></td><td>!</td><td colspan="5">CAUTION</td></tr>
+<tr><td colspan="10">unit leveling, and unit sizing. Application of this furnace should be indoors with special attention given to vent sizing and material, gas input rate, air temperature rise, FURNACE RELIABILITY HAZARD Failure to follow this caution may result in unit component damage.</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="pdf-col" data-col="1">
+<div class="f2 ta-l"><p>These instructions cover minimum requirements and conform to existing</p>
+<p>national standards and safety codes. In some instances, these instructions</p>
+<p>exceed certain local codes and ordinances, especially those that may not</p>
+<p>have kept up with changing residential construction practices. We</p>
+<p>require these instructions as a minimum for a safe installation.</p>
+<p>Follow all safety codes. Wear safety glasses, protective clothing, and</p>
+<p>work gloves. Have a fire extinguisher available. Read these instructions</p>
+<p>thoroughly and follow all warnings or cautions included in literature and</p>
+<p>attached to the unit.</p></div>
+<div class="panel" style="display: block; overflow: auto;">
+<table class="tablecoil">
+<tbody>
+<tr><th colspan="5"></th><th>!</th><th colspan="11">CAUTION</th></tr>
+<tr><td colspan="3">CUT HAZARD Failure to follow this caution may result in personal injury. Sheet metal parts may have sharp edges or burrs. Use care and wear appropriate handling parts, and servicing furnaces.</td><td colspan="3">protective</td><td colspan="2">clothing,</td><td>safety</td><td colspan="3">glasses</td><td>and</td><td colspan="2">gloves</td><td colspan="2">when</td></tr>
+<tr><td colspan="5"></td><td>!</td><td colspan="11">WARNING</td></tr>
+<tr><td>PERSONAL INJURY AND PROPERTY DAMAGE HAZARD Failure to follow this warning could result in property damage, personal injury, or death. For continued performance, reliability, and safety, the only approved accessories and replacement parts are those specified by the equipment manufacturer. accessories could invalidate the equipment limited warranty and result in manufacturer from your equipment supplier</td><td>fire</td><td colspan="2">risk,</td><td>equipment The</td><td>use</td><td>of malfunction,</td><td colspan="2">non-manufacturer</td><td>and</td><td>failure.</td><td colspan="2">approved</td><td>Please</td><td>parts</td><td>review</td><td>and</td></tr>
+</tbody>
+</table>
+</div>
+<div class="f2 ta-l"><p>Wear safety glasses, protective clothing and work gloves. Have fire</p>
+<p>extinguisher available during start-up and adjustment procedures and</p>
+<p>service calls.</p></div>
+<div class="pdf-image-placeholder" style="width: 16px; height: 13px; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0;">[Image Placeholder: [object Object]]</div>
+<div class="f2 ta-l"><p>This is the safety-alert symbol . When you see this symbol on the</p>
+<p>furnace and in instructions or manuals, be alert to the potential for</p>
+<p>personal injury.</p>
+<p>Understand the signal words DANGER, WARNING, and CAUTION.</p>
+<p>These words are used with the safety-alert symbol. DANGER identifies</p>
+<p>the most serious hazards which will result in severe personal injury or</p>
+<p>death. WARNING signifies a hazard which could result in personal</p>
+<p>injury or death. CAUTION is used to identify hazards which may result</p>
+<p>in minor personal injury or product and property damage. NOTE and</p>
+<p>NOTICE are used to highlight suggestions which will result in enhanced</p></div>
+</div>
+</div>
+<div class="f2 ta-l"><p>Improper installation, adjustment, alteration, service, maintenance, or installation, reliability, or operation.</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 30.7fr 69.3fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>use can cause explosion, fire, electrical shock, or other conditions which</p>
+<p>may cause death, personal injury, or</p></div>
+</div>
+<div class="pdf-col" data-col="1">
+<ol class="f2">
+<li>Use only with type of gas approved for this furnace. Refer to the</li>
+</ol>
+<div class="f2 ta-l"><p>property damage. Consult a</p>
+<p>furnace rating plate.</p></div>
+</div>
+</div>
+<div class="f6 ta-l"><p>Manufacturer reserves the right to change, at any time, specifications and designs without notice and without obligations.</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 30.7fr 69.3fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+</div>
+<div class="pdf-col" data-col="1">
+<div class="f6 ta-l"><p>4</p></div>
+</div>
+</div>
+</section>
+<section class="pdf-page-content" data-page="5">
+<h4 class="page-label">Page 5</h4>
+<div class="pdf-row" style="display: grid; grid-template-columns: 52.1fr 47.9fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f6 ta-l"><p>59MN7C: Installation, Start-up, Operating and Service and Maintenance Instructions</p></div>
+<ol class="f2">
+<li>Install this furnace only in a location and position as specified in the</li>
+</ol>
+</div>
+<div class="pdf-col" data-col="1">
+</div>
+</div>
+<h4 class="f8 ta-l">“Location” section of these instructions. ! NOTICE</h4>
+<div class="pdf-row" style="display: grid; grid-template-columns: 52.1fr 47.9fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<ol class="f2">
+<li>Provide adequate combustion and ventilation air to the furnace</li>
+</ol>
+</div>
+<div class="pdf-col" data-col="1">
+</div>
+</div>
+<div class="f2 ta-l"><p>space as specified in “Air for Combustion and Ventilation” section.</p>
+<p>IMPORTANT INSTALLATION AND START-UP</p></div>
+<ol class="f2">
+<li>Combustion products must be discharged outdoors. Connect this PROCEDURES</li>
+</ol>
+<div class="f2 ta-l"><p>furnace to an approved vent system only, as specified in the</p>
+<p>Failure to follow this procedure may result in a nuisance smoke or odor</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 52.1fr 47.9fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>“Venting” section of these instructions.</p>
+<p>complaint.</p></div>
+</div>
+<div class="pdf-col" data-col="1">
+</div>
+</div>
+<ol class="f2">
+<li>Never test for gas leaks with an open flame. Use a commercially The manifold pressure, gas rate by meter clocking, temperature rise and</li>
+</ol>
+<div class="f2 ta-j"><p>available soap solution made specifically for the detection of leaks operation must be checked after installation. Minor smoke and odor</p>
+<p>to check all connections, as specified in the “Gas Piping” section. may be present temporarily after start-up from the manufacturing</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 52.1fr 47.9fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>process. Some occupants are more sensitive to this minor smoke and</p></div>
+<ol class="f2">
+<li>Always install furnace to operate within the furnace’s intended</li>
+</ol>
+<div class="f2 ta-l"><p>odor. It is recommended that doors and windows be open during the</p>
+<p>temperature-rise range with a duct system which has an external</p>
+<p>first heat cycle. static pressure within the allowable range, as specified in the</p>
+<p>“Start-Up, Adjustments, and Safety Check” section. See furnace</p></div>
+<h4 class="f7 ta-l">INTRODUCTION</h4>
+<div class="f2 ta-l"><p>rating plate.</p></div>
+<ol class="f2">
+<li>When a furnace is installed so that supply ducts carry air circulated</li>
+</ol>
+<div class="f2 ta-l"><p>by the furnace to areas outside the space containing the furnace, the</p>
+<p>return air shall also be handled by duct(s) sealed to the furnace</p>
+<p>casing and terminating outside the space containing the furnace.</p>
+<p>See “Air Ducts” section.</p></div>
+<ol class="f2">
+<li>A gas-fired furnace for installation in a residential garage must be</li>
+</ol>
+<div class="f2 ta-l"><p>installed as specified in the warning box in the “Location” section.</p></div>
+<ol class="f2">
+<li>The furnace may be used for construction heat provided that the</li>
+</ol>
+<div class="f2 ta-l"><p>furnace installation and operation complies with the first</p>
+<p>CAUTION in the LOCATION section of these instructions.</p></div>
+<ol class="f2">
+<li>These Multipoise Gas-Fired Furnaces are CSA design-certified for</li>
+</ol>
+<div class="f2 ta-l"><p>use with natural and propane gases (see furnace rating plate) and for</p>
+<p>installation in alcoves, attics, basements, closets, utility rooms,</p>
+<p>crawlspaces, and garages. The furnace is factory-shipped for use</p>
+<p>with natural gas. A CSA (A.G.A. and C.G.A.) listed accessory gas</p>
+<p>conversion kit is required to convert furnace for use with propane</p>
+<p>gas.</p></div>
+<ol class="f2">
+<li>See Table 2 for required clearances to combustible construction.</li>
+</ol>
+<div class="panel" style="display: block; overflow: auto;">
+<table class="tablecoil">
+<tbody>
+<tr><th colspan="8">POSITION CLEARANCE</th></tr>
+<tr><td colspan="8">Rear 0 (0 mm)</td></tr>
+<tr><td colspan="8">Front (Combustion air openings in furnace and in structure) 1 in. (25 mm)</td></tr>
+<tr><td colspan="8">Required for service * 24 in. (610 mm)</td></tr>
+<tr><td colspan="8">All Sides of Supply Plenum * 1 in. (25 mm)</td></tr>
+<tr><td colspan="8">Sides 0 (0 mm)</td></tr>
+<tr><td colspan="8">Vent 0 (0 mm)</td></tr>
+<tr><td colspan="8">Top of Furnace 1 in. (25 mm)</td></tr>
+</tbody>
+</table>
+</div>
+<div class="f6 ta-l"><p>*. Consult local building codes.</p></div>
+<ol class="f2">
+<li>Maintain a 1-in. (25 mm) clearance from combustible materials to</li>
+</ol>
+<div class="f2 ta-l"><p>supply air ductwork for a distance of 36 in. (914 mm) horizontally</p>
+<p>from the furnace. See NFPA 90B or local code for further</p>
+<p>requirements.</p></div>
+<ol class="f2">
+<li>These furnaces SHALL NOT be installed directly on carpeting,</li>
+</ol>
+<div class="f2 ta-j"><p>combustible tile, or any other combustible material other than wood</p>
+<p>flooring. In downflow installations, factory accessory floor base</p></div>
+</div>
+<div class="pdf-col" data-col="1">
+<div class="panel" style="display: block; overflow: auto;">
+<table class="tablecoil">
+<tbody>
+<tr><th></th><th rowspan="4"></th><th rowspan="4"></th><th rowspan="4"></th><th rowspan="3">BURNER SECTION, AND LOCATED BELOW THE CONDITIONED AIR IS THE BLOWER IS DISCHARGED UPWARD.</th><th rowspan="3"></th></tr>
+<tr><td>DISCHARGED TO THE LEFT. THE BLOWER IS LOCATED CONDITIONED AIR IS BURNER SECTION, AND TO THE RIGHT OF THE</td></tr>
+<tr><td></td></tr>
+<tr><td>DISCHARGED DOWNWARD BURNER SECTION, AND LOCATED ABOVE THE CONDITIONED AIR IS THE BLOWER IS</td><td></td><td>DISCHARGED TO THE RIGHT OF THE BURNER SECTION, AND CONDITIONED AIR IS LOCATED TO THE LEFT THE BLOWER IS .</td></tr>
+<tr><td colspan="6">The design-certified for both direct-vent (2-pipe) and ventilated combustion air venting installations, see Fig. 2. The furnace is factory-shipped for to the furnace rating plate for conversion kit information. This recreational vehicles, or outdoors. This furnace is designed for minimum continuous return-air temperature of 60°F (15°C) db or intermittent operation down to 55°F (13°C) db such as when used with a night setback thermostat. Return-air temperature must not exceed 80°F (27°C) db. Failure to follow these return-air temperature limits may affect reliability of heat exchangers, motors, and controls, see Fig. 3. use with natural gas. The furnace can be converted in the field for use with propane gas when a factory-supplied conversion kit is used. Refer 4-way furnace multipoise is not Fig. 2 – Multipoise Orientations approved Category for IV installation condensing in furnace mobile is homes, A12181 CSA</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="f4 ta-l"><p>MUST be used when installed on combustible materials and wood</p>
+<p>A150573</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 52.1fr 47.9fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>flooring. Special base is not required when this furnace is installed</p>
+<p>The furnace should be sized to provide 100 percent of the design heating</p></div>
+</div>
+<div class="pdf-col" data-col="1">
+<div class="f2 ta-l"><p>Fig. 3 – Freeze Protection and Return Air Temperature</p></div>
+</div>
+</div>
+<div class="f2 ta-j"><p>on a manufacturer’s specified cased evaporator coils or when load requirement plus any margin that occurs because of furnace model</p>
+<p>manufacturer’s evaporator coil casing is used. size capacity increments. None of the furnace model sizes can be used if</p></div>
+<ol class="f2">
+<li>Inspect and ensure all casing openings not used for vent, gas, the heating load is 20,000 BTU or lower. Use Air Conditioning</li>
+</ol>
+<div class="f2 ta-l"><p>electrical or auxiliary are filled with knockouts or casing plugs.</p>
+<p>Contractors of America (Manual J and S); American Society of Heating,</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 52.1fr 47.9fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f2 ta-l"><p>Refrigerating, engineering method to calculate heating load estimates and select the</p>
+<p>furnace. Excessive oversizing of the furnace may cause the furnace</p></div>
+</div>
+<div class="pdf-col" data-col="1">
+<div class="f2 ta-l"><p>and Air-Conditioning Engineers; or other approved</p></div>
+</div>
+</div>
+<div class="f6 ta-l"><p>Manufacturer reserves the right to change, at any time, specifications and designs without notice and without obligations.</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 52.1fr 47.9fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f6 ta-l"><p>5</p></div>
+</div>
+<div class="pdf-col" data-col="1">
+</div>
+</div>
+</section>
+<section class="pdf-page-content" data-page="6">
+<h4 class="page-label">Page 6</h4>
+<div class="pdf-row" style="display: grid; grid-template-columns: 31.0fr 69.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+<div class="f6 ta-l"><p>59MN7C: Installation, Start-up, Operating and Service and Maintenance Instructions</p></div>
+<div class="f2 ta-l"><p>and/or vent to fail prematurely, customer freezing.</p>
+<p>Failure to follow these guidelines is considered faulty installation and/or</p>
+<p>misapplication of the furnace; and resulting failure, damage, or repairs</p>
+<p>may impact warranty coverage.</p>
+<p>For accessory installation details, refer to the applicable instruction</p>
+<p>literature. NOTE: Remove all shipping materials, loose parts bag, and literature</p></div>
+<div class="panel" style="display: block; overflow: auto;">
+<table class="tablecoil">
+<tbody>
+<tr><th colspan="5">before operating the furnace, see Table 3.</th><th colspan="2">!</th><th colspan="7">WARNING</th></tr>
+<tr><td colspan="3">FIRE HAZARD Failure to follow this warning could result in personal injury, death and/or property damage. Do not install the furnace on its back or hang furnace with control compartment adversely affected. Never connect return-air ducts to the back of the furnace, see Fig. 4.</td><td colspan="2">facing</td><td colspan="3">downward.</td><td>Safety</td><td>control</td><td colspan="2">operation</td><td>will</td><td>be</td></tr>
+<tr><td colspan="5"></td><td colspan="9">Table 3 – Loose Parts Bag</td></tr>
+<tr><td colspan="5"></td><td colspan="6">DESCRIPTION</td><td colspan="3">QUANTITY</td></tr>
+<tr><td colspan="4"></td><td colspan="8">Air Intake Pipe Flange</td><td colspan="2">1</td></tr>
+<tr><td colspan="4"></td><td colspan="8">Vent Pipe Flange</td><td colspan="2">1</td></tr>
+<tr><td colspan="3"></td><td colspan="9">Coupling Flange Gaskets</td><td colspan="2">2</td></tr>
+<tr><td colspan="2"></td><td colspan="10">Sharp Tip Screws (Vent and Inlet Flanges)</td><td colspan="2">10</td></tr>
+<tr><td colspan="4"></td><td colspan="8">Vent Pipe Coupling</td><td colspan="2">1</td></tr>
+<tr><td colspan="3"></td><td colspan="9">Vent Pipe Coupling Clamps</td><td colspan="2">2</td></tr>
+<tr><td colspan="4"></td><td colspan="8">Rubber Drain Elbow</td><td colspan="2">1</td></tr>
+<tr><td colspan="4"></td><td colspan="8">Drain Tube Clamps</td><td colspan="2">4</td></tr>
+<tr><td colspan="2"></td><td colspan="10">1/2-in. CPVC to 3/4-in. PVC Pipe Adapter</td><td colspan="2">1</td></tr>
+<tr><td colspan="4"></td><td colspan="8">Gas Line Grommet</td><td colspan="2">1</td></tr>
+<tr><td colspan="4"></td><td colspan="8">Junction Box Cover</td><td colspan="2">1</td></tr>
+<tr><td colspan="4"></td><td colspan="8">Junction Box Base</td><td colspan="2">1</td></tr>
+<tr><td colspan="4"></td><td colspan="8">Green Ground Screw</td><td colspan="2">1</td></tr>
+<tr><td colspan="3"></td><td colspan="9">Blunt Tip Screws (Junction Box)</td><td colspan="2">3</td></tr>
+<tr><td colspan="3"></td><td colspan="9">Thermostat Wire Grommet</td><td colspan="2">1</td></tr>
+<tr><td></td><td colspan="5">Drain Extension Tube (Z-pipe) (Provided separately in</td><td colspan="6">furnace)</td><td colspan="2">1</td></tr>
+<tr><td colspan="5"></td><td colspan="2">!</td><td colspan="7">WARNING</td></tr>
+<tr><td colspan="14">FIRE, INJURY OR DEATH HAZARD Failure to follow this warning could result in personal injury, death and/or property damage. When the furnace is installed in a residential garage, the burners and burner ignition devices must be located at least 18 in. (457 mm) above the floor. The furnace must be located or protected to avoid damage by vehicles. When the furnace is installed in a public garage, airplane hangar, or other building having a hazardous atmosphere, the furnace must be installed in accordance with the current edition of NFPA 54/ANSI Z223.1 or CAN/CSA B149.2, see Fig. 5.</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="pdf-col" data-col="1">
+<div class="f2 ta-l"><p>discomfort and/or vent</p></div>
+<div class="f4 ta-l"><p>A12182 Fig. 4 – Prohibited Installations</p></div>
+<div class="f6 ta-l"><p>18-IN. (457.2 mm)</p>
+<p>MINIMUM TO BURNERS A93044 Fig. 5 – Installation in a Garage</p></div>
+<h4 class="f7 ta-l">CODES AND STANDARDS</h4>
+<div class="f2 ta-l"><p>Follow all national and local codes and standards in addition to these</p>
+<p>instructions. The installation must comply with regulations of the</p>
+<p>serving gas supplier, local building, heating, plumbing, and other codes.</p>
+<p>In absence of local codes, the installation must comply with the national</p>
+<p>codes listed below and all authorities having jurisdiction.</p>
+<p>In the United States and Canada, follow all codes and standards for the</p>
+<p>following:</p></div>
+<div class="f9 ta-l"><p>Safety</p></div>
+<ul class="f2">
+<li>US: Current edition of National Fuel Gas Code NFPA 54/ANSI</li>
+</ul>
+<div class="f2 ta-l"><p>Z223.1 and the Installation Standards, Warm Air Heating and Air</p>
+<p>Conditioning Systems ANSI/NFPA 90B</p></div>
+<ul class="f2">
+<li>CANADA: Current edition of National Standard of Canada, Natural</li>
+</ul>
+<div class="f3 ta-l"><p>Gas and Propane Installation Code (NSCNGPIC) CAN/CSA B149.1 General Installation</p></div>
+<ul class="f2">
+<li>US: NFPA 54/ANSI Z223.1 and the NFPA 90B. For copies, contact</li>
+</ul>
+<div class="f2 ta-l"><p>the National Fire Protection Association Inc., Batterymarch Park,</p>
+<p>Quincy, MA 02269; or for only the NFPA 54/ANSI Z223.1 contact the</p>
+<p>American Gas Association, 400 N. Capitol, N.W., Washington DC</p>
+<p>20001</p></div>
+<ul class="f2">
+<li>CANADA: NSCNGPIC. For a copy, contact Standard Sales, CSA</li>
+</ul>
+<div class="f3 ta-l"><p>International, 178 Rexdale Boulevard, Etobicoke (Toronto), Ontario,</p>
+<p>M9W 1R3, Canada Combustion and Ventilation Air</p></div>
+<ul class="f2">
+<li>US: Section 9.3 of the current edition of NFPA54/ANSI Z223.1 Air</li>
+</ul>
+<div class="f2 ta-l"><p>for Combustion and Ventilation</p></div>
+<ul class="f2">
+<li>CANADA: Part 8 of the current edition of CAN/CSA B149.1, Venting</li>
+</ul>
+<div class="f2 ta-l"><p>Systems and Air Supply for Appliances</p></div>
+</div>
+</div>
+<div class="f6 ta-l"><p>Manufacturer reserves the right to change, at any time, specifications and designs without notice and without obligations.</p></div>
+<div class="pdf-row" style="display: grid; grid-template-columns: 31.0fr 69.0fr; gap: 20px;">
+<div class="pdf-col" data-col="0">
+</div>
+<div class="pdf-col" data-col="1">
+<div class="f6 ta-l"><p>6</p></div>
+</div>
+</div>
+</section>
+</body>
+</html>
