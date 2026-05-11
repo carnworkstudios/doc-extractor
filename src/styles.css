@@ -561,7 +561,7 @@ body {
 }
 
 .vd-divider {
-    width: 1px;
+    width: 4px;
     background: var(--border-dark);
     flex-shrink: 0;
     cursor: col-resize;

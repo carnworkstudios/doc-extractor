@@ -383,7 +383,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 
 // ── List builder ──────────────────────────────────────────────────────────────
 
-const BULLET_STRIP_RE = /^[•‣◦▪▫–—―·○◦◉▪▫-]\s*/;
+const BULLET_STRIP_RE = /^[•‣◦▪▫–—―·○o◦◉▪▫-]\s*/;
 const ORDERED_STRIP_RE = /^(?:\d{1,3}[.)]\s*|[a-zA-Z][.)]\s*|[ivxIVX]+[.)]\s*)/;
 
 function _buildList(textItems, pageWidthPt, isOrdered) {

@@ -2,55 +2,92 @@
 <html lang="en">
 
 <head>
-    <base href="/tools/pdf-processor/">
+<base href="/tools/pdf-processor/">
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <!-- ── Icons ── -->
     <link rel="icon" type="image/png" href="/assets/images/Ginexys_Logo.png">
     <title>PDF to HTML Editor — Browser-Based PDF Extractor | GINEXYS</title>
-    <meta name="description"
-        content="Extract structured content from PDF files and edit the output in a live Monaco code editor. Converts PDFs to clean HTML or Markdown entirely in your browser — files never leave your device.">
+    <meta name="description" content="Extract structured content from PDF files and edit the output in a live Monaco code editor. Converts PDFs to clean HTML or Markdown entirely in your browser.">
     <meta name="keywords"
         content="PDF to HTML online, PDF extractor free, browser OCR no upload, extract text from PDF online, PDF table extractor, convert PDF to structured HTML, local PDF parsing, Tesseract OCR online, PDF layout extraction, PDF to markdown, GINEXYS">
     <meta name="author" content="GINEXYS">
     <meta name="robots" content="index, follow">
-    <link rel="canonical" href="https://ginexys.com/tools/pdf-processor/editor/">
+    <link rel="canonical" href="https://ginexys.com/tools/pdf-processor/index.html">
 
     <!-- ── Open Graph ── -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="GINEXYS">
-    <meta property="og:title" content="PDF to HTML Editor — Browser-Based PDF Extractor | GINEXYS">
+    <meta property="og:title" content="Free PDF to HTML Extractor — Browser OCR, Zero Upload · GINEXYS">
     <meta property="og:description"
-        content="Extract structured content from PDF files and edit the output in a live Monaco code editor. Converts PDFs to clean HTML or Markdown entirely in your browser — files never leave your device.">
-    <meta property="og:url" content="https://ginexys.com/tools/pdf-processor/editor/">
+        content="Extract structured HTML from any PDF in your browser. OCR support, layout preservation, AI-assisted grid mapping, side-by-side diff. No file upload — your data never leaves your device.">
+    <meta property="og:url" content="https://ginexys.com/tools/pdf-processor/index.html">
     <meta property="og:image" content="https://ginexys.com/assets/images/og-image.png">
 
     <!-- ── Twitter / X Card ── -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="PDF to HTML Editor — Browser-Based PDF Extractor | GINEXYS">
+    <meta name="twitter:title" content="Free PDF to HTML Extractor — Browser OCR, Zero Upload · GINEXYS">
     <meta name="twitter:description"
-        content="Extract structured content from PDF files and edit the output in a live Monaco code editor. Converts PDFs to clean HTML or Markdown entirely in your browser — files never leave your device.">
+        content="Convert PDF to structured HTML with OCR — all in your browser. Zero upload, zero install. Layout-preserving with AI-assisted table extraction.">
     <meta name="twitter:image" content="https://ginexys.com/assets/images/og-image.png">
     <meta name="twitter:site" content="@GINEXYS">
 
     <!-- ── Structured Data ── -->
-
-
-    <!-- ── FAQ Structured Data (AEO — Answer Engine Optimization) ── -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@graph": [
         {
-          "@type": "FAQPage",
-          "mainEntity": [
+          "@type": "SoftwareApplication",
+          "@id": "https://ginexys.com/tools/pdf-processor/#software",
+          "name": "PDF Extractor",
+          "url": "https://ginexys.com/tools/pdf-processor/index.html",
+          "applicationCategory": "DeveloperApplication",
+          "applicationSubCategory": "PDF Extractor, OCR Tool, Document Converter",
+          "operatingSystem": "Web Browser",
+          "description": "Free browser-based PDF extractor that converts PDFs to structured HTML with high-accuracy OCR. Features layout-preserving extraction, AI-assisted table/grid mapping, side-by-side diff view, and a zero-upload policy — all processing happens client-side in your browser.",
+          "featureList": [
+            "Convert PDF to structured HTML in the browser",
+            "OCR support via Tesseract — extract text from scanned PDFs",
+            "AI-assisted grid mapping for complex table layouts",
+            "Side-by-side PDF vs HTML diff view for accuracy checking",
+            "Interactive HTML preview and inline editor",
+            "Extract PDF tables to editable HTML",
+            "Layout-preserving extraction with column and row detection",
+            "Zero upload policy — files never leave your device",
+            "No install, no account, 100% private",
+            "Export extracted content to HTML, Markdown, or CSV"
+          ],
+          "author": {
+            "@type": "Organization",
+            "name": "GINEXYS",
+            "url": "https://ginexys.com"
+          },
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+          },
+          "isPartOf": {
+            "@type": "WebSite",
+            "name": "GINEXYS",
+            "url": "https://ginexys.com"
+          }
+        },
+        {
+          "@type": "BreadcrumbList",
+          "itemListElement": [
             {
-              "@type": "Question",
-              "name": "Can I convert a PDF to HTML locally in the browser?",
-              "acceptedAnswer": {
-                "@type": "Answer",
-                "text": "Yes, the PDF Extractor analyzes the structural layout of your PDF and outputs clean, editable HTML. It includes a side-by-side <a href=\"https://ginexys.com/tools/pdf-processor/visual-diff/index.html\">Visual Diff mode</a> so you can verify the conversion accuracy before exporting. Read the <a href=\"https://ginexys.com/tools/pdf-processor/docs/comparison-tools/index.html\">Comparison Tools Documentation</a> for advanced workflows."
-              }
+              "@type": "ListItem",
+              "position": 1,
+              "name": "Home",
+              "item": "https://ginexys.com/"
+            },
+            {
+              "@type": "ListItem",
+              "position": 2,
+              "name": "PDF Extractor",
+              "item": "https://ginexys.com/tools/pdf-processor/index.html"
             }
           ]
         }
@@ -58,43 +95,69 @@
     }
     </script>
 
+    <!-- ── FAQ Structured Data (AEO / Perplexity targeting) ── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I extract text from a PDF online without uploading it?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The Ginexys PDF Extractor runs entirely in your browser using client-side OCR (Tesseract). Your file is never uploaded to a server — paste or open a PDF and the extraction happens locally on your device at ginexys.com/tools/pdf-processor."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I convert a PDF table to HTML or CSV online for free?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Use the Ginexys PDF Extractor to convert PDF tables to structured HTML in your browser. The AI-assisted grid mapping identifies table rows and columns accurately. You can then export the result to HTML, Markdown, or CSV — no upload required."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the best free OCR tool that works entirely in the browser?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Ginexys PDF Extractor uses Tesseract OCR running client-side in the browser — no server processing, no data upload. It supports both regular and scanned PDFs with layout-preserving extraction."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I extract data from a scanned PDF without Adobe Acrobat?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The Ginexys PDF Extractor includes Tesseract OCR for scanned documents, all running in the browser. You get a structured HTML output with the text and layout preserved — no Adobe Acrobat or desktop software needed."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I compare my PDF and the extracted HTML side by side?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. The Ginexys PDF Extractor includes a side-by-side diff view so you can compare the original PDF rendering against the extracted HTML output to check accuracy and correct any layout issues."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is there a free PDF to Markdown converter that doesn't upload files?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. The Ginexys PDF Extractor converts PDFs to structured HTML which you can then export as Markdown. All processing is local in your browser — your PDF never leaves your device."
+          }
+        }
+      ]
+    }
+    </script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="src/styles.css">
-    <script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "WebApplication",
-      "name": "PDF to HTML Editor — Browser-Based PDF Extractor",
-      "url": "https://ginexys.com/tools/pdf-processor/editor/",
-      "applicationCategory": "DeveloperApplication",
-      "operatingSystem": "Web",
-      "description": "Extract structured content from PDF files and edit the output in a live Monaco code editor. Converts PDFs to clean HTML or Markdown entirely in your browser — files never leave your device.",
-      "featureList": [
-        "PDF layout analysis and text extraction runs entirely in the browser",
-        "Monaco Editor for direct HTML and Markdown code editing",
-        "Rich text formatting toolbar — headings, bold, lists, and 2-column layout",
-        "Multi-page support with page navigation and jump-to-page",
-        "Export as clean HTML or regenerated PDF"
-      ],
-      "isPartOf": {
-        "@type": "WebApplication",
-        "name": "pdf processor",
-        "url": "https://ginexys.com/tools/pdf-processor/"
-      },
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "USD"
-      }
-    }
-  ]
-}
-</script>
+  <link rel="canonical" href="https://ginexys.com/tools/pdf-processor/editor/">
 </head>
 
 <body>
@@ -336,50 +399,6 @@
         </div>
     </div>
 
-    <!-- ── ANALYZE VIEW ─────────────────────────────────────────────── -->
-    <div id="view-analyze" class="view-panel">
-        <div class="analyze-layout">
-
-            <!-- Metadata bar -->
-            <div class="analyze-meta-bar">
-                <span id="analyze-status" class="analyze-status-msg">Open a PDF to analyze it.</span>
-                <div id="analyze-meta" class="analyze-meta"></div>
-            </div>
-
-            <!-- Body: canvas + stats side by side -->
-            <div class="analyze-body">
-
-                <!-- Left: canvas -->
-                <div class="analyze-canvas-wrap">
-                    <div class="analyze-canvas-header">
-                        <button class="tool-btn" id="analyze-page-prev" disabled>⟨</button>
-                        <span id="analyze-page-counter" class="page-counter">—</span>
-                        <button class="tool-btn" id="analyze-page-next" disabled>⟩</button>
-                    </div>
-                    <canvas id="analyze-canvas" class="analyze-canvas"></canvas>
-                    <div class="analyze-legend" id="analyze-legend">
-                        <button class="legend-toggle active" data-layer="hSegs" style="--lc:#3b82f6">━ H lines</button>
-                        <button class="legend-toggle active" data-layer="vSegs" style="--lc:#10b981">━ V lines</button>
-                        <button class="legend-toggle active" data-layer="diagSegs" style="--lc:#9ca3af">━
-                            Diagonal</button>
-                        <button class="legend-toggle active" data-layer="rects" style="--lc:#f97316">▭ Rect
-                            candidates</button>
-                        <button class="legend-toggle active" data-layer="images" style="--lc:#ef4444">▭ Images</button>
-                        <button class="legend-toggle active" data-layer="text" style="--lc:#eab308">● Text
-                            baselines</button>
-                    </div>
-                </div>
-
-                <!-- Right: stats -->
-                <div class="analyze-stats-wrap">
-                    <h4 class="analyze-section-title">Page structure</h4>
-                    <div id="analyze-stats"></div>
-                </div>
-
-            </div>
-        </div>
-    </div>
-
     <!-- ── RIGHT-CLICK CONTEXT MENU ──────────────────────────────────── -->
     <div id="ctx-menu" class="ctx-menu" hidden>
         <button class="ctx-item" id="ctx-img-url">
@@ -408,7 +427,7 @@
     <script src="/assets/os/contracts.js"></script>
     <script src="/assets/os/bridge.js"></script>
 
-    <script type="module">import '../src/app.js';</script>
+    <script type="module" src="./src/app.js"></script>
     <script>
         // Mode routing — path-based activation + URL sync on switch
         document.addEventListener('DOMContentLoaded', function () {
