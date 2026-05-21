@@ -22,6 +22,21 @@ import { downloadExtractedHTML, exportExtractedPDF } from './fileUpload.js';
 export function initExportSystem() {
     $('#btn-export-main').on('click', (e) => {
         e.stopPropagation();
+        const dropdown = document.getElementById('export-dropdown');
+        const menu = dropdown?.querySelector('.dropdown-menu');
+        const isOpen = dropdown?.classList.contains('open');
+
+        if (!isOpen && menu) {
+            const btn = document.getElementById('btn-export-main');
+            const rect = btn.getBoundingClientRect();
+            // Align right edge of menu with right edge of button
+            const menuWidth = 240;
+            let left = rect.right - menuWidth;
+            if (left < 8) left = 8;
+            menu.style.top  = (rect.bottom + 8) + 'px';
+            menu.style.left = left + 'px';
+        }
+
         $('#export-dropdown').toggleClass('open');
     });
 

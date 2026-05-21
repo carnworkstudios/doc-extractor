@@ -41,6 +41,7 @@ body {
 .app-header {
     height: var(--header-h);
     display: flex;
+    overflow: auto;
     align-items: center;
     gap: 12px;
     padding: 0 16px;
@@ -195,9 +196,7 @@ body {
 
 .dropdown-menu {
     display: none;
-    position: absolute;
-    right: 0;
-    top: calc(100% + 8px);
+    position: fixed;
     background: #fff;
     min-width: 240px;
     border-radius: 8px;
@@ -488,7 +487,11 @@ body {
 .pdf-zone--cols-2 { display: grid; grid-template-columns: repeat(2, 1fr); column-gap: 20px; }
 .pdf-zone--cols-3 { display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 14px; }
 .pdf-zone--cols-4 { display: grid; grid-template-columns: repeat(4, 1fr); column-gap: 10px; }
+.pdf-zone--flex-center { display: block; }
 .pdf-col { min-width: 0; }
+.pdf-col--left { padding-right: 10px; }
+.pdf-col--center { padding-left: 10px; padding-right: 10px; }
+.pdf-col--right { padding-left: 10px; }
 .pdf-region { }
 @media (max-width: 720px) {
     .pdf-zone--cols-2, .pdf-zone--cols-3, .pdf-zone--cols-4 { grid-template-columns: 1fr; }
@@ -1177,4 +1180,81 @@ body {
         padding: 4px 8px;
         font-size: 11px;
     }
+}
+
+/* ── SELECTION MODE PHASE 2 ──────────────────────────────────────────────── */
+/* Zones need position:relative in selection mode for divider positioning */
+#html-preview.selection-mode .pdf-zone { position: relative; }
+
+/* Flex-center zone */
+.pdf-zone--flex-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* Ghost column drop target */
+.sel-ghost-col {
+    border: 2px dashed var(--accent);
+    background: rgba(0, 120, 212, 0.05);
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    color: var(--accent);
+    font-size: 12px;
+    transition: background 0.15s;
+}
+.sel-ghost-col.sel-ghost-active {
+    background: rgba(0, 120, 212, 0.16);
+}
+
+/* Column resize divider */
+.sel-col-divider {
+    position: absolute;
+    top: 0;
+    width: 10px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 5;
+    transform: translateX(-5px);
+}
+.sel-col-divider::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 0;
+    width: 2px;
+    height: 100%;
+    background: transparent;
+    transition: background 0.15s;
+}
+.sel-col-divider:hover::after,
+.sel-col-divider--dragging::after { background: var(--accent); }
+
+/* Floating properties panel */
+.sel-props-panel {
+    position: fixed;
+    z-index: 800;
+    background: var(--surface);
+    border: 1px solid var(--border-dark);
+    border-radius: 8px;
+    padding: 10px 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 200px;
+    font-size: 12px;
+}
+.sel-props-panel[hidden] { display: none; }
+.sel-props-row { display: flex; align-items: center; gap: 6px; }
+.sel-props-label { color: var(--text-muted); width: 64px; flex-shrink: 0; }
+.sel-props-input {
+    width: 54px; height: 22px;
+    border: 1px solid var(--border-dark);
+    border-radius: 4px; padding: 0 4px;
+    font-family: inherit; font-size: 12px;
+    background: var(--surface); color: var(--text);
 }

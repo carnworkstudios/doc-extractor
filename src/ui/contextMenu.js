@@ -6,20 +6,27 @@
 
 import $ from 'jquery';
 import { openViewCode } from './viewCode.js';
+import { toggleFlexCenter } from './selectionMode.js';
 
 const REGION_SELECTOR = '.pdf-region, .pdf-zone, .pdf-table-wrap';
 
 let targetElement = null;
+let targetZone = null;
 
 export function initContextMenu() {
     $(document).on('contextmenu', '.prose-area', function (e) {
         e.preventDefault();
         targetElement = e.target;
+        targetZone = $(e.target).closest('.pdf-zone')[0] || null;
 
-        // Show "Edit Code" only when right-clicking inside an editable region
         const inRegion = !!$(e.target).closest(REGION_SELECTOR).length;
         $('#ctx-edit-code').toggle(inRegion);
         $('#ctx-sep-edit').toggle(inRegion);
+
+        const inZone = !!targetZone;
+        const isCentered = targetZone && targetZone.classList.contains('pdf-zone--flex-center');
+        $('#ctx-center-zone-label').text(isCentered ? 'Remove centered' : 'Make centered');
+        $('#ctx-sep-center, #ctx-center-zone').toggle(inZone);
 
         const menu = $('#ctx-menu');
         menu.css({
@@ -64,5 +71,10 @@ export function initContextMenu() {
     $('#ctx-edit-code').on('click', function () {
         $('#ctx-menu').hide();
         if (targetElement) openViewCode(targetElement);
+    });
+
+    $('#ctx-center-zone').on('click', function () {
+        $('#ctx-menu').hide();
+        if (targetZone) toggleFlexCenter(targetZone);
     });
 }

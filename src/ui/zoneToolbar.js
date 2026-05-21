@@ -50,7 +50,7 @@ export function refreshZoneToolbar() {
         chip.className = 'tool-btn zone-chip';
         chip.dataset.zoneIdx = i;
         chip.title = `Zone ${i + 1} — click to cycle column count (current: ${zone.cols})`;
-        chip.textContent = `Z${i + 1}·${zone.cols}col`;
+        chip.textContent = zone.type === 'flex-center' ? `Z${i + 1}·center` : `Z${i + 1}·${zone.cols}col`;
         container.appendChild(chip);
     });
 }
@@ -75,7 +75,14 @@ function _getActivePage() {
 function _cycleZoneCols(pageEl, zoneIdx) {
     const zones = _readZones(pageEl);
     if (!zones[zoneIdx]) return;
-    zones[zoneIdx] = { ...zones[zoneIdx], cols: (zones[zoneIdx].cols % 4) + 1 };
+    const z = zones[zoneIdx];
+    if (z.type === 'flex-center') {
+        delete z.type;
+        z.cols = 1;
+        zones[zoneIdx] = z;
+    } else {
+        zones[zoneIdx] = { ...z, cols: (z.cols % 4) + 1 };
+    }
     _writeZones(pageEl, zones);
     applyZones(pageEl, zones);
     refreshZoneToolbar();
@@ -158,7 +165,17 @@ export function applyZones(pageEl, zones) {
         if (!zoneRegions.length) continue;
 
         const zoneDiv = document.createElement('div');
+        if (zone.type === 'flex-center') {
+            zoneDiv.className = 'pdf-zone pdf-zone--flex-center';
+            zoneRegions.forEach(r => zoneDiv.appendChild(r.el));
+            pageEl.appendChild(zoneDiv);
+            continue;
+        }
         zoneDiv.className = `pdf-zone pdf-zone--cols-${zone.cols}`;
+
+        if (zone.colWidths && zone.cols > 1) {
+            zoneDiv.style.gridTemplateColumns = zone.colWidths.join(' ');
+        }
 
         if (zone.cols === 1) {
             zoneRegions.forEach(r => zoneDiv.appendChild(r.el));
