@@ -7,7 +7,7 @@
 import $ from 'jquery';
 import { state } from '../state.js';
 import { renderPDFToCanvas } from './pdfCanvas.js';
-import { showStatus, hideStatus, enableDiffTab, disableDiffTab } from './viewController.js';
+import { showStatus, hideStatus, enableDiffTab, disableDiffTab, switchView } from './viewController.js';
 import { registerPages } from './pageNav.js';
 import { markDiffDirty } from './visualDiff.js';
 import { initTableFeatures } from '../utils/tableLogic.js';
@@ -112,10 +112,13 @@ export function initFileInputs() {
         window.CwsBridge.send('ginexys:pdf-ready', {});
         window.addEventListener('message', e => {
             if (e.data?.type === 'ginexys:pdf-bytes') {
-                const bytes = new Uint8Array(e.data.payload.buffer);
+                const { buffer, fileName, mode } = e.data.payload;
+                const bytes = new Uint8Array(buffer);
                 const blob = new Blob([bytes], { type: 'application/pdf' });
-                const file = new File([blob], e.data.payload.fileName ?? 'document.pdf', { type: 'application/pdf' });
-                handleFile(file, 1);
+                const file = new File([blob], fileName ?? 'document.pdf', { type: 'application/pdf' });
+                handleFile(file, 1).then(() => {
+                    if (mode) switchView(mode);
+                });
             }
         });
     }
