@@ -295,6 +295,12 @@
             <button class="tool-btn" id="btn-zoom-fit" title="Fit width">↔</button>
         </div>
         <div class="toolbar-sep"></div>
+        <!-- Selection Mode -->
+        <div class="toolbar-group">
+            <button class="tool-btn" id="btn-select-mode" title="Toggle Selection / Edit mode">Select</button>
+            <button class="tool-btn" id="btn-group-selected" title="Group selected regions into a zone" style="display:none">Group</button>
+        </div>
+        <div class="toolbar-sep"></div>
         <!-- Page navigation -->
         <div class="toolbar-group page-nav" id="page-nav">
             <button class="tool-btn" id="btn-prev-page" title="Previous page">⟨</button>
@@ -428,6 +434,14 @@
             </svg>
             Insert image from file
         </button>
+        <div class="ctx-sep" id="ctx-sep-edit"></div>
+        <button class="ctx-item" id="ctx-edit-code">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+            </svg>
+            Edit Code
+        </button>
         <input id="ctx-file-input" type="file" accept="image/*" style="display:none" />
     </div>
 
@@ -472,6 +486,19 @@
             });
         });
     </script>
+
+    <!-- ── VIEW CODE DIALOG ──────────────────────────────────────────────── -->
+    <dialog id="view-code-dialog">
+        <div class="vc-header">
+            <span id="vc-element-label" class="vc-label"></span>
+            <button id="vc-close" class="vc-btn-icon" title="Close">✕</button>
+        </div>
+        <div id="vc-monaco-container"></div>
+        <div class="vc-footer">
+            <button id="vc-cancel" class="tool-btn">Cancel</button>
+            <button id="vc-apply" class="tool-btn tool-btn--primary">Apply</button>
+        </div>
+    </dialog>
 </body>
 
 </html>

@@ -14,6 +14,8 @@ import { initMonacoEditor } from './editor/monacoSetup.js';
 import { initAnalyzePanel } from './ui/analyzePanel.js';
 import { initHTMLSync } from './ui/htmlSync.js';
 import { initZoneToolbar } from './ui/zoneToolbar.js';
+import { initSelectionMode } from './ui/selectionMode.js';
+import { initViewCode } from './ui/viewCode.js';
 
 // DOMPurify available globally for fileUpload / monacoSetup
 window.DOMPurify = DOMPurify;
@@ -29,6 +31,8 @@ $(() => {
     initHTMLSync();
     initZoneToolbar();
     initExportSystem();
+    initSelectionMode();
+    initViewCode();
 
     // From our new diffChecker controller logic
     import('./ui/diffViewController.js').then(m => m.initDiffTabsAndLayout());

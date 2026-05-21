@@ -126,6 +126,10 @@ export function generateDocumentStyles(fontRegistry) {
         '.pdf-box--tip     { border-color: #107c10; background: #f4fff4; }',
         // Divider
         '.pdf-divider { border: none; border-top: 1px solid #ccc; margin: 14px 0; }',
+        // Standalone list wrapper (prevents adjacent lists from merging in contenteditable)
+        '.pdf-list-wrap { margin: 6px 0; }',
+        '.pdf-list-wrap ol, .pdf-list-wrap ul { margin: 0; padding-left: 1.4em; }',
+        '.pdf-list-wrap li { margin: 2px 0; }',
         // Zone / column layout
         '.pdf-zone { }',
         '.pdf-zone--cols-1 { }',
@@ -417,9 +421,9 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
             const fontClass = _registerFont(fontRegistry, family, sizePt, bold, italic);
-            const listHtml  = rawList.replace(/^<(ul|ol)>/, `<$1 class="${fontClass}">`);
 
-            html = listHtml;
+            // Parse the raw <ul>/<ol> into standalone list with correct semantics
+            html = _buildStandaloneList(rawList, fontClass);
             text = scopedItems.map(i => i.str?.trim()).filter(Boolean).join('\n');
             break;
         }
@@ -554,4 +558,72 @@ function _buildList(textItems, pageWidthPt, isOrdered) {
 
     if (!listItems.length) return '';
     return `<${tag}>\n${listItems.join('\n')}\n</${tag}>`;
+}
+
+/**
+ * Wraps a raw <ul>/<ol> string as a standalone, semantically-correct list.
+ *
+ * Improvements over the previous rawList.replace() approach:
+ *  - Detects ordered start number from the first <li> text prefix and sets start="N"
+ *  - Strips numeric/bullet prefixes that _buildList may have left on <li> text
+ *  - Detects nested items (deeper indentation prefix inside an <li>) and wraps
+ *    them as child <ul>/<ol> inside the parent <li>
+ *  - Wraps the whole thing in <div class="pdf-list-wrap"> so adjacent lists
+ *    never merge in the DOM (contenteditable collapses adjacent same-type lists)
+ */
+function _buildStandaloneList(rawHtml, fontClass) {
+    const isOrdered = rawHtml.trimStart().startsWith('<ol');
+
+    // Parse via DOM (we're in a Worker — use a lightweight regex approach instead)
+    // Extract all <li>...</li> contents
+    const liContents = [];
+    const liRe = /<li>([\s\S]*?)<\/li>/g;
+    let m;
+    while ((m = liRe.exec(rawHtml)) !== null) {
+        liContents.push(m[1]);
+    }
+    if (!liContents.length) return rawHtml; // fallback — return as-is
+
+    // Detect start number from first item's visible text
+    const firstText = liContents[0].replace(/<[^>]+>/g, '').trim();
+    const orderedStartMatch = /^(\d+)[.)]\s/.exec(firstText);
+    const startNum = orderedStartMatch ? parseInt(orderedStartMatch[1], 10) : 1;
+
+    // Build <li> elements — detect nested sub-items within each li
+    const liTags = liContents.map(content => {
+        const plainText = content.replace(/<[^>]+>/g, '').trim();
+        // Strip leading bullet/number prefix that was kept by _buildList in edge cases
+        const stripped = content
+            .replace(/^(\s*(?:<[^>]+>\s*)*)(?:\d+[.)]\s*|[•‣◦▪▫–—―·○◦◉▪▫-]\s*)/, '$1');
+
+        // Detect nested items: lines inside the content that begin with an
+        // indented bullet or numbered prefix (after any inline tags)
+        const nestedRe = /(?:<br\s*\/?>|\n)\s*([•‣◦▪▫–—*-]|\d+[.)])\s+/;
+        if (nestedRe.test(stripped)) {
+            // Split on <br> or newlines into sub-items
+            const parts = stripped.split(/<br\s*\/?>/i);
+            const primary = parts[0].trim();
+            const subItems = parts.slice(1).filter(p => p.trim());
+
+            if (subItems.length) {
+                // Determine sub-list type from first sub-item prefix
+                const firstSub = subItems[0].replace(/<[^>]+>/g, '').trim();
+                const subIsOl  = /^\d+[.)]/.test(firstSub);
+                const subTag   = subIsOl ? 'ol' : 'ul';
+                const subLis   = subItems.map(s => {
+                    const clean = s.replace(/^(?:\d+[.)]\s*|[•‣◦▪▫–—*-]\s*)/, '').trim();
+                    return `<li>${clean}</li>`;
+                }).join('');
+                return `<li>${primary}<${subTag} class="${fontClass}">${subLis}</${subTag}></li>`;
+            }
+        }
+
+        return `<li>${stripped}</li>`;
+    });
+
+    const tag        = isOrdered ? 'ol' : 'ul';
+    const startAttr  = (isOrdered && startNum !== 1) ? ` start="${startNum}"` : '';
+    const listHtml   = `<${tag} class="${fontClass}"${startAttr}>\n${liTags.join('\n')}\n</${tag}>`;
+
+    return `<div class="pdf-list-wrap">${listHtml}</div>`;
 }
