@@ -10,6 +10,8 @@
 // from ctmAdapter which outputs viewport-space segments. Text items arrive
 // in PDF user-space and are transformed here using viewport.transform.
 
+import { rebuildText } from './textRebuilder.js';
+
 function esc(s) {
     return String(s)
         .replace(/&/g, '&amp;')
@@ -87,7 +89,7 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
     const vpTransform = viewport.transform;
 
     // ── 1. Assign text items to cells ───────────────────────────────────────
-    // Each cell holds an array of { text, x } for sorting
+    // Each cell holds an array of full text items with _x for sorting
     const cells = Array.from({ length: numRows }, () =>
         Array.from({ length: numCols }, () => []),
     );
@@ -128,7 +130,7 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
         // This acts as our "KD-tree" proximity lookup without the heavy data structure
         if (bestR !== -1 && bestC !== -1 && minDist < proximityPx && !assignedItems.has(idx)) {
             assignedItems.add(idx);
-            cells[bestR][bestC].push({ text: item.str.trim(), x: sx });
+            cells[bestR][bestC].push({ ...item, _x: sx });
         }
     }
 
@@ -144,7 +146,7 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
     // Sort items within each cell by X position (left-to-right reading order)
     for (let r = 0; r < numRows; r++) {
         for (let c = 0; c < numCols; c++) {
-            cells[r][c].sort((a, b) => a.x - b.x);
+            cells[r][c].sort((a, b) => a._x - b._x);
         }
     }
 
@@ -220,7 +222,7 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
                 }
             }
 
-            const cellContent = esc(allItems.map(i => i.text).join(' ').trim());
+            const cellContent = rebuildText(allItems, 0, { format: 'inline-html' }) || '&nbsp;';
             const tag = r === 0 ? 'th' : 'td';
             const colAttr = effectiveColspan > 1 ? ` colspan="${effectiveColspan}"` : '';
             const rowAttr = rowspan > 1 ? ` rowspan="${rowspan}"` : '';

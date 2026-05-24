@@ -89,7 +89,7 @@ function _registerFont(fontRegistry, family, sizePt, bold, italic) {
         let css = `font-size: ${size}pt; font-family: ${family};`;
         if (bold) css += ' font-weight: bold;';
         if (italic) css += ' font-style: italic;';
-        fontRegistry.set(key, { className: cls, cssLine: `.${cls} { ${css} }` });
+        fontRegistry.set(key, { className: cls, cssLine: `.pdf-doc .${cls} { ${css} }` });
     }
     return fontRegistry.get(key).className;
 }
@@ -103,45 +103,48 @@ export function generateDocumentStyles(fontRegistry) {
     const fontLines = [...fontRegistry.values()].map(e => e.cssLine);
 
     const staticLines = [
-        '.ta-l  { text-align: left; }',
-        '.ta-c  { text-align: center; }',
-        '.ta-r  { text-align: right; }',
-        '.ta-j  { text-align: justify; }',
-        '.bold  { font-weight: bold; }',
-        '.ital  { font-style: italic; }',
-        '.uline { text-decoration: underline; }',
-        '.col-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }',
-        '.col-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }',
+        '.pdf-doc .ta-l  { text-align: left; }',
+        '.pdf-doc .ta-c  { text-align: center; }',
+        '.pdf-doc .ta-r  { text-align: right; }',
+        '.pdf-doc .ta-j  { text-align: justify; }',
+        '.pdf-doc .bold  { font-weight: bold; }',
+        '.pdf-doc .ital  { font-style: italic; }',
+        '.pdf-doc .uline { text-decoration: underline; }',
+        '.pdf-doc .col-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }',
+        '.pdf-doc .col-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }',
         // Table variants
-        '.pdf-table-wrap { overflow-x: auto; margin: 8px 0; }',
-        '.pdf-table--lattice table   { border-collapse: collapse; width: 100%; }',
-        '.pdf-table--lattice td, .pdf-table--lattice th { border: 1px solid #ccc; padding: 4px 8px; }',
-        '.pdf-table--borderless table { border-collapse: collapse; width: 100%; }',
-        '.pdf-table--borderless td, .pdf-table--borderless th { padding: 4px 12px 4px 0; }',
+        '.pdf-doc .pdf-table-wrap { overflow-x: auto; margin: 8px 0; }',
+        '.pdf-doc .pdf-table--lattice table   { border-collapse: collapse; width: 100%; }',
+        '.pdf-doc .pdf-table--lattice td, .pdf-doc .pdf-table--lattice th { border: 1px solid #ccc; padding: 4px 8px; }',
+        '.pdf-doc .pdf-table--borderless table { border-collapse: collapse; width: 100%; }',
+        '.pdf-doc .pdf-table--borderless td, .pdf-doc .pdf-table--borderless th { padding: 4px 12px 4px 0; }',
         // Semantic box containers
-        '.pdf-box { border: 1.5px solid #888; border-radius: 3px; padding: 8px 14px; margin: 10px 0; }',
-        '.pdf-box--warning { border-color: #d9534f; background: #fff5f5; }',
-        '.pdf-box--caution { border-color: #e6a000; background: #fffbe6; }',
-        '.pdf-box--note    { border-color: #0078d4; background: #f0f8ff; }',
-        '.pdf-box--tip     { border-color: #107c10; background: #f4fff4; }',
+        '.pdf-doc .pdf-box { border: 1.5px solid #888; border-radius: 3px; padding: 8px 14px; margin: 10px 0; }',
+        '.pdf-doc .pdf-box--warning { border-color: #d9534f; background: #fff5f5; }',
+        '.pdf-doc .pdf-box--caution { border-color: #e6a000; background: #fffbe6; }',
+        '.pdf-doc .pdf-box--note    { border-color: #0078d4; background: #f0f8ff; }',
+        '.pdf-doc .pdf-box--tip     { border-color: #107c10; background: #f4fff4; }',
         // Divider
-        '.pdf-divider { border: none; border-top: 1px solid #ccc; margin: 14px 0; }',
+        '.pdf-doc .pdf-divider { border: none; border-top: 1px solid #ccc; margin: 14px 0; }',
         // Standalone list wrapper (prevents adjacent lists from merging in contenteditable)
-        '.pdf-list-wrap { margin: 6px 0; }',
-        '.pdf-list-wrap ol, .pdf-list-wrap ul { margin: 0; padding-left: 1.4em; }',
-        '.pdf-list-wrap li { margin: 2px 0; }',
+        '.pdf-doc .pdf-list-wrap { margin: 6px 0; }',
+        '.pdf-doc .pdf-list-wrap ol, .pdf-doc .pdf-list-wrap ul { margin: 0; padding-left: 1.4em; }',
+        '.pdf-doc .pdf-list-wrap li { margin: 2px 0; }',
         // Zone / column layout
-        '.pdf-zone { }',
-        '.pdf-zone--cols-1 { }',
-        '.pdf-zone--cols-2 { display: grid; grid-template-columns: repeat(2, 1fr); column-gap: 20px; }',
-        '.pdf-zone--cols-3 { display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 14px; }',
-        '.pdf-zone--cols-4 { display: grid; grid-template-columns: repeat(4, 1fr); column-gap: 10px; }',
-        '.pdf-col { min-width: 0; }',
-        '.pdf-region { }',
-        '@media (max-width: 720px) { .pdf-zone--cols-2, .pdf-zone--cols-3, .pdf-zone--cols-4 { grid-template-columns: 1fr; } }',
+        '.pdf-doc .pdf-zone { }',
+        '.pdf-doc .pdf-zone--flex-center { display: flex; justify-content: center; }',
+        '.pdf-doc .layout-feature { align-items: start; }',
+        '.pdf-doc .layout-card-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important; }',
+        '.pdf-doc .pdf-zone--cols-1 { }',
+        '.pdf-doc .pdf-zone--cols-2 { display: grid; grid-template-columns: calc(var(--left-col, 0.5) * 100%) 1fr; column-gap: 20px; }',
+        '.pdf-doc .pdf-zone--cols-3 { display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 14px; }',
+        '.pdf-doc .pdf-zone--cols-4 { display: grid; grid-template-columns: repeat(4, 1fr); column-gap: 10px; }',
+        '.pdf-doc .pdf-col { min-width: 0; }',
+        '.pdf-doc .pdf-region { }',
+        '@media (max-width: 720px) { .pdf-doc .pdf-zone--cols-2, .pdf-doc .pdf-zone--cols-3, .pdf-doc .pdf-zone--cols-4 { grid-template-columns: 1fr; } }',
         // Running header / footer
-        '.pdf-header { font-size: 0.78em; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-bottom: 12px; }',
-        '.pdf-footer { font-size: 0.78em; color: #555; border-top: 1px solid #ddd; padding-top: 4px; margin-top: 12px; }',
+        '.pdf-doc .pdf-header { font-size: 0.78em; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-bottom: 12px; }',
+        '.pdf-doc .pdf-footer { font-size: 0.78em; color: #555; border-top: 1px solid #ddd; padding-top: 4px; margin-top: 12px; }',
     ];
 
     return [...fontLines, ...staticLines].join('\n');
@@ -241,11 +244,25 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
     const textParts = [];
     let tableCount = 0;
 
+    // Step 4: Figure+caption detection pre-pass
+    _mergeFigureCaptions(regions, textMeta);
+
+    // Step 5: Heading levels (first large heading on page 1 becomes H1)
+    if (pageNum === 1) {
+        let maxH = null;
+        for (const r of regions) {
+            if (r.type === RegionType.HEADING) {
+                if (!maxH || r.fontSize > maxH.fontSize) maxH = r;
+            }
+        }
+        if (maxH && maxH.fontSize > 20) maxH.isH1 = true;
+    }
+
     const numCols = Math.max(1, columnSplits.length + 1);
     const pageWidth = viewport.width || 612;
 
     // Detect zone layout from classifier column assignments
-    const autoZones = _detectAutoZones(regions, numCols);
+    const autoZones = _detectAutoZones(regions, numCols, pageWidth);
 
     // Render each region wrapped in a .pdf-region sentinel that carries
     // its viewport-space Y/X so the zone toolbar can rearrange without
@@ -286,16 +303,23 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
                 const name = cols <= 3 ? COL_NAMES[i] : `col-${i}`;
                 return `<div class="pdf-col pdf-col--${name}">${col.map(r => r.html).join('\n')}</div>`;
             });
-            parts.push(`<div class="pdf-zone pdf-zone--cols-${cols}">${colDivs.join('\n')}</div>`);
+            
+            let styleAttr = '';
+            if (cols === 2 && columnSplits.length > 0 && zone.layoutClass !== 'layout-card-grid') {
+                const leftFraction = columnSplits[0].leftFraction || 0.5;
+                styleAttr = ` style="--left-col: ${leftFraction.toFixed(4)};"`;
+            }
+
+            parts.push(`<div class="pdf-zone pdf-zone--cols-${cols} ${zone.layoutClass}"${styleAttr}>${colDivs.join('\n')}</div>`);
         }
     }
 
     const hasContent = parts.length > 0;
     const zonesJson = JSON.stringify(autoZones).replace(/'/g, '&#39;');
     const html = hasContent
-        ? `<section class="pdf-page-content" data-page="${pageNum}" data-page-width="${Math.round(pageWidth)}" data-zones='${zonesJson}'>\n` +
+        ? `<article class="pdf-doc">\n<section class="pdf-page-content" data-page="${pageNum}" data-page-width="${Math.round(pageWidth)}" data-zones='${zonesJson}'>\n` +
           `<h4 class="page-label">Page ${pageNum}</h4>\n` +
-          parts.join('\n') + '\n</section>'
+          parts.join('\n') + '\n</section>\n</article>'
         : '';
 
     return { html, text: textParts.join('\n\n'), tableCount };
@@ -304,7 +328,7 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
 // Group regions into contiguous zones of same column type (full-width vs N-col).
 // Y boundaries are midpoints between adjacent groups so every region falls in
 // exactly one zone.
-function _detectAutoZones(regions, numCols) {
+function _detectAutoZones(regions, numCols, pageWidth) {
     if (!regions.length) return [{ y0: 0, y1: 99999, cols: 1 }];
 
     const sorted = [...regions].sort((a, b) => (a.yCenter ?? 0) - (b.yCenter ?? 0));
@@ -323,16 +347,76 @@ function _detectAutoZones(regions, numCols) {
     groups.push(cur);
 
     return groups.map((g, i) => {
-        const prev = groups[i - 1];
         const next = groups[i + 1];
-        const y0 = prev
-            ? Math.round((prev.list[prev.list.length - 1].yCenter + g.list[0].yCenter) / 2)
-            : 0;
-        const y1 = next
-            ? Math.round((g.list[g.list.length - 1].yCenter + next.list[0].yCenter) / 2)
-            : 99999;
-        return { y0, y1, cols: g.isFullWidth ? 1 : numCols };
+        
+        // Step 6: Zone boundaries use deterministic bbox.y of the lead element
+        const lead = g.list[0];
+        const y0 = i === 0 ? 0 : (lead.bbox ? Math.floor(lead.bbox.y) : Math.floor(lead.yCenter));
+        
+        let y1 = 99999;
+        if (next) {
+            const nextLead = next.list[0];
+            y1 = nextLead.bbox ? Math.floor(nextLead.bbox.y) : Math.floor(nextLead.yCenter);
+        }
+        
+        const zoneCols = g.isFullWidth ? 1 : numCols;
+        let layoutClass = 'layout-equal';
+        
+        if (!g.isFullWidth) {
+            // Check for CARD_GRID: 3+ HEADINGs at same Y
+            const headings = g.list.filter(r => r.type === RegionType.HEADING);
+            let isCardGrid = false;
+            if (headings.length >= 3) {
+                const yBuckets = [];
+                for (const h of headings) {
+                    const bucket = yBuckets.find(b => Math.abs(b.y - h.yCenter) < 15);
+                    if (bucket) { bucket.count++; bucket.y = (bucket.y * (bucket.count - 1) + h.yCenter) / bucket.count; }
+                    else yBuckets.push({ y: h.yCenter, count: 1 });
+                }
+                if (yBuckets.some(b => b.count >= 3)) isCardGrid = true;
+            }
+            
+            // Check for FEATURE_LAYOUT: 2 cols, left is all visual, right is text
+            let isFeature = false;
+            if (zoneCols === 2) {
+                const col0 = g.list.filter(r => r.columnIndex === 0 || (r.colIdx === undefined && r.bbox?.x < pageWidth/2));
+                const col1 = g.list.filter(r => r.columnIndex === 1 || (r.colIdx === undefined && r.bbox?.x >= pageWidth/2));
+                const col0AllVisual = col0.length > 0 && col0.every(r => r.type === RegionType.HEADING || r.type === RegionType.IMAGE);
+                const col1HasText = col1.some(r => r.type === RegionType.PARAGRAPH || r.type === RegionType.LIST);
+                if (col0AllVisual && col1HasText) isFeature = true;
+            }
+            
+            if (isCardGrid) layoutClass = 'layout-card-grid';
+            else if (isFeature) layoutClass = 'layout-feature';
+        }
+        
+        return { y0, y1, cols: zoneCols, layoutClass };
     });
+}
+
+// Pre-pass: Merge adjacent image and paragraph regions if they look like a figure + caption
+function _mergeFigureCaptions(regions, textMeta) {
+    for (let i = 0; i < regions.length - 1; i++) {
+        const r1 = regions[i];
+        if (r1.type !== RegionType.IMAGE) continue;
+        const r2 = regions[i + 1];
+        if (r2.type !== RegionType.PARAGRAPH) continue;
+        
+        const imgBottom = r1.bbox ? r1.bbox.y + r1.bbox.h : r1.yCenter;
+        const capTop = r2.bbox ? r2.bbox.y : r2.yCenter;
+        
+        if (capTop >= imgBottom - 10 && capTop <= imgBottom + 45) {
+            const capText = r2.textItemIndices.map(idx => textMeta[idx].str).join(' ');
+            const isFig = /(?:Figure|Fig\.|Table|Exhibit)\s*\d+/i.test(capText);
+            const isShortCenter = capText.length < 150 && r2.bbox && r1.bbox &&
+                Math.abs((r2.bbox.x + r2.bbox.w / 2) - (r1.bbox.x + r1.bbox.w / 2)) < 30;
+            
+            if (isFig || isShortCenter) {
+                r1.captionRegion = r2;
+                regions.splice(i + 1, 1);
+            }
+        }
+    }
 }
 
 // Merge bold/italic/underlined flags from textMeta (which has the reliable
@@ -363,7 +447,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
         case RegionType.LATTICE_TABLE:
         case RegionType.TABLE: {          // TABLE kept as legacy alias
             if (!region.lattice) break;
-            const scopedItems = region.textItemIndices.map(i => textItems[i]);
+            const scopedItems = _scopeItems(region, textItems, textMeta);
             const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set(), region.proximityPx);
             if (tableHtml) {
                 html = `<div class="pdf-table-wrap pdf-table--lattice">${tableHtml}</div>`;
@@ -374,7 +458,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 
         case RegionType.STREAM_TABLE: {
             if (!region.lattice) break;
-            const scopedItems = region.textItemIndices.map(i => textItems[i]);
+            const scopedItems = _scopeItems(region, textItems, textMeta);
             const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set(), region.proximityPx);
             if (tableHtml) {
                 html = `<div class="pdf-table-wrap pdf-table--borderless">${tableHtml}</div>`;
@@ -389,10 +473,18 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
         }
 
         case RegionType.IMAGE: {
-            html = `<div class="pdf-image-placeholder" style="width: 100%; height: auto; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0; position: relative; overflow: auto">` +
+            const imgHtml = `<div class="pdf-image-placeholder" style="width: 100%; height: auto; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0; position: relative; overflow: auto">` +
                 `<span style="position: absolute; top: 8px; left: 8px; font-size: 10px; font-family: monospace;">[${region.id}]</span>` +
                 `<img class="extracted-pdf-image" data-img-id="${region.id}" alt="PDF Image ${region.id}" style="max-width: 100%; max-height: 100%; object-fit: contain;">` +
                 `</div>`;
+            
+            if (region.captionRegion) {
+                const capData = _renderRegion(region.captionRegion, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages);
+                html = `<figure class="pdf-figure" style="margin: 16px 0;">${imgHtml}<figcaption class="pdf-figcaption" style="text-align: center; font-size: 0.9em; color: #666; margin-top: 8px;">${capData.html}</figcaption></figure>`;
+                text = capData.text;
+            } else {
+                html = imgHtml;
+            }
             break;
         }
 
@@ -406,7 +498,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
             const fontClass  = _registerFont(fontRegistry, family, sizePt, bold, italic);
             const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox)] || 'ta-l';
-            const tag = (region.fontSize || 14) > 18 ? 'h3' : 'h4';
+            const tag = region.isH1 ? 'h1' : ((region.fontSize || 14) > 18 ? 'h2' : 'h3');
 
             html = `<${tag} class="${fontClass} ${alignClass}">${headingHtml}</${tag}>`;
             text = rebuildText(scopedItems, pageWidthPt, { format: 'text' });

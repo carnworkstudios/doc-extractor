@@ -457,17 +457,19 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     // Post-correction: after the split is known, any item in fullWidthIndices whose
     // OWN X range sits entirely on one side of every split point is a false-positive
     // and belongs to that column, not to the full-width flow.
-    const { splits: columnSplits, fullWidthIndices } = _detectPageColumns(remainingMeta, viewport, scale);
+    const { splits: rawSplits, fullWidthIndices } = _detectPageColumns(remainingMeta, viewport, scale);
+    const columnSplits = rawSplits.map(s => s.x);
 
     // ── Fallback: BOX / TABLE regions can claim all right-column text items, leaving
     // only left-column items for gutter detection → no split found.  If unclaimed items
     // alone showed no gutter, retry with the FULL textMeta pool (including claimed items).
     // This recovers the real column split without changing which items belong to which region.
-    if (columnSplits.length === 0) {
+    if (rawSplits.length === 0) {
         const allNonEmpty = textMeta.filter(tm => tm.str.trim());
         if (allNonEmpty.length > remainingMeta.length + 4) { // claimed items exist
             const { splits: fallbackSplits } = _detectPageColumns(allNonEmpty, viewport, scale);
-            columnSplits.push(...fallbackSplits);
+            rawSplits.push(...fallbackSplits);
+            columnSplits.push(...fallbackSplits.map(s => s.x));
         }
     }
 
@@ -475,13 +477,18 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     // are re-evaluated once the split is known. Items entirely on one side → column-specific.
     if (columnSplits.length > 0) {
         const tol = scale.proximityPx ?? 5;
+        const boundaries = [-Infinity, ...columnSplits, Infinity];
         for (const idx of [...fullWidthIndices]) {
             const tm = textMeta[idx];
             if (!tm) continue;
             const itemEnd = tm.vx + (tm.vWidth || 0);
-            const entirelyLeft  = columnSplits.every(sx => itemEnd  <= sx + tol);
-            const entirelyRight = columnSplits.every(sx => tm.vx    >= sx - tol);
-            if (entirelyLeft || entirelyRight) fullWidthIndices.delete(idx);
+            
+            const fitsInOneColumn = boundaries.slice(0, -1).some((lo, ci) => {
+                const hi = boundaries[ci + 1];
+                return tm.vx >= lo - tol && itemEnd <= hi + tol;
+            });
+            
+            if (fitsInOneColumn) fullWidthIndices.delete(idx);
         }
     }
 
@@ -494,9 +501,11 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     // that the split point is known.
     if (columnSplits.length > 0) {
         const vw = viewport.width;
+        const eps = 5;
         for (const r of regions) {
             if (r.columnIndex !== -1 || !r.bbox) continue;
-            if (r.bbox.w >= vw * 0.65) continue;
+            const crossesSplit = columnSplits.some(sx => r.bbox.x < sx - eps && (r.bbox.x + r.bbox.w) > sx + eps);
+            if (r.bbox.w >= vw * 0.65 || crossesSplit) continue;
             const cx = r.bbox.x + r.bbox.w / 2;
             for (let ci = 0; ci <= columnSplits.length; ci++) {
                 const lo = ci === 0 ? -Infinity : columnSplits[ci - 1];
@@ -581,7 +590,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         }
     }
 
-    return { regions, textMeta, columnSplits };
+    return { regions, textMeta, columnSplits: rawSplits };
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -777,7 +786,18 @@ function _detectPageColumns(textMeta, viewport, scale) {
         }
     }
 
-    return { splits: candidates, fullWidthIndices };
+    // Keep only splits that actually separate items across enough lines
+    // We already checked this conceptually, but ensuring fractions is useful.
+    const validSplits = candidates;
+
+    return { 
+        splits: validSplits.map(sx => ({
+            x: sx,
+            leftFraction: sx / vpWidth,
+            rightFraction: 1 - (sx / vpWidth)
+        })), 
+        fullWidthIndices 
+    };
 }
 
 function _splitByColumns(textMeta, splits) {
