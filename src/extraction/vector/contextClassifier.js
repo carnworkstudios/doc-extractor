@@ -904,14 +904,19 @@ function _detectPageColumns(textMeta, viewport, scale, { dropGate3 = false } = {
     }
 
     // ── Candidate generation: item-level interval merge ───────────────────────
+    // WIDE_ITEM (55% vp) is the band-level threshold for fullWidthIndices.
+    // MERGE_ITEM (40% vp) is stricter: excludes cross-column titles and display-math
+    // spans that would absorb the real gutter in the interval merge. Normal column
+    // body text is ≈20-35% of viewport width on a 2-column page so 40% is safe.
     const WIDE_ITEM   = vpWidth * WIDE_BAND_FRAC;
+    const MERGE_ITEM  = vpWidth * 0.40;
     const NOISE_FLOOR = scale.S * 0.5;
     const tol         = Math.max(4, scale.colGapMinPx * 0.5);
 
     const structItems = textMeta.filter(i => {
         const w = i.vWidth || 0;
         if (w <= NOISE_FLOOR) return false;
-        if (w > WIDE_ITEM)    return false;
+        if (w > MERGE_ITEM)   return false;
         if (_PAGE_NUM_RE.test(i.str.trim()) && w < scale.S * 2) return false;
         return true;
     });
@@ -936,6 +941,30 @@ function _detectPageColumns(textMeta, viewport, scale, { dropGate3 = false } = {
         }
     }
 
+    // ── Left-edge cluster gap: width-agnostic column boundary detection ────────
+    // Some pages have centered cross-column items (author lines, section headings)
+    // whose wide extent absorbs the gutter in the span merge above. Looking only at
+    // where items START (vx) reveals the column boundary as a gap in start positions.
+    // This is independent of item width and immune to cross-column spanning items.
+    // Guard: the candidate gap must be at least 3× the median inter-item gap and
+    // ≥ colGapMinPx, and it must be the dominant gap (≥ 2× second-largest gap) to
+    // avoid false splits from natural intra-column spacing variation.
+    if (!rawCandidates.length && structItems.length >= 10) {
+        // Bin vx into 2px buckets to collapse sub-pixel jitter, then find gaps
+        const binned = [...new Set(sortedItems.map(i => Math.round(i.vx / 2) * 2))].sort((a,b)=>a-b);
+        const gaps = [];
+        for (let i = 1; i < binned.length; i++) gaps.push({ g: binned[i]-binned[i-1], x: (binned[i-1]+binned[i])/2 });
+        gaps.sort((a,b) => b.g - a.g);
+        if (gaps.length >= 2) {
+            const best = gaps[0], second = gaps[1];
+            if (best.g >= scale.colGapMinPx * 1.5   // at least 1.5× min column gap
+                && best.g >= second.g * 2.0          // dominant gap (2× runner-up)
+                && best.x >= vpWidth * 0.15 && best.x <= vpWidth * 0.85) {
+                rawCandidates.push(best.x);
+            }
+        }
+    }
+
     // ── Fallback: minimum-crossing scan with left/right endpoint snapping ────
     // If the interval merge found no clean gap, some items straddle the column
     // gutter (cross-column captions, table titles, figure labels). Scan for the
@@ -944,48 +973,50 @@ function _detectPageColumns(textMeta, viewport, scale, { dropGate3 = false } = {
     // rightmost left-column endpoint and leftmost right-column start in the
     // neighborhood of the scan minimum.
     if (!rawCandidates.length && structItems.length >= 6) {
-        const scanStep = Math.max(4, scale.colGapMinPx / 4);
-        let minCross = Infinity, bestX = -1;
-        for (let X = vpWidth * 0.15; X <= vpWidth * 0.85; X += scanStep) {
-            const crossing = structItems.filter(i => {
-                const lo = i.vx, hi = i.vx + (i.vWidth || 0);
-                return lo < X - tol && hi > X + tol;
-            }).length;
-            if (crossing < minCross) { minCross = crossing; bestX = X; }
-        }
-        // After finding bestX, exclude items whose content spans the FULL column width
-        // on either side — these are display-math or equation blocks that PDF.js collapses
-        // into a single wide item. A genuine layout-spanning item that bridges the gutter
-        // will have vWidth > half the page; a display-math block that spans one column will
-        // have vWidth close to the half-page column width. Filter those bridgers before the
-        // threshold check: items that cross bestX AND whose width exceeds 80% of the half-
-        // page width are layout-neutral spans, not structural content.
-        const halfPage = vpWidth * 0.45;
-        const scanItems = structItems.filter(i => {
-            const lo = i.vx, hi = i.vx + (i.vWidth || 0);
-            const crosses = lo < bestX - tol && hi > bestX + tol;
-            const isFullColSpan = crosses && (i.vWidth || 0) > halfPage;
-            return !isFullColSpan;
-        });
-        const scanCross = scanItems.filter(i => {
-            const lo = i.vx, hi = i.vx + (i.vWidth || 0);
-            return lo < bestX - tol && hi > bestX + tol;
-        }).length;
-        const MAX_CROSS = Math.max(1, Math.ceil(scanItems.length * 0.06));
-        if (scanCross <= MAX_CROSS && bestX >= vpWidth * 0.15 && bestX <= vpWidth * 0.85) {
-            const leftEnd = scanItems
-                .filter(i => (i.vx + (i.vWidth || 0)) <= bestX + tol)
-                .reduce((m, i) => Math.max(m, i.vx + (i.vWidth || 0)), -Infinity);
-            const rightStart = scanItems
-                .filter(i => i.vx > bestX)
-                .reduce((m, i) => Math.min(m, i.vx), Infinity);
+        // structItems already excludes items wider than 40% of viewport (MERGE_ITEM).
+        // Scan range: from first item's vx + colGapMinPx to last item's vx - colGapMinPx,
+        // clipped to 15%-85% of viewport. This prevents bestX landing at the page edge
+        // where crossing count is trivially 0 but no left-side items exist.
+        const itemVxMin = Math.min(...structItems.map(i => i.vx));
+        const itemVxMax = Math.max(...structItems.map(i => i.vx));
+        const scanLo = Math.max(vpWidth * 0.15, itemVxMin + scale.colGapMinPx);
+        const scanHi = Math.min(vpWidth * 0.85, itemVxMax - scale.colGapMinPx);
 
-            let candidate = bestX;
-            if (leftEnd > -Infinity && rightStart < Infinity && rightStart > leftEnd) {
-                candidate = (leftEnd + rightStart) / 2;
+        if (scanLo < scanHi) {
+            const scanStep = Math.max(4, scale.colGapMinPx / 4);
+            let minCross = Infinity, bestX = -1;
+            for (let X = scanLo; X <= scanHi; X += scanStep) {
+                const left  = structItems.filter(i => i.vx < X - tol).length;
+                const right = structItems.filter(i => i.vx >= X + tol).length;
+                if (left < 3 || right < 3) continue; // need items on both sides
+                const crossing = structItems.filter(i => {
+                    const lo = i.vx, hi = i.vx + (i.vWidth || 0);
+                    return lo < X - tol && hi > X + tol;
+                }).length;
+                if (crossing < minCross) { minCross = crossing; bestX = X; }
             }
-            if (candidate >= vpWidth * 0.15 && candidate <= vpWidth * 0.85) {
-                rawCandidates.push(candidate);
+            if (bestX > 0) {
+                const scanCross = structItems.filter(i => {
+                    const lo = i.vx, hi = i.vx + (i.vWidth || 0);
+                    return lo < bestX - tol && hi > bestX + tol;
+                }).length;
+                const MAX_CROSS = Math.max(1, Math.ceil(structItems.length * 0.06));
+                if (scanCross <= MAX_CROSS) {
+                    const leftEnd = structItems
+                        .filter(i => (i.vx + (i.vWidth || 0)) <= bestX + tol)
+                        .reduce((m, i) => Math.max(m, i.vx + (i.vWidth || 0)), -Infinity);
+                    const rightStart = structItems
+                        .filter(i => i.vx > bestX)
+                        .reduce((m, i) => Math.min(m, i.vx), Infinity);
+
+                    let candidate = bestX;
+                    if (leftEnd > -Infinity && rightStart < Infinity && rightStart > leftEnd) {
+                        candidate = (leftEnd + rightStart) / 2;
+                    }
+                    if (candidate >= vpWidth * 0.15 && candidate <= vpWidth * 0.85) {
+                        rawCandidates.push(candidate);
+                    }
+                }
             }
         }
     }

@@ -8,30 +8,30 @@ import * as jsdiff from 'diff';
 import { state } from '../state.js';
 
 export function initDiffTabsAndLayout() {
-    // Mode tabs: Rich Text / Plain Text
-    $('.cmp-tab').on('click', function() {
-        $('.cmp-tab').removeClass('active');
+    // Mode pills: Rich / Plain
+    $('.diff-pill[data-cmp-view]').on('click', function() {
+        $('.diff-pill[data-cmp-view]').removeClass('active');
         $(this).addClass('active');
-        
+
         state.diffActiveView = $(this).data('cmp-view');
         refreshCompareDiff();
     });
 
     // Layout toggles: Split / Unified
     $('#layout-split').on('click', function() {
-        $('#layout-unified').removeClass('active');
+        $('#layout-split, #layout-unified').removeClass('active');
         $(this).addClass('active');
         $('#diff-container').removeClass('unified-view').addClass('split-view');
-        
+        $('#pane-resizer').show();
         state.diffLayout = 'split';
         refreshCompareDiff();
     });
-    
+
     $('#layout-unified').on('click', function() {
-        $('#layout-split').removeClass('active');
+        $('#layout-split, #layout-unified').removeClass('active');
         $(this).addClass('active');
         $('#diff-container').removeClass('split-view').addClass('unified-view');
-        
+        $('#pane-resizer').hide();
         state.diffLayout = 'unified';
         refreshCompareDiff();
     });
@@ -40,7 +40,6 @@ export function initDiffTabsAndLayout() {
     $('#precision-word, #precision-char').on('click', function() {
         $('#precision-word, #precision-char').removeClass('active');
         $(this).addClass('active');
-        
         state.diffPrecision = $(this).attr('id') === 'precision-word' ? 'word' : 'char';
         refreshCompareDiff();
     });
@@ -115,31 +114,41 @@ function initDiffDividerResize() {
     let startX = 0;
     let startLeftW = 0;
 
-    $('#pane-resizer').on('mousedown', function(e) {
-        dragging = true;
-        startX = e.clientX;
-        startLeftW = $('#pane-left').outerWidth();
-        $(this).addClass('dragging');
-        $('body').css({ userSelect: 'none', cursor: 'col-resize' });
-    });
+    const resizer = document.getElementById('pane-resizer');
+    if (!resizer) return;
 
-    $(document).on('mousemove', function(e) {
+    function startDrag(e) {
+        dragging = true;
+        startX = (e.touches?.[0] ?? e).clientX;
+        startLeftW = $('#pane-left').outerWidth();
+        $('#pane-resizer').addClass('dragging');
+        if (!e.touches) $('body').css({ userSelect: 'none', cursor: 'col-resize' });
+        e.preventDefault();
+    }
+
+    function doDrag(e) {
         if (!dragging) return;
-        const delta = e.clientX - startX;
+        const delta = (e.touches?.[0] ?? e).clientX - startX;
         const totalW = $('#diff-container').outerWidth();
         const newLeftW = Math.max(200, Math.min(totalW - 200, startLeftW + delta));
         const leftPct = (newLeftW / totalW) * 100;
-        
         $('#pane-left').css('flex', `0 0 ${leftPct}%`);
         $('#pane-right').css('flex', `0 0 ${100 - leftPct}%`);
-    });
+        if (e.cancelable) e.preventDefault();
+    }
 
-    $(document).on('mouseup', function() {
+    function endDrag() {
         if (!dragging) return;
         dragging = false;
         $('#pane-resizer').removeClass('dragging');
         $('body').css({ userSelect: '', cursor: '' });
-    });
+    }
+
+    $('#pane-resizer').on('mousedown', startDrag);
+    resizer.addEventListener('touchstart', startDrag, { passive: false });
+    $(document).on('mousemove', doDrag).on('mouseup', endDrag);
+    document.addEventListener('touchmove', doDrag, { passive: false });
+    document.addEventListener('touchend', endDrag);
 }
 
 function escapeHtml(text) {

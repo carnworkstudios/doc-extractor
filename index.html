@@ -370,55 +370,70 @@
 
     <!-- COMPARE DIFF VIEW (Diffchecker Style) -->
     <div id="view-diff" class="view-panel diff-layout">
-        <div class="diff-tabs" style="border-bottom: 1px solid #e5e7eb; display: flex; padding: 10px 16px;">
-            <div class="tab-list">
-                <button class="cmp-tab active" data-cmp-view="rich-text">Rich text</button>
-                <button class="cmp-tab" data-cmp-view="plain-text">Plain text</button>
-            </div>
-        </div>
 
-        <div class="diff-toolbar"
-            style="display: flex; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid #e5e7eb;">
-            <div class="toolbar-left" style="display: flex; gap: 16px;">
-                <span class="tool-label">Layout</span>
-                <div class="btn-group">
-                    <button class="tool-btn active" id="layout-split">Split</button>
-                    <button class="tool-btn" id="layout-unified">Unified</button>
+        <!-- Single compact control bar: mode · layout · precision · stats -->
+        <div class="diff-bar">
+            <div class="diff-bar-left">
+                <div class="diff-pill-group" role="group" aria-label="Content mode">
+                    <button class="diff-pill active" data-cmp-view="rich-text">Rich</button>
+                    <button class="diff-pill" data-cmp-view="plain-text">Plain</button>
                 </div>
 
-                <div class="divider-vert" style="width: 1px; background: #e5e7eb;"></div>
+                <div class="diff-bar-sep"></div>
 
-                <span class="tool-label">Diff precision</span>
-                <div class="btn-group">
-                    <button class="tool-btn active" id="precision-word">Word</button>
-                    <button class="tool-btn" id="precision-char">Character</button>
+                <div class="diff-pill-group" role="group" aria-label="Layout">
+                    <button class="diff-pill active" id="layout-split" title="Split view">
+                        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6">
+                            <rect x="1" y="1" width="4.5" height="11" rx="1"/>
+                            <rect x="7.5" y="1" width="4.5" height="11" rx="1"/>
+                        </svg>
+                        Split
+                    </button>
+                    <button class="diff-pill" id="layout-unified" title="Unified view">
+                        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6">
+                            <rect x="1" y="1" width="11" height="11" rx="1"/>
+                            <line x1="1" y1="5" x2="12" y2="5"/>
+                            <line x1="1" y1="9" x2="12" y2="9"/>
+                        </svg>
+                        Unified
+                    </button>
+                </div>
+
+                <div class="diff-bar-sep"></div>
+
+                <div class="diff-pill-group" role="group" aria-label="Diff precision">
+                    <button class="diff-pill active" id="precision-word">Word</button>
+                    <button class="diff-pill" id="precision-char">Char</button>
                 </div>
             </div>
 
-            <div class="toolbar-right" id="diff-stats">
-                <span class="stat-removals" style="color: #dc2626;"><span id="stat-removed-count">0</span>
-                    removals</span>
-                <span class="stat-additions" style="color: #16a34a; margin-left:10px;"><span
-                        id="stat-added-count">0</span> additions</span>
+            <div class="diff-bar-right" id="diff-stats">
+                <span class="diff-stat diff-stat--remove">
+                    <span id="stat-removed-count">0</span> removed
+                </span>
+                <span class="diff-stat diff-stat--add">
+                    <span id="stat-added-count">0</span> added
+                </span>
             </div>
         </div>
 
         <!-- MAIN CONTENT AREA -->
-        <div class="diff-workspace" style="flex:1; display:flex; ">
-            <div id="diff-container" class="split-view" style="flex:1; display:flex; width: 100%;">
+        <div class="diff-workspace">
+            <div id="diff-container" class="split-view">
                 <!-- Left Pane -->
-                <div class="diff-pane left-pane" id="pane-left"
-                    style="flex: 1; padding: 16px; overflow: auto; border-right: 1px solid #e5e7eb;">
+                <div class="diff-pane left-pane" id="pane-left">
+                    <div class="diff-pane-label">Original</div>
                     <div class="pane-content" id="content-left">
                         <div class="empty-state">Load Original PDF</div>
                     </div>
                 </div>
 
                 <!-- Resizer -->
-                <div class="pane-resizer" id="pane-resizer" style="width: 8px; cursor: col-resize;"></div>
+                <div class="pane-resizer" id="pane-resizer"></div>
 
                 <!-- Right Pane -->
-                <div class="diff-pane right-pane" id="pane-right" style="flex: 1; padding: 16px; overflow: auto;">
+                <div class="diff-pane right-pane" id="pane-right">
+                    <div class="diff-pane-label">Modified</div>
                     <div class="pane-content" id="content-right">
                         <div class="empty-state">Load Modified PDF</div>
                     </div>

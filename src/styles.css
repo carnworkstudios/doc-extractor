@@ -884,6 +884,171 @@ body {
     min-height: 0;
 }
 
+/* ── COMPARE DIFF BAR ───────────────────────────────────────────────────── */
+.view-panel.diff-layout {
+    flex-direction: column;
+}
+
+.diff-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 12px;
+    height: 36px;
+    flex-shrink: 0;
+    background: var(--toolbar-bg);
+    border-bottom: 1px solid var(--border-dark);
+}
+
+.diff-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.diff-bar-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+}
+
+.diff-bar-sep {
+    width: 1px;
+    height: 16px;
+    background: var(--border-dark);
+    flex-shrink: 0;
+    margin: 0 2px;
+}
+
+.diff-pill-group {
+    display: flex;
+    align-items: center;
+    background: var(--border);
+    border-radius: 6px;
+    padding: 2px;
+    gap: 1px;
+}
+
+.diff-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .1s, color .1s;
+}
+
+.diff-pill:hover {
+    color: var(--text);
+}
+
+.diff-pill.active {
+    background: var(--surface);
+    color: var(--accent-dark);
+    box-shadow: 0 1px 3px rgba(0,0,0,.10);
+}
+
+.diff-stat {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 7px;
+    border-radius: 10px;
+}
+
+.diff-stat--remove {
+    background: rgba(220, 38, 38, .08);
+    color: #b91c1c;
+}
+
+.diff-stat--add {
+    background: rgba(22, 163, 74, .08);
+    color: #15803d;
+}
+
+.diff-workspace {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+
+#diff-container {
+    flex: 1;
+    display: flex;
+    width: 100%;
+    min-height: 0;
+}
+
+.diff-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.diff-pane-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--text-muted);
+    padding: 4px 16px;
+    background: var(--toolbar-bg);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.left-pane {
+    border-right: 1px solid var(--border-dark);
+}
+
+.pane-content {
+    flex: 1;
+    overflow: auto;
+    padding: 16px;
+}
+
+.pane-resizer {
+    width: 4px;
+    background: var(--border-dark);
+    cursor: col-resize;
+    flex-shrink: 0;
+    transition: background .15s;
+}
+
+.pane-resizer:hover,
+.pane-resizer.dragging {
+    background: var(--accent);
+}
+
+.empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 120px;
+    color: var(--text-muted);
+    font-size: 13px;
+    border: 1px dashed var(--border-dark);
+    border-radius: 8px;
+}
+
+/* Unified view: hide right pane, right resizer */
+#diff-container.unified-view .right-pane,
+#diff-container.unified-view #pane-resizer {
+    display: none;
+}
+
 /* ── VISUAL DIFF LAYOUT ─────────────────────────────────────────────────── */
 .visual-diff-layout {
     flex-direction: row;

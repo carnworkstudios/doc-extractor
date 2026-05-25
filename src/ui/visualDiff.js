@@ -174,33 +174,61 @@ export function initDividerResize() {
     if (!$divider.length || !$layout.length) return;
 
     let dragging = false;
-    let startX = 0;
-    let startLeftW = 0;
+    let startPos = 0;   // clientX in row mode, clientY in column mode
+    let startSize = 0;  // first pane width (row) or height (column)
 
-    $divider.on('mousedown', function(e) {
+    function isStacked() {
+        return getComputedStyle($layout[0]).flexDirection === 'column';
+    }
+
+    function getEventPos(e) {
+        const src = e.touches?.[0] ?? e;
+        return isStacked() ? src.clientY : src.clientX;
+    }
+
+    function startDrag(e) {
         dragging = true;
-        startX = e.clientX;
-        startLeftW = $layout.find('.vd-pane').first().outerWidth();
-        $(this).addClass('dragging');
-        $('body').css({ userSelect: 'none', cursor: 'col-resize' });
-    });
+        startPos = getEventPos(e);
+        const $first = $layout.find('.vd-pane').first();
+        startSize = isStacked() ? $first.outerHeight() : $first.outerWidth();
+        $divider.addClass('dragging');
+        if (!e.touches) {
+            $('body').css({ userSelect: 'none', cursor: isStacked() ? 'row-resize' : 'col-resize' });
+        }
+        e.preventDefault();
+    }
 
-    $(document).on('mousemove', function(e) {
+    function doDrag(e) {
         if (!dragging) return;
-        const delta = e.clientX - startX;
-        const totalW = $layout.outerWidth();
-        const newLeftW = Math.max(240, Math.min(totalW - 240, startLeftW + delta));
-        const leftPct = (newLeftW / totalW) * 100;
-        
+        const delta = getEventPos(e) - startPos;
         const $panes = $layout.find('.vd-pane');
-        $panes.eq(0).css('flex', `0 0 ${leftPct}%`);
-        $panes.eq(1).css('flex', `0 0 ${100 - leftPct}%`);
-    });
+        if (isStacked()) {
+            const totalH = $layout.outerHeight();
+            const newH = Math.max(120, Math.min(totalH - 120, startSize + delta));
+            const topPct = (newH / totalH) * 100;
+            $panes.eq(0).css('flex', `0 0 ${topPct}%`);
+            $panes.eq(1).css('flex', `0 0 ${100 - topPct}%`);
+        } else {
+            const totalW = $layout.outerWidth();
+            const newW = Math.max(240, Math.min(totalW - 240, startSize + delta));
+            const leftPct = (newW / totalW) * 100;
+            $panes.eq(0).css('flex', `0 0 ${leftPct}%`);
+            $panes.eq(1).css('flex', `0 0 ${100 - leftPct}%`);
+        }
+        if (e.cancelable) e.preventDefault();
+    }
 
-    $(document).on('mouseup', function() {
+    function endDrag() {
         if (!dragging) return;
         dragging = false;
         $divider.removeClass('dragging');
         $('body').css({ userSelect: '', cursor: '' });
-    });
+    }
+
+    $divider.on('mousedown', startDrag);
+    $divider[0].addEventListener('touchstart', startDrag, { passive: false });
+
+    $(document).on('mousemove', doDrag).on('mouseup', endDrag);
+    document.addEventListener('touchmove', doDrag, { passive: false });
+    document.addEventListener('touchend', endDrag);
 }
