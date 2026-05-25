@@ -17,7 +17,8 @@
 
 import { buildTable } from './tableBuilder.js';
 import { rebuildText } from './textRebuilder.js';
-import { RegionType } from './contextClassifier.js';
+import { RegionType, detectZoneColumns } from './contextClassifier.js';
+import { PageScale } from './pageScale.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -264,6 +265,41 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
     // Detect zone layout from classifier column assignments
     const autoZones = _detectAutoZones(regions, numCols, pageWidth);
 
+    // Zone-level column re-detection: for each zone the page-level pass left as
+    // single-column, re-run bipartite on that zone's text items with Gate 3 dropped.
+    // Gate 3 (vertical persistence) is the page-level guard against short header
+    // clusters — it is irrelevant inside a bounded zone whose own height is the
+    // persistence window.  A minimum zone height guard (10 body-text lines) keeps
+    // Gate 3 active for caption bands and label clusters too short to trust.
+    if (textMeta.length > 0) {
+        const scale = new PageScale(textMeta, viewport);
+        for (const zone of autoZones) {
+            if (zone.cols > 1) continue; // page-level already found this split
+            if (!zone.isFullWidth) continue; // classified as multi-col regions already — skip
+            const zoneItems = textMeta.filter(tm => tm.vy >= zone.y0 && tm.vy < zone.y1);
+            if (zoneItems.length < 6) continue;
+            const { splits: zoneSplits } = detectZoneColumns(zoneItems, viewport, scale);
+            if (!zoneSplits.length) continue;
+            // Promote zone to multi-column and patch columnIndex on its regions
+            zone.cols = zoneSplits.length + 1;
+            zone.isFullWidth = false;
+            zone.layoutClass = 'layout-equal';
+            zone._zoneSplits = zoneSplits; // carried into render loop for --left-col
+            const tol = 5;
+            for (const r of regions) {
+                if (!r.bbox) continue;
+                if ((r.yCenter ?? 0) < zone.y0 || (r.yCenter ?? 0) >= zone.y1) continue;
+                if (r.columnIndex !== -1) continue; // already assigned
+                const cx = r.bbox.x + r.bbox.w / 2;
+                for (let ci = 0; ci <= zoneSplits.length; ci++) {
+                    const lo = ci === 0 ? -Infinity : zoneSplits[ci - 1].x;
+                    const hi = ci === zoneSplits.length ? Infinity : zoneSplits[ci].x;
+                    if (cx >= lo && cx < hi) { r.columnIndex = ci; break; }
+                }
+            }
+        }
+    }
+
     // Render each region wrapped in a .pdf-region sentinel that carries
     // its viewport-space Y/X so the zone toolbar can rearrange without
     // re-running the extractor.
@@ -305,8 +341,9 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
             });
             
             let styleAttr = '';
-            if (cols === 2 && columnSplits.length > 0 && zone.layoutClass !== 'layout-card-grid') {
-                const leftFraction = columnSplits[0].leftFraction || 0.5;
+            if (cols === 2 && zone.layoutClass !== 'layout-card-grid') {
+                const splits = zone._zoneSplits || columnSplits;
+                const leftFraction = splits[0]?.leftFraction || 0.5;
                 styleAttr = ` style="--left-col: ${leftFraction.toFixed(4)};"`;
             }
 

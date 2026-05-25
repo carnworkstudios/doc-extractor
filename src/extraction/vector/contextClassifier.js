@@ -691,134 +691,204 @@ function _groupByYBand(items, yTol) {
 /**
  * Detect page column split points using band-level full-width filtering.
  *
- * Returns { splits: number[], fullWidthIndices: Set<number> }
+ * Returns { splits: [{x, leftFraction, rightFraction}][], fullWidthIndices: Set<number> }
  *
- * The key insight: individual text items can be narrow while their visual
- * line collectively spans both columns (e.g. a WARNING paragraph with 37
- * items spread from x=57 to x=864). Filtering by individual vWidth misses
- * these. Instead, group items into Y-bands and exclude bands whose total
- * X span exceeds 65% of the page width — those are full-width rows.
- * Only narrow bands (clearly left-only or right-only content) are used
- * to find the column gutter.
+ * Bipartite band partition (v3): item-level interval merge to find candidates,
+ * three structural gates to validate each candidate.
+ *
+ * Candidate generation operates on individual items, not bands. A band
+ * aggregating items from both columns (same Y-line) has a combined span that
+ * bridges the gutter even though no single item does. Item-level intervals
+ * preserve per-item width and avoid this false bridge. Three item classes are
+ * excluded before the merge:
+ *   - Wide items (vWidth > 55% of page): full-page headings/footers/notices
+ *   - Noise glyphs (vWidth < 0.5 × S): sub-character artifacts
+ *   - Running page numbers (/^\d{1,3}$/ AND vWidth < 2 × S): digits that sit
+ *     in the physical gutter zone of 2-column documents
+ *
+ * Gate evaluation uses all bands (not just narrow) with per-item predicates:
+ *   Gate 1 — ≥3 bands entirely left AND ≥3 entirely right
+ *   Gate 2 — ≥40% commitment within the coexistence Y-span (intersection, not union)
+ *   Gate 3 — both populations not both confined to top 20% of content height
  */
-function _detectPageColumns(textMeta, viewport, scale) {
+const _PAGE_NUM_RE = /^\d{1,3}$/;
+
+function _detectPageColumns(textMeta, viewport, scale, { dropGate3 = false } = {}) {
     if (!textMeta.length || !viewport?.width) {
         return { splits: [], fullWidthIndices: new Set() };
     }
 
     const vpWidth = viewport.width;
 
-    // Group items into Y-bands
+    // ── Y-band grouping (for gate evaluation and fullWidthIndices) ────────────
     const sorted = [...textMeta].sort((a, b) => a.vy - b.vy);
     const bands = [];
     for (const tm of sorted) {
         let placed = false;
         for (const band of bands) {
             if (Math.abs(band.y - tm.vy) <= scale.yBandTolPx) {
-                const n = band.items.length;
-                band.y = (band.y * n + tm.vy) / (n + 1);
+                band.y = (band.y * band.items.length + tm.vy) / (band.items.length + 1);
                 band.items.push(tm);
-                band.minX = Math.min(band.minX, tm.vx);
-                band.maxX = Math.max(band.maxX, tm.vx + (tm.vWidth || 0));
                 placed = true;
                 break;
             }
         }
-        if (!placed) {
-            bands.push({
-                y: tm.vy,
-                items: [tm],
-                minX: tm.vx,
-                maxX: tm.vx + (tm.vWidth || 0)
-            });
-        }
+        if (!placed) bands.push({ y: tm.vy, items: [tm] });
     }
 
-    // Classify each band as narrow (column-specific) or wide (full-width).
-    const WIDE_BAND_FRAC = 0.55;
+    // ── fullWidthIndices: bands whose item X-span exceeds WIDE_BAND_FRAC ─────
+    const WIDE_BAND_FRAC   = 0.55;
     const fullWidthIndices = new Set();
-    const narrowBands = [];
-
     for (const band of bands) {
-        if (band.maxX - band.minX > vpWidth * WIDE_BAND_FRAC) {
+        const minX = Math.min(...band.items.map(i => i.vx));
+        const maxX = Math.max(...band.items.map(i => i.vx + (i.vWidth || 0)));
+        if (maxX - minX > vpWidth * WIDE_BAND_FRAC) {
             for (const tm of band.items) fullWidthIndices.add(tm.idx);
-        } else {
-            narrowBands.push(band);
         }
     }
 
-    if (!narrowBands.length) return { splits: [], fullWidthIndices };
+    // ── Candidate generation: item-level interval merge ───────────────────────
+    const WIDE_ITEM   = vpWidth * WIDE_BAND_FRAC;
+    const NOISE_FLOOR = scale.S * 0.5;
+    const tol         = Math.max(4, scale.colGapMinPx * 0.5);
 
-    // Gate 3 Pre-compute content span
-    const PERSIST_FRAC = 0.20;
-    const contentTop    = Math.min(...narrowBands.map(b => b.y));
-    const contentBottom = Math.max(...narrowBands.map(b => b.y));
-    const contentSpan   = contentBottom - contentTop || 1;
-    const persistThresh = contentTop + contentSpan * PERSIST_FRAC;
+    const structItems = textMeta.filter(i => {
+        const w = i.vWidth || 0;
+        if (w <= NOISE_FLOOR) return false;
+        if (w > WIDE_ITEM)    return false;
+        if (_PAGE_NUM_RE.test(i.str.trim()) && w < scale.S * 2) return false;
+        return true;
+    });
 
-    // Candidate generation via interval merge
-    const tol = Math.max(4, scale.colGapMinPx * 0.5);
-
-    const sortedBands = [...narrowBands].sort((a, b) => a.minX - b.minX);
+    const sortedItems = [...structItems].sort((a, b) => a.vx - b.vx);
     const spans = [];
-    for (const band of sortedBands) {
-        if (spans.length && band.minX <= spans.at(-1).hi) {
-            spans.at(-1).hi = Math.max(spans.at(-1).hi, band.maxX);
+    for (const tm of sortedItems) {
+        const lo = tm.vx, hi = tm.vx + (tm.vWidth || 0);
+        if (spans.length && lo <= spans.at(-1).hi + 2) {
+            spans.at(-1).hi = Math.max(spans.at(-1).hi, hi);
         } else {
-            spans.push({ lo: band.minX, hi: band.maxX });
+            spans.push({ lo, hi });
         }
     }
 
     const rawCandidates = [];
     for (let i = 0; i + 1 < spans.length; i++) {
-        const gap = spans[i + 1].lo - spans[i].hi;
-        if (gap >= scale.colGapMinPx) {
-            const center = (spans[i].hi + spans[i + 1].lo) / 2;
-            if (center >= vpWidth * 0.10 && center <= vpWidth * 0.90) {
-                rawCandidates.push(center);
+        const gap    = spans[i + 1].lo - spans[i].hi;
+        const center = (spans[i].hi + spans[i + 1].lo) / 2;
+        if (gap >= scale.colGapMinPx && center >= vpWidth * 0.10 && center <= vpWidth * 0.90) {
+            rawCandidates.push(center);
+        }
+    }
+
+    // ── Fallback: minimum-crossing scan with left/right endpoint snapping ────
+    // If the interval merge found no clean gap, some items straddle the column
+    // gutter (cross-column captions, table titles, figure labels). Scan for the
+    // X with fewest crossing struct items. If that minimum is ≤ 6% of items,
+    // a real gutter exists. Snap the candidate to the midpoint between the
+    // rightmost left-column endpoint and leftmost right-column start in the
+    // neighborhood of the scan minimum.
+    if (!rawCandidates.length && structItems.length >= 6) {
+        const scanStep = Math.max(4, scale.colGapMinPx / 4);
+        let minCross = Infinity, bestX = -1;
+        for (let X = vpWidth * 0.15; X <= vpWidth * 0.85; X += scanStep) {
+            const crossing = structItems.filter(i => {
+                const lo = i.vx, hi = i.vx + (i.vWidth || 0);
+                return lo < X - tol && hi > X + tol;
+            }).length;
+            if (crossing < minCross) { minCross = crossing; bestX = X; }
+        }
+        // After finding bestX, exclude items whose content spans the FULL column width
+        // on either side — these are display-math or equation blocks that PDF.js collapses
+        // into a single wide item. A genuine layout-spanning item that bridges the gutter
+        // will have vWidth > half the page; a display-math block that spans one column will
+        // have vWidth close to the half-page column width. Filter those bridgers before the
+        // threshold check: items that cross bestX AND whose width exceeds 80% of the half-
+        // page width are layout-neutral spans, not structural content.
+        const halfPage = vpWidth * 0.45;
+        const scanItems = structItems.filter(i => {
+            const lo = i.vx, hi = i.vx + (i.vWidth || 0);
+            const crosses = lo < bestX - tol && hi > bestX + tol;
+            const isFullColSpan = crosses && (i.vWidth || 0) > halfPage;
+            return !isFullColSpan;
+        });
+        const scanCross = scanItems.filter(i => {
+            const lo = i.vx, hi = i.vx + (i.vWidth || 0);
+            return lo < bestX - tol && hi > bestX + tol;
+        }).length;
+        const MAX_CROSS = Math.max(1, Math.ceil(scanItems.length * 0.06));
+        if (scanCross <= MAX_CROSS && bestX >= vpWidth * 0.15 && bestX <= vpWidth * 0.85) {
+            const leftEnd = scanItems
+                .filter(i => (i.vx + (i.vWidth || 0)) <= bestX + tol)
+                .reduce((m, i) => Math.max(m, i.vx + (i.vWidth || 0)), -Infinity);
+            const rightStart = scanItems
+                .filter(i => i.vx > bestX)
+                .reduce((m, i) => Math.min(m, i.vx), Infinity);
+
+            let candidate = bestX;
+            if (leftEnd > -Infinity && rightStart < Infinity && rightStart > leftEnd) {
+                candidate = (leftEnd + rightStart) / 2;
+            }
+            if (candidate >= vpWidth * 0.15 && candidate <= vpWidth * 0.85) {
+                rawCandidates.push(candidate);
             }
         }
     }
 
-    // Evaluate candidates through gates
+    if (!rawCandidates.length) return { splits: [], fullWidthIndices };
+
+    // ── Gate 3 pre-compute: content span from all bands ───────────────────────
+    const PERSIST_FRAC  = 0.20;
+    const contentTop    = Math.min(...bands.map(b => b.y));
+    const contentBottom = Math.max(...bands.map(b => b.y));
+    const persistThresh = contentTop + (contentBottom - contentTop || 1) * PERSIST_FRAC;
+
+    // ── Evaluate each candidate ───────────────────────────────────────────────
     const MIN_SIDE       = 3;
     const MIN_COMMITMENT = 0.40;
-
-    const validSplits = [];
+    const validSplits    = [];
 
     for (const X of rawCandidates) {
-        const leftOnly  = narrowBands.filter(b => b.maxX <= X - tol);
-        const rightOnly = narrowBands.filter(b => b.minX >= X + tol);
+        // Band is "entirely left" only if ALL its items end before X - tol
+        const leftOnly  = bands.filter(b => b.items.every(i => (i.vx + (i.vWidth || 0)) <= X - tol));
+        const rightOnly = bands.filter(b => b.items.every(i => i.vx >= X + tol));
 
         // Gate 1 — population on both sides
         if (leftOnly.length < MIN_SIDE || rightOnly.length < MIN_SIDE) continue;
 
-        // Gate 2 — local commitment ratio (coexistence span)
-        const coexistTop    = Math.max(Math.min(...leftOnly.map(b => b.y)),  Math.min(...rightOnly.map(b => b.y)));
-        const coexistBottom = Math.min(Math.max(...leftOnly.map(b => b.y)),  Math.max(...rightOnly.map(b => b.y)));
+        // Gate 2 — coexistence Y-span commitment (intersection, not union)
+        const coexistTop    = Math.max(Math.min(...leftOnly.map(b => b.y)), Math.min(...rightOnly.map(b => b.y)));
+        const coexistBottom = Math.min(Math.max(...leftOnly.map(b => b.y)), Math.max(...rightOnly.map(b => b.y)));
         if (coexistBottom < coexistTop) continue;
-        
-        const localBands = narrowBands.filter(b => b.y >= coexistTop && b.y <= coexistBottom);
-        const committed  = leftOnly.length + rightOnly.length;
-        if (committed / localBands.length < MIN_COMMITMENT) continue;
+        const localBands = bands.filter(b => b.y >= coexistTop && b.y <= coexistBottom);
+        if (!localBands.length || (leftOnly.length + rightOnly.length) / localBands.length < MIN_COMMITMENT) continue;
 
-        // Gate 3 — vertical persistence relative to content span
-        const leftConfined  = leftOnly.every( b => b.y <= persistThresh);
-        const rightConfined = rightOnly.every(b => b.y <= persistThresh);
-        if (leftConfined && rightConfined) continue;
+        // Gate 3 — vertical persistence relative to content span.
+        // Skipped for zone-scoped calls: the zone boundary is the persistence window.
+        if (!dropGate3 &&
+            leftOnly.every(b => b.y <= persistThresh) &&
+            rightOnly.every(b => b.y <= persistThresh)) continue;
+
+        // Gate 4 — left column must include at least one band anchored near the
+        // page's left text margin. The leftmost left-only band must start within
+        // 2 × colGapMinPx of the global minimum vx. Prevents false splits where
+        // the "left column" is a cluster of items adrift in the page body.
+        const leftMarginX    = Math.min(...bands.flatMap(b => b.items.map(i => i.vx)));
+        const leftAnchorTol  = scale.colGapMinPx * 2;
+        const leftMinStart   = Math.min(...leftOnly.flatMap(b => b.items.map(i => i.vx)));
+        if (leftMinStart > leftMarginX + leftAnchorTol) continue;
 
         validSplits.push(X);
     }
 
-    // Deduplicate adjacent valid splits
-    function _commitRatio(X, bands, tolerance) {
-        const left  = bands.filter(b => b.maxX <= X - tolerance);
-        const right = bands.filter(b => b.minX >= X + tolerance);
+    // ── Deduplicate adjacent splits (same physical gutter detected twice) ─────
+    function _commitRatio(X, allBands, tolerance) {
+        const left  = allBands.filter(b => b.items.every(i => (i.vx + (i.vWidth || 0)) <= X - tolerance));
+        const right = allBands.filter(b => b.items.every(i => i.vx >= X + tolerance));
         if (!left.length || !right.length) return 0;
-        const cTop = Math.max(Math.min(...left.map(b => b.y)), Math.min(...right.map(b => b.y)));
-        const cBot = Math.min(Math.max(...left.map(b => b.y)), Math.max(...right.map(b => b.y)));
+        const cTop = Math.max(Math.min(...left.map(b => b.y)),  Math.min(...right.map(b => b.y)));
+        const cBot = Math.min(Math.max(...left.map(b => b.y)),  Math.max(...right.map(b => b.y)));
         if (cBot < cTop) return 0;
-        const local = bands.filter(b => b.y >= cTop && b.y <= cBot);
+        const local = allBands.filter(b => b.y >= cTop && b.y <= cBot);
         return local.length ? (left.length + right.length) / local.length : 0;
     }
 
@@ -826,7 +896,7 @@ function _detectPageColumns(textMeta, viewport, scale) {
     for (const X of validSplits) {
         const prev = deduplicated.at(-1);
         if (prev !== undefined && X - prev < scale.colGapMinPx) {
-            if (_commitRatio(X, narrowBands, tol) > _commitRatio(prev, narrowBands, tol)) {
+            if (_commitRatio(X, bands, tol) > _commitRatio(prev, bands, tol)) {
                 deduplicated[deduplicated.length - 1] = X;
             }
         } else {
@@ -834,13 +904,13 @@ function _detectPageColumns(textMeta, viewport, scale) {
         }
     }
 
-    return { 
+    return {
         splits: deduplicated.map(sx => ({
             x: sx,
-            leftFraction: sx / vpWidth,
-            rightFraction: 1 - (sx / vpWidth)
-        })), 
-        fullWidthIndices 
+            leftFraction:  sx / vpWidth,
+            rightFraction: 1 - (sx / vpWidth),
+        })),
+        fullWidthIndices,
     };
 }
 
@@ -860,4 +930,33 @@ function _splitByColumns(textMeta, splits) {
     }
 
     return buckets.filter(b => b.length > 0);
+}
+
+/**
+ * Zone-scoped column detection: runs _detectPageColumns with Gate 3 dropped.
+ *
+ * Called by pageAssembler for each zone that the page-level pass returned as
+ * single-column.  Gate 3 (vertical persistence) is irrelevant inside a bounded
+ * zone — the zone boundary is already the persistence window.
+ *
+ * Guard: the zone must span at least MIN_ZONE_LINES body-text lines before Gate 3
+ * is dropped.  Short zones (caption blocks, label clusters) keep Gate 3 active so
+ * a 37-item caption band cannot produce a false split.
+ *
+ * @param {TextMetaItem[]} zoneTextMeta - text items whose vy falls inside the zone
+ * @param {object}         viewport
+ * @param {PageScale}      scale
+ * @returns {{ splits: SplitResult[] }}
+ */
+export function detectZoneColumns(zoneTextMeta, viewport, scale) {
+    if (!zoneTextMeta.length) return { splits: [] };
+
+    const ys = zoneTextMeta.map(tm => tm.vy);
+    const zoneHeight = Math.max(...ys) - Math.min(...ys);
+    // Require zone to span at least 10 body-text lines before dropping Gate 3.
+    // scale.S is body font size in viewport-px; line height ≈ 1.4 × S.
+    const MIN_ZONE_HEIGHT = scale.S * 1.4 * 10;
+    const dropGate3 = zoneHeight >= MIN_ZONE_HEIGHT;
+
+    return _detectPageColumns(zoneTextMeta, viewport, scale, { dropGate3 });
 }

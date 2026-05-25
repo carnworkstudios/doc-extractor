@@ -135,9 +135,11 @@ function _applyCode() {
 
     if (!parsed) { _dialog.close(); return; }
 
+    const activePreview = _currentEl.closest('.prose-area') || _preview;
+
     _currentEl.replaceWith(parsed);
     _currentEl = null;
 
-    applyHtmlEverywhere(_preview.innerHTML, _preview);
+    applyHtmlEverywhere(activePreview.innerHTML, activePreview);
     _dialog.close();
 }

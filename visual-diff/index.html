@@ -416,6 +416,50 @@
         </div>
     </div>
 
+    <!-- ── ANALYZE VIEW ─────────────────────────────────────────────── -->
+    <div id="view-analyze" class="view-panel">
+        <div class="analyze-layout">
+
+            <!-- Metadata bar -->
+            <div class="analyze-meta-bar">
+                <span id="analyze-status" class="analyze-status-msg">Open a PDF to analyze it.</span>
+                <div id="analyze-meta" class="analyze-meta"></div>
+            </div>
+
+            <!-- Body: canvas + stats side by side -->
+            <div class="analyze-body">
+
+                <!-- Left: canvas -->
+                <div class="analyze-canvas-wrap">
+                    <div class="analyze-canvas-header">
+                        <button class="tool-btn" id="analyze-page-prev" disabled>⟨</button>
+                        <span id="analyze-page-counter" class="page-counter">—</span>
+                        <button class="tool-btn" id="analyze-page-next" disabled>⟩</button>
+                    </div>
+                    <canvas id="analyze-canvas" class="analyze-canvas"></canvas>
+                    <div class="analyze-legend" id="analyze-legend">
+                        <button class="legend-toggle active" data-layer="hSegs" style="--lc:#3b82f6">━ H lines</button>
+                        <button class="legend-toggle active" data-layer="vSegs" style="--lc:#10b981">━ V lines</button>
+                        <button class="legend-toggle active" data-layer="diagSegs" style="--lc:#9ca3af">━
+                            Diagonal</button>
+                        <button class="legend-toggle active" data-layer="rects" style="--lc:#f97316">▭ Rect
+                            candidates</button>
+                        <button class="legend-toggle active" data-layer="images" style="--lc:#ef4444">▭ Images</button>
+                        <button class="legend-toggle active" data-layer="text" style="--lc:#eab308">● Text
+                            baselines</button>
+                    </div>
+                </div>
+
+                <!-- Right: stats -->
+                <div class="analyze-stats-wrap">
+                    <h4 class="analyze-section-title">Page structure</h4>
+                    <div id="analyze-stats"></div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
     <!-- ── RIGHT-CLICK CONTEXT MENU ──────────────────────────────────── -->
     <div id="ctx-menu" class="ctx-menu" hidden>
         <button class="ctx-item" id="ctx-img-url">
@@ -495,6 +539,18 @@
             });
         });
     </script>
+    <!-- ── VIEW CODE DIALOG ──────────────────────────────────────────────── -->
+    <dialog id="view-code-dialog">
+        <div class="vc-header">
+            <span id="vc-element-label" class="vc-label"></span>
+            <button id="vc-close" class="vc-btn-icon" title="Close">✕</button>
+        </div>
+        <div id="vc-monaco-container"></div>
+        <div class="vc-footer">
+            <button id="vc-cancel" class="tool-btn">Cancel</button>
+            <button id="vc-apply" class="tool-btn tool-btn--primary">Apply</button>
+        </div>
+    </dialog>
 </body>
 
 </html>
