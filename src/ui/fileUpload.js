@@ -12,7 +12,7 @@ import { registerPages } from './pageNav.js';
 import { markDiffDirty } from './visualDiff.js';
 import { registerPDFLayers, resetPDFLayers } from './pdfEditMode.js';
 import { initTableFeatures } from '../utils/tableLogic.js';
-import { applyHtmlEverywhere } from './htmlSync.js';
+import { applyHtmlEverywhere, hydrateImages } from './htmlSync.js';
 import { showToast } from './toast.js';
 import { cwsBroker } from '@os/worker-broker.js';
 import { runAnalysis } from './analyzePanel.js';
@@ -46,32 +46,22 @@ function extractViaGeometryWorker(bytes, onProgress) {
         // to avoid structured clone stack overflow on large PDFs
         const htmlParts = [];
         const textParts = [];
-        const allImages = {};
         let totalTables = 0;
 
         const timeout = setTimeout(() => {
             reject(new Error('Local extraction timed out (>5min).'));
         }, 300_000);
 
-        worker.onmessage = async (e) => {
+        worker.onmessage = (e) => {
             const msg = e.data;
             if (msg.type === 'progress' && onProgress) {
                 onProgress(`Extracting page ${msg.page}/${msg.total}…`);
             } else if (msg.type === 'page') {
-                // Per-page streaming result
                 if (msg.html) htmlParts.push(msg.html);
                 if (msg.text) textParts.push(msg.text);
-                if (msg.images) Object.assign(allImages, msg.images);
                 totalTables += msg.tables || 0;
             } else if (msg.type === 'complete') {
                 clearTimeout(timeout);
-                if (onProgress) onProgress('Caching images to IndexedDB…');
-                try {
-                    await clearImages();
-                    await saveImages(allImages);
-                } catch (err) {
-                    console.error('Failed to cache images:', err);
-                }
                 const styleBlock = msg.styles ? `<style>\n${msg.styles}\n</style>\n` : '';
                 const html = htmlParts.length > 0
                     ? styleBlock + htmlParts.join('\n')
@@ -188,15 +178,17 @@ async function handleFile(file, pdfIndex) {
         const buf = await file.arrayBuffer();
         pdfState.bytes = new Uint8Array(buf.slice(0));
 
+        // Pre-copy all slices before any PDF.js call — getDocument transfers and detaches the buffer.
+        const bytesForCanvas   = pdfState.bytes.slice();
+        const bytesForAnalysis = pdfState.bytes.slice();
+        const bytesForWorker   = pdfState.bytes.slice();
+
         if (pdfIndex === 1) {
-            // pdfjsLib.getDocument will transfer and detach the ArrayBuffer, so we MUST pass a copy (.slice())
             resetPDFLayers();
-            const { wrappers, numPages } = await renderPDFToCanvas(pdfState.bytes.slice(), 'pdf-canvas-container');
+            const { wrappers, numPages } = await renderPDFToCanvas(bytesForCanvas, 'pdf-canvas-container');
             registerPages(wrappers, numPages);
-            // Wire PDF edit mode layer tracking after new render
             registerPDFLayers(document.getElementById('pdf-canvas-container'));
-            // Kick off analysis in the background — populates the Analyze tab
-            runAnalysis(pdfState.bytes.slice(), file.name).catch(err =>
+            runAnalysis(bytesForAnalysis, file.name).catch(err =>
                 console.warn('[Analyze] Analysis failed:', err.message),
             );
         }
@@ -224,11 +216,27 @@ async function handleFile(file, pdfIndex) {
             data = await cwsBroker.extractPdf(formData, (msg) => showStatus(
                 typeof msg === 'string' ? msg : (msg.message || 'Processing…'),
             ));
+            
+            // If backend provides images, cache them
+            if (data.images || data.assets) {
+                const imgDict = data.images || data.assets;
+                // convert base64 dict to blobs if needed
+                const blobsToSave = {};
+                for (const [id, val] of Object.entries(imgDict)) {
+                    if (val instanceof Blob) {
+                        blobsToSave[id] = val;
+                    } else if (typeof val === 'string' && val.startsWith('data:image')) {
+                        const res = await fetch(val);
+                        blobsToSave[id] = await res.blob();
+                    }
+                }
+                await clearImages();
+                await saveImages(blobsToSave);
+            }
         } else {
             // ── Local geometry worker fallback ────────────────────────────────
             showStatus('Backend offline — running local vector extraction…');
-            // worker.postMessage might transfer the buffer, so pass a copy
-            const result = await extractViaGeometryWorker(pdfState.bytes.slice(), (msg) => showStatus(msg));
+            const result = await extractViaGeometryWorker(bytesForWorker, (msg) => showStatus(msg));
             data = { html: result.html, text: result.text || '', source: 'local', tableCount: result.tableCount };
         }
 
@@ -241,11 +249,6 @@ async function handleFile(file, pdfIndex) {
             applyHtmlEverywhere(pdfState.extractedHTML, null);
             // Populate zone chips for the first visible page
             refreshZoneToolbar();
-            // Hydrate <img data-img-id> placeholders from IndexedDB into both preview surfaces
-            ['html-preview', 'visual-diff-html'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) hydrateImages(el);
-            });
             markDiffDirty();
             if (state.pdf2.bytes) refreshCodeDiff();
         } else {
@@ -282,30 +285,7 @@ export function populateHTMLPreview(html, containerId = 'html-preview') {
     hydrateImages(el);
 }
 
-const objectUrlCache = {};
 
-async function hydrateImages(containerEl) {
-    const images = containerEl.querySelectorAll('img[data-img-id]');
-    for (const img of images) {
-        const id = img.getAttribute('data-img-id');
-        
-        if (objectUrlCache[id]) {
-            img.src = objectUrlCache[id];
-            continue;
-        }
-
-        try {
-            const blob = await getImageBlob(id);
-            if (blob) {
-                const url = URL.createObjectURL(blob);
-                objectUrlCache[id] = url;
-                img.src = url;
-            }
-        } catch (e) {
-            console.warn(`Failed to hydrate image ${id}`, e);
-        }
-    }
-}
 
 function refreshCodeDiff() {
     import('../ui/diffViewController.js').then(m => m.refreshCompareDiff());

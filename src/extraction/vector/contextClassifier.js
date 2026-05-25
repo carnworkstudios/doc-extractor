@@ -158,14 +158,50 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     const regions = [];
 
     // ── 2.5: Inject explicit image regions ───────────────────────────────────
-    for (const img of imageMeta) {
+    // Filter: skip tiny decorative elements (icons, glyphs, bullets < 20×20px).
+    // Merge: overlapping/adjacent images from the same visual cluster collapse
+    // into one representative region so a diagram isn't 300 separate tiles.
+    const MIN_IMG_DIM = 20; // viewport pixels
+    const MERGE_GAP   = 8;  // px gap within which adjacent images are merged
+
+    const significantImages = imageMeta.filter(img =>
+        img.bbox.w >= MIN_IMG_DIM && img.bbox.h >= MIN_IMG_DIM
+    );
+
+    // Sort by top-left reading order for stable merging
+    significantImages.sort((a, b) => a.bbox.y - b.bbox.y || a.bbox.x - b.bbox.x);
+
+    const mergedImages = [];
+    for (const img of significantImages) {
+        const { x, y, w, h } = img.bbox;
+        const right  = x + w;
+        const bottom = y + h;
+        // Find an existing merged cluster this image overlaps or touches
+        const cluster = mergedImages.find(c =>
+            x <= c.right  + MERGE_GAP &&
+            right  >= c.x - MERGE_GAP &&
+            y <= c.bottom + MERGE_GAP &&
+            bottom >= c.y - MERGE_GAP
+        );
+        if (cluster) {
+            cluster.x      = Math.min(cluster.x,      x);
+            cluster.y      = Math.min(cluster.y,      y);
+            cluster.right  = Math.max(cluster.right,  right);
+            cluster.bottom = Math.max(cluster.bottom, bottom);
+        } else {
+            mergedImages.push({ id: img.id, x, y, right, bottom });
+        }
+    }
+
+    for (const c of mergedImages) {
+        const bbox = { x: c.x, y: c.y, w: c.right - c.x, h: c.bottom - c.y };
         regions.push({
             type: RegionType.IMAGE,
-            id: img.id,
-            bbox: img.bbox,
+            id: c.id,
+            bbox,
             textItemIndices: [],
-            yCenter: img.bbox.y + img.bbox.h / 2,
-            columnIndex: -1 // Will be patched if narrow enough
+            yCenter: bbox.y + bbox.h / 2,
+            columnIndex: -1
         });
     }
 

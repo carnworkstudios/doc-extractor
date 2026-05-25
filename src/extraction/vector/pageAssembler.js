@@ -510,10 +510,33 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
         }
 
         case RegionType.IMAGE: {
-            const imgHtml = `<div class="pdf-image-placeholder" style="width: 100%; height: auto; border: 2px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f9f9f9; color: #999; margin: 10px 0; position: relative; overflow: auto">` +
-                `<span style="position: absolute; top: 8px; left: 8px; font-size: 10px; font-family: monospace;">[${region.id}]</span>` +
-                `<img class="extracted-pdf-image" data-img-id="${region.id}" alt="PDF Image ${region.id}" style="max-width: 100%; max-height: 100%; object-fit: contain;">` +
-                `</div>`;
+            const imgEntry = extractedImages[region.id];
+            const dataUrl  = imgEntry?.dataUrl ?? null;
+
+            let imgTag, imgHtml;
+            if (dataUrl) {
+                // pw/ph are the crop dimensions at 4× render scale.
+                // Divide by 4 to get CSS px at 1× (96 dpi equivalent of PDF pt).
+                // max-width: 100% ensures it never overflows its column.
+                const natW = Math.round(imgEntry.pw / 4);
+                const natH = Math.round(imgEntry.ph / 4);
+                imgTag  = `<img class="extracted-pdf-image" src="${dataUrl}" width="${natW}" height="${natH}" alt="PDF Image ${region.id}" style="max-width: 100%; height: auto; display: block;">`;
+                imgHtml = `<div class="pdf-image-placeholder" style="margin: 10px 0;">${imgTag}</div>`;
+            } else {
+                // Placeholder: use bbox proportions so layout reserves the right space
+                const bboxW = region.bbox ? region.bbox.w : 0;
+                const bboxH = region.bbox ? region.bbox.h : 0;
+                const widthPct = viewport.width > 0
+                    ? Math.min(100, Math.round((bboxW / viewport.width) * 100))
+                    : 100;
+                const aspectStyle = (bboxW > 0 && bboxH > 0)
+                    ? `aspect-ratio: ${Math.round(bboxW)} / ${Math.round(bboxH)}; height: auto;`
+                    : `min-height: 120px;`;
+                imgTag  = `<img class="extracted-pdf-image" data-img-id="${region.id}" alt="PDF Image ${region.id}" style="width: 100%; height: auto; display: block;">`;
+                imgHtml = `<div class="pdf-image-placeholder" style="width: ${widthPct}%; ${aspectStyle} border: 2px dashed #ccc; background: #f9f9f9; margin: 10px 0; overflow: hidden;">` +
+                    `<span style="display: block; padding: 8px; font-size: 10px; font-family: monospace; color: #999;">[${region.id}]</span>` +
+                    imgTag + `</div>`;
+            }
             
             if (region.captionRegion) {
                 const capData = _renderRegion(region.captionRegion, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages);

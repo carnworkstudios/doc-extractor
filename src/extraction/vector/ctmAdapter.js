@@ -257,14 +257,47 @@ export function extractSubpaths(opList, viewport, OPS) {
                 break;
             }
             case OPS.paintImageXObject:
-            case OPS.paintImageMaskXObject:
             case OPS.paintJpegXObject: {
+                // args[0] is the XObject name string (e.g. "img_p2_7")
                 const imgId = args[0];
+                if (typeof imgId !== 'string') break;
                 const [x1, y1] = toViewport(0, 0);
                 const [x2, y2] = toViewport(1, 1);
                 const left = Math.min(x1, x2), right = Math.max(x1, x2);
                 const top = Math.min(y1, y2), bottom = Math.max(y1, y2);
-                imageMeta.push({ id: imgId, bbox: { x: left, y: top, w: right - left, h: bottom - top } });
+                imageMeta.push({ id: imgId, bbox: { x: left, y: top, w: right - left, h: bottom - top }, inline: false });
+                break;
+            }
+            case OPS.paintImageMaskXObject: {
+                // args[0] is an image dict object { data, count }, not an ID string.
+                // Treat like inline — assign a synthetic ID and crop from canvas.
+                const [x1, y1] = toViewport(0, 0);
+                const [x2, y2] = toViewport(1, 1);
+                const left = Math.min(x1, x2), right = Math.max(x1, x2);
+                const top = Math.min(y1, y2), bottom = Math.max(y1, y2);
+                if (right - left > 8 && bottom - top > 8) {
+                    imageMeta.push({
+                        id: `mask_${imageMeta.length}`,
+                        bbox: { x: left, y: top, w: right - left, h: bottom - top },
+                        inline: true,
+                    });
+                }
+                break;
+            }
+            case OPS.paintInlineImageXObject: {
+                // Inline images live in the op-list, not in page.objs.
+                // Assign a synthetic ID; the geometry worker will crop the bbox from the rendered canvas.
+                const [x1, y1] = toViewport(0, 0);
+                const [x2, y2] = toViewport(1, 1);
+                const left = Math.min(x1, x2), right = Math.max(x1, x2);
+                const top = Math.min(y1, y2), bottom = Math.max(y1, y2);
+                if (right - left > 8 && bottom - top > 8) {
+                    imageMeta.push({
+                        id: `inline_${imageMeta.length}`,
+                        bbox: { x: left, y: top, w: right - left, h: bottom - top },
+                        inline: true,
+                    });
+                }
                 break;
             }
             default:

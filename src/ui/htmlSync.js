@@ -19,9 +19,11 @@
 
 import { state } from '../state.js';
 import { initTableFeatures } from '../utils/tableLogic.js';
+import { getImageBlob } from '../utils/imageStore.js';
 
 let _syncing = false;
 const _debouncers = new WeakMap();
+const objectUrlCache = {};
 
 const SURFACE_IDS = ['html-preview', 'visual-diff-html'];
 const DEBOUNCE_MS = 200;
@@ -69,6 +71,7 @@ export function applyHtmlEverywhere(html, skipEl = null) {
                 el.innerHTML = clean;
                 // Re-bind crosshair / VisualGridMapper to any tables inside.
                 initTableFeatures(el);
+                hydrateImages(el);
             }
         }
 
@@ -85,4 +88,27 @@ function sanitize(html) {
     return typeof window.DOMPurify !== 'undefined'
         ? window.DOMPurify.sanitize(html, { ADD_TAGS: ['img'], ALLOW_DATA_ATTR: true })
         : html;
+}
+
+export async function hydrateImages(containerEl) {
+    const images = containerEl.querySelectorAll('img[data-img-id]');
+    for (const img of images) {
+        const id = img.getAttribute('data-img-id');
+        
+        if (objectUrlCache[id]) {
+            img.src = objectUrlCache[id];
+            continue;
+        }
+
+        try {
+            const blob = await getImageBlob(id);
+            if (blob) {
+                const url = URL.createObjectURL(blob);
+                objectUrlCache[id] = url;
+                img.src = url;
+            }
+        } catch (e) {
+            console.warn(`Failed to hydrate image ${id}`, e);
+        }
+    }
 }
