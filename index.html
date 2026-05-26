@@ -157,6 +157,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="src/styles.css">
+    <link rel="stylesheet" href="/assets/css/ginexys-modals.css">
 </head>
 
 <body>
@@ -218,6 +219,11 @@
         </nav>
 
         <div class="header-right">
+            <!-- Ginexys Send To -->
+            <button id="pdfSendBtn" class="gx-tool-send-btn" title="Send to another Ginexys tool (Pro)">
+                <img src="/assets/img/Ginexys_Logo.png" width="18" height="18" alt="Ginexys" style="border-radius:50%;display:block;">
+            </button>
+
             <div class="dropdown" id="export-dropdown">
                 <button class="icon-btn icon-btn--primary dropdown-toggle" id="btn-export-main">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -564,6 +570,25 @@
                 }
             });
         });
+    </script>
+
+    <script>
+        // Ginexys Send button — opens IPC panel in OS or waitlist when standalone
+        (function () {
+            var sendBtn = document.getElementById('pdfSendBtn');
+            if (!sendBtn) return;
+            sendBtn.addEventListener('click', function () {
+                if (window.parent !== window && window.parent.OsShell) {
+                    window.parent.postMessage({ type: 'gx:open-ipc-panel' }, '*');
+                } else {
+                    var GxM = window.GxModals;
+                    if (GxM) GxM.open('pro_waitlist', {
+                        featureSlug: 'ipc-cross-tool',
+                        subtitle: 'Send extracted tables to TAFNE or vector regions to Schema Editor. Cross-tool flow is a Pro feature.',
+                    });
+                }
+            });
+        })();
     </script>
 
     <!-- ── VIEW CODE DIALOG ──────────────────────────────────────────────── -->
