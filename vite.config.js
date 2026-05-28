@@ -36,16 +36,20 @@ export default defineConfig({
         emptyOutDir: true,
         target: 'esnext',
         rollupOptions: {
-            // Every entry HTML must be listed here, otherwise Vite skips it
-            // and the deploy serves the unbundled source — which fails in the
-            // browser the moment a bare ES module specifier (e.g.
-            // `import $ from 'jquery'`) hits the network.
+            // Only the real app entry points go here. The sub-page stubs
+            // (visual-diff/, compare/, editor/) are now thin SEO shells that
+            // load gx-pdf-shell.js from /assets/components/ — a path outside
+            // this submodule. build.sh copies the whole dist/ to the deploy
+            // folder alongside the parent's assets/, so the absolute path
+            // resolves correctly at runtime without Rollup bundling it.
             input: {
-                main:       path.resolve(__dirname, 'index.html'),
-                editor:     path.resolve(__dirname, 'editor/index.html'),
-                visualDiff: path.resolve(__dirname, 'visual-diff/index.html'),
-                compare:    path.resolve(__dirname, 'compare/index.html'),
+                main:   path.resolve(__dirname, 'index.html'),
             },
+            // Tell Rollup the shared shell component is external so it never
+            // tries to resolve the /assets/components/ absolute path.
+            external: [
+                /^\/assets\/components\//,
+            ],
             output: {
                 // Keep asset names stable so the VS Code extension provider
                 // can reference them by name without rebuilding after every
@@ -72,6 +76,16 @@ export default defineConfig({
                         return 'assets/geometryWorker.js';
                     }
                     return 'assets/[name]-[hash].js';
+                },
+                // PDF.js display layer (bundled into geometryWorker) calls window.location
+                // inside PDFWorker._initialize(). In a Web Worker there is no `window`,
+                // only `self`. This banner aliases them before any bundled code runs,
+                // preventing the ReferenceError that causes pdfjs to crash into fake-worker.
+                banner: (chunk) => {
+                    if (chunk.name === 'geometryWorker') {
+                        return 'if (typeof window === "undefined") { self.window = self; }';
+                    }
+                    return '';
                 },
             },
         },

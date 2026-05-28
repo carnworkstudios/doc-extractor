@@ -51,7 +51,11 @@ class OffscreenCanvasFactory {
 
 self.onmessage = async (e) => {
     if (e.data.type !== 'process') return;
-    const { bytes } = e.data;
+    const { bytes, pdfWorkerSrc } = e.data;
+
+    if (pdfWorkerSrc) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+    }
 
     try {
         const canvasFactoryOpt = typeof OffscreenCanvas !== 'undefined'

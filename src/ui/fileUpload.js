@@ -79,7 +79,11 @@ function extractViaGeometryWorker(bytes, onProgress) {
             reject(new Error('Geometry worker crashed: ' + (err.message || err)));
         };
 
-        worker.postMessage({ type: 'process', bytes });
+        worker.postMessage({ 
+            type: 'process', 
+            bytes,
+            pdfWorkerSrc: window.__VSC_PDF_WORKER_SRC__ 
+        });
     });
 }
 
