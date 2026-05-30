@@ -24,6 +24,22 @@ let brokerReady = false;
 // Lazily created geometry worker for local (offline) table extraction
 let _geoWorker = null;
 
+// Pro tier check — gates Advance Extraction (Docling/OpenRouter backend path) and
+// the Analyze tab pipeline. Mirrors the architecture in pro-gate-system.md §7C.
+// Embedded: ask the OS shell for the current user's tier. Standalone: default to free.
+// Until auth Phase 7 wires real tier detection, this always returns false.
+function _isProUser() {
+    try {
+        if (window.parent !== window && window.parent.OsShell && typeof window.parent.OsShell.getUser === 'function') {
+            const user = window.parent.OsShell.getUser();
+            return !!(user && (user.tier === 'pro' || user.tier === 'team'));
+        }
+    } catch (_) {
+        // Cross-origin access can throw — treat as free.
+    }
+    return false;
+}
+
 function ensureGeometryWorker() {
     if (!_geoWorker) {
         _geoWorker = new Worker(
@@ -182,9 +198,8 @@ async function handleFile(file, pdfIndex) {
         const buf = await file.arrayBuffer();
         pdfState.bytes = new Uint8Array(buf.slice(0));
 
-        // Pre-copy all slices before any PDF.js call — getDocument transfers and detaches the buffer.
+        // Pre-copy slices before any PDF.js call — getDocument transfers and detaches the buffer.
         const bytesForCanvas   = pdfState.bytes.slice();
-        const bytesForAnalysis = pdfState.bytes.slice();
         const bytesForWorker   = pdfState.bytes.slice();
 
         if (pdfIndex === 1) {
@@ -192,15 +207,28 @@ async function handleFile(file, pdfIndex) {
             const { wrappers, numPages } = await renderPDFToCanvas(bytesForCanvas, 'pdf-canvas-container');
             registerPages(wrappers, numPages);
             registerPDFLayers(document.getElementById('pdf-canvas-container'));
-            runAnalysis(bytesForAnalysis, file.name).catch(err =>
-                console.warn('[Analyze] Analysis failed:', err.message),
-            );
+            // Advanced Extraction (Analyze tab) runs the full analyzePDF() Pro pipeline:
+            // per-region confidence scoring, zone flag inspection, tolerance analysis. The
+            // output is bypass-proof gated by the paywall HTML in view-analyze, but the
+            // pipeline itself is heavy. Until auth Phase 7 wires real tier detection,
+            // _isProUser() always returns false, so the pipeline never runs for any user.
+            if (_isProUser()) {
+                const bytesForAnalysis = pdfState.bytes.slice();
+                runAnalysis(bytesForAnalysis, file.name).catch(err =>
+                    console.warn('[Analyze] Analysis failed:', err.message),
+                );
+            }
         }
 
         const formData = new FormData();
         formData.append('file', file);
 
-        const useAiLayout = document.getElementById('ai-layout-toggle')?.checked;
+        // Advance Extraction (AI layout via Docling + OpenRouter) is a Pro feature gated
+        // by the .gx-pro-interceptor overlay in index.html. The checkbox is disabled in
+        // markup so .checked is always false for free users; the explicit check below
+        // is defense in depth against DOM manipulation.
+        const toggle = document.getElementById('ai-layout-toggle');
+        const useAiLayout = toggle && !toggle.disabled && toggle.checked;
         const apiKey = document.getElementById('ai-api-key')?.value;
         if (useAiLayout) {
             formData.append('use_ai_layout', 'true');

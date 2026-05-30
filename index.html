@@ -157,7 +157,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="src/styles.css">
+    <!-- ginexys-modals.css references portfolio.css's :root CSS custom properties.
+         pdf-processor uses its own design tokens in src/styles.css, so loading the
+         full portfolio.css here would collide. Instead load only the modal's
+         required tokens (~2KB) extracted to ginexys-modals-tokens.css. -->
+    <link rel="stylesheet" href="/assets/css/ginexys-modals-tokens.css">
     <link rel="stylesheet" href="/assets/css/ginexys-modals.css">
+    <script src="/assets/js/ginexys-modals.js" defer></script>
 </head>
 
 <body>
@@ -199,11 +205,12 @@
             <!-- AI Open Core Premium Features UI -->
             <div
                 style="display: flex; gap: 8px; align-items: center; margin-left: 16px; border-left: 1px solid #e5e7eb; padding-left: 16px;">
-                <label
-                    style="cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: #4B5563;"
-                    title="Pass Docling markdown to OpenRouter AI for responsive Bootstrap grid mapping">
-                    <input type="checkbox" id="ai-layout-toggle" style="cursor: pointer;">
-                    ✨ Advance Extraction
+                <label class="gx-pro-locked"
+                    style="cursor: default; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: #4B5563; position: relative;"
+                    title="AI inference (Docling + OpenRouter) — Pro feature">
+                    <input type="checkbox" id="ai-layout-toggle" style="cursor: default;" disabled>
+                    ✨ Advance Extraction <span class="gx-pro-badge">PRO</span>
+                    <div class="gx-pro-interceptor" data-pro-feature="pdf-ai-extract"></div>
                 </label>
                 <!-- <input type="password" id="ai-api-key" placeholder="OpenRouter Key (or .env)" style="border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 12px; width: 160px; outline: none;"> -->
             </div>
@@ -249,6 +256,15 @@
                     <button class="dropdown-item" data-format="doc">
                         <span class="item-icon">DOC</span> Word Document (.doc)
                     </button>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-item gx-pro-locked" style="position:relative">
+                        <span class="item-icon">📝</span> Export to Notion <span class="gx-pro-badge">PRO</span>
+                        <div class="gx-pro-interceptor" data-pro-feature="pdf-export-notion"></div>
+                    </div>
+                    <div class="dropdown-item gx-pro-locked" style="position:relative">
+                        <span class="item-icon">📊</span> Export to Google Sheets <span class="gx-pro-badge">PRO</span>
+                        <div class="gx-pro-interceptor" data-pro-feature="pdf-export-sheets"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -420,6 +436,12 @@
                 <span class="diff-stat diff-stat--add">
                     <span id="stat-added-count">0</span> added
                 </span>
+                <div style="position:relative;display:inline-block">
+                    <button class="diff-pill gx-pro-locked" style="position:relative" disabled>
+                        Export Report <span class="gx-pro-badge">PRO</span>
+                        <div class="gx-pro-interceptor" data-pro-feature="pdf-diff-export"></div>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -450,44 +472,29 @@
 
     <!-- ── ANALYZE VIEW ─────────────────────────────────────────────── -->
     <div id="view-analyze" class="view-panel">
-        <div class="analyze-layout">
-
-            <!-- Metadata bar -->
-            <div class="analyze-meta-bar">
-                <span id="analyze-status" class="analyze-status-msg">Open a PDF to analyze it.</span>
-                <div id="analyze-meta" class="analyze-meta"></div>
+        <div class="analyze-paywall">
+            <div class="analyze-paywall-blur-bg" aria-hidden="true">
+                <div class="mock-confidence-row"></div>
+                <div class="mock-confidence-row"></div>
+                <div class="mock-tolerance-row"></div>
+                <div class="mock-zone-flag"></div>
+                <div class="mock-zone-flag"></div>
             </div>
-
-            <!-- Body: canvas + stats side by side -->
-            <div class="analyze-body">
-
-                <!-- Left: canvas -->
-                <div class="analyze-canvas-wrap">
-                    <div class="analyze-canvas-header">
-                        <button class="tool-btn" id="analyze-page-prev" disabled>⟨</button>
-                        <span id="analyze-page-counter" class="page-counter">—</span>
-                        <button class="tool-btn" id="analyze-page-next" disabled>⟩</button>
-                    </div>
-                    <canvas id="analyze-canvas" class="analyze-canvas"></canvas>
-                    <div class="analyze-legend" id="analyze-legend">
-                        <button class="legend-toggle active" data-layer="hSegs" style="--lc:#3b82f6">━ H lines</button>
-                        <button class="legend-toggle active" data-layer="vSegs" style="--lc:#10b981">━ V lines</button>
-                        <button class="legend-toggle active" data-layer="diagSegs" style="--lc:#9ca3af">━
-                            Diagonal</button>
-                        <button class="legend-toggle active" data-layer="rects" style="--lc:#f97316">▭ Rect
-                            candidates</button>
-                        <button class="legend-toggle active" data-layer="images" style="--lc:#ef4444">▭ Images</button>
-                        <button class="legend-toggle active" data-layer="text" style="--lc:#eab308">● Text
-                            baselines</button>
-                    </div>
-                </div>
-
-                <!-- Right: stats -->
-                <div class="analyze-stats-wrap">
-                    <h4 class="analyze-section-title">Page structure</h4>
-                    <div id="analyze-stats"></div>
-                </div>
-
+            <div class="analyze-paywall-card">
+                <div class="analyze-paywall-badge">PRO</div>
+                <h3>Advanced Extraction Controls</h3>
+                <p>Full structural inspection and per-page re-extraction for precision workflows.</p>
+                <ul class="analyze-paywall-features">
+                    <li>Per-region confidence scores (color-coded by tier)</li>
+                    <li>Zone flag inspector — see why regions were ambiguous</li>
+                    <li>Snap and join tolerance sliders, per-page</li>
+                    <li>Per-page re-extraction without reprocessing the full document</li>
+                    <li>Confidence threshold mode — auto-queue low-confidence regions</li>
+                    <li>Before/after retest panel per page</li>
+                    <li>Confidence history across re-extraction attempts</li>
+                </ul>
+                <button class="analyze-paywall-btn" id="analyzeProWaitlist">Join Pro Waitlist</button>
+                <p class="analyze-paywall-note">Free extraction runs as normal. This panel is a Pro view of the extraction output.</p>
             </div>
         </div>
     </div>
@@ -543,15 +550,23 @@
         document.addEventListener('DOMContentLoaded', function () {
             var p = location.pathname;
 
-            // On load: activate view matching the current path
+            // On load: activate view matching the current path, OR ?view= query param.
+            // Query param wins (used by OS shell deep links: /tools/pdf-processor/?view=editor).
             var viewMap = {
                 'visual-diff': 'visual-diff',
                 'compare': 'diff',
                 'editor': 'editor',
             };
-            var matched = Object.keys(viewMap).find(function (k) { return p.includes('/' + k + '/'); });
-            if (matched) {
-                var btn = document.querySelector('.tab-btn[data-view="' + viewMap[matched] + '"]');
+            var queryView = new URLSearchParams(location.search).get('view');
+            var targetView = null;
+            if (queryView && document.querySelector('.tab-btn[data-view="' + queryView + '"]')) {
+                targetView = queryView;
+            } else {
+                var matched = Object.keys(viewMap).find(function (k) { return p.includes('/' + k + '/'); });
+                if (matched) targetView = viewMap[matched];
+            }
+            if (targetView) {
+                var btn = document.querySelector('.tab-btn[data-view="' + targetView + '"]');
                 if (btn && !btn.disabled) btn.click();
             }
 
@@ -573,19 +588,51 @@
     </script>
 
     <script>
+        var PDF_PRO_COPY = {
+            'pdf-export-notion':  'Export directly to Notion pages. Join the waitlist to get early access when it ships.',
+            'pdf-export-sheets':  'Export structured tables directly to Google Sheets. Join the waitlist to get early access.',
+            'pdf-diff-export':    'Export a full diff report comparing two PDFs. Join the waitlist to get early access.',
+            'pdf-analyze-pro':    'Per-region confidence scores, tolerance controls, and per-page re-extraction. Join the waitlist to get early access.',
+            'pdf-ai-extract':     'Advance Extraction runs your PDF through Docling layout analysis and OpenRouter AI for responsive Bootstrap grid mapping. Join the waitlist to get early access.',
+        };
+
+        // Pro waitlist trigger: emit IPC when embedded in the OS, open local modal when standalone.
+        // Embedded path lets the parent OS shell render the modal in its full viewport and apply
+        // any tier-aware logic. Standalone path uses the bundled GxModals (loaded above).
+        function openProWaitlist(featureSlug, subtitle) {
+            var copy = subtitle || PDF_PRO_COPY[featureSlug] || 'This is a Pro feature. Join the waitlist to get early access when Pro launches.';
+            if (window.parent !== window) {
+                window.parent.postMessage({ type: 'gx:pro-gate-click', featureSlug: featureSlug, subtitle: copy }, '*');
+            } else if (window.GxModals) {
+                window.GxModals.open('pro_waitlist', { featureSlug: featureSlug, subtitle: copy });
+            }
+        }
+
+        // Delegated interceptor — handles all Pro-gated items in this tool
+        document.addEventListener('click', function (e) {
+            var interceptor = e.target.closest('.gx-pro-interceptor');
+            if (!interceptor) return;
+            openProWaitlist(interceptor.dataset.proFeature);
+        });
+
+        // Analyze paywall waitlist button
+        (function () {
+            var btn = document.getElementById('analyzeProWaitlist');
+            if (!btn) return;
+            btn.addEventListener('click', function () {
+                openProWaitlist('pdf-analyze-pro');
+            });
+        })();
+
         // Ginexys Send button — opens IPC panel in OS or waitlist when standalone
         (function () {
             var sendBtn = document.getElementById('pdfSendBtn');
             if (!sendBtn) return;
             sendBtn.addEventListener('click', function () {
-                if (window.parent !== window && window.parent.OsShell) {
+                if (window.parent !== window) {
                     window.parent.postMessage({ type: 'gx:open-ipc-panel' }, '*');
                 } else {
-                    var GxM = window.GxModals;
-                    if (GxM) GxM.open('pro_waitlist', {
-                        featureSlug: 'ipc-cross-tool',
-                        subtitle: 'Send extracted tables to TAFNE or vector regions to Schema Editor. Cross-tool flow is a Pro feature.',
-                    });
+                    openProWaitlist('ipc-cross-tool', 'Send extracted tables to TAFNE or vector regions to Schema Editor. Cross-tool flow is a Pro feature.');
                 }
             });
         })();

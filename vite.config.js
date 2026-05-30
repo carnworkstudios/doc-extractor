@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import path from 'path'
+import fs from 'fs'
 import { createRequire } from 'module'
 import wasm from 'vite-plugin-wasm'
 
@@ -24,6 +25,11 @@ export default defineConfig({
     server: {
         port: 5173,
         open: '/tools/pdf-processor/editor/',
+        fs: {
+            // Allow Vite dev server to serve files from the repo root so
+            // /assets/components/gx-pdf-shell.js resolves during local dev.
+            allow: [path.resolve(__dirname, '../..')],
+        },
     },
 
     optimizeDeps: {
@@ -96,19 +102,52 @@ export default defineConfig({
         monacoEditorPlugin({
             languageWorkers: ['editorWorkerService', 'html', 'css'],
         }),
-        // Redirect bare /tools/pdf-processor/ to /tools/pdf-processor/editor/
-        // Prevents Vite HMR ping failures when PDF.js nested worker requests the base URL
+        // Serve /assets/* from the repo root during dev — these files live outside
+        // the pdf-processor/ Vite root so they 404 without this middleware.
         {
-            name: 'redirect-root-to-editor',
+            name: 'serve-repo-assets',
             configureServer(server) {
+                const repoRoot = path.resolve(__dirname, '../..');
                 server.middlewares.use((req, res, next) => {
-                    if (req.url === '/tools/pdf-processor/' || req.url === '/tools/pdf-processor') {
-                        res.writeHead(302, { Location: '/tools/pdf-processor/editor/' });
-                        res.end();
-                        return;
-                    }
-                    next();
+                    if (!req.url.startsWith('/assets/')) return next();
+                    const filePath = path.join(repoRoot, req.url.split('?')[0]);
+                    if (!fs.existsSync(filePath)) return next();
+                    const ext = path.extname(filePath);
+                    const mime = {
+                        '.js':   'application/javascript',
+                        '.css':  'text/css',
+                        '.json': 'application/json',
+                        '.png':  'image/png',
+                        '.svg':  'image/svg+xml',
+                        '.woff2':'font/woff2',
+                        '.woff': 'font/woff',
+                    }[ext] || 'application/octet-stream';
+                    res.setHeader('Content-Type', mime);
+                    fs.createReadStream(filePath).pipe(res);
                 });
+            },
+        },
+        // Vite's HTML transform prepends `base` ('/tools/pdf-processor/') to absolute
+        // URLs in <script src> / <link href>. In dev that breaks references to repo-root
+        // /assets/* files (ginexys-modals.js, modal CSS, OS bridge), which live outside
+        // this Vite root. Undo the rewrite so the serve-repo-assets middleware can serve them.
+        //
+        // apply:'serve' restricts this plugin to dev only. In `vite build` the
+        // /tools/pdf-processor/assets/main-*.css and /tools/pdf-processor/assets/main-*.js
+        // paths MUST keep their prefix so the VS Code extension's PdfEditorProvider HTML
+        // rewriter (which distinguishes Vite-bundled vs portfolio-root /assets/) routes
+        // them to the right webview URI.
+        {
+            name: 'preserve-repo-asset-paths',
+            apply: 'serve',
+            transformIndexHtml: {
+                order: 'post',
+                handler(html) {
+                    return html.replace(
+                        /(src|href)="\/tools\/pdf-processor\/(assets\/[^"]+)"/g,
+                        '$1="/$2"'
+                    );
+                },
             },
         },
     ],
