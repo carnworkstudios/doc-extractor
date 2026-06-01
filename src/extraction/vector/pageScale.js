@@ -74,4 +74,22 @@ export class PageScale {
 
     clusterYGap(yRange) { return Math.max(this.S * this.R_CLUSTER_Y_GAP, yRange * 0.10); }
     clusterXGap(xRange) { return Math.max(this.S * this.R_CLUSTER_X_GAP, xRange * 0.08); }
+
+    toJSON() {
+        return {
+            S: this.S,
+            vScale: this.vScale,
+            yBandTolPx: this.yBandTolPx,
+            paraGapPx: this.paraGapPx,
+            tablePadPx: this.tablePadPx,
+            underlineTolPx: this.underlineTolPx,
+            proximityPx: this.proximityPx,
+            colTolPx: this.colTolPx,
+            streamGapPx: this.streamGapPx,
+            colGapMinPx: this.colGapMinPx,
+            HEADING_SCALE: this.HEADING_SCALE,
+            MARGIN_FLOOR: this.MARGIN_FLOOR,
+            STREAM_CONFIDENCE: this.STREAM_CONFIDENCE,
+        };
+    }
 }

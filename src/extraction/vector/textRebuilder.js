@@ -55,6 +55,11 @@ const DEFAULTS = {
 export function rebuildText(items, pageWidthPt, opts = {}) {
     const o = { ...DEFAULTS, ...opts };
 
+    // Derive columnGapPt from PageScale if provided (adaptive column gap)
+    if (o.pageScale && o.pageScale.colGapMinPx != null && o.pageScale.vScale != null) {
+        o.columnGapPt = o.pageScale.colGapMinPx / o.pageScale.vScale;
+    }
+
     const valid = (items || []).filter(i => i.str?.trim());
     if (!valid.length) return '';
 

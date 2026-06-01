@@ -20,7 +20,7 @@
 //   - Trust P/H roles: only Table/TR/TD are authoritative. Paragraph and heading
 //     roles from the struct tree are ignored; Tier 3 handles those.
 
-import { RegionType } from './contextClassifier.js';
+import { RegionType } from './classifiers/regionTypes.js';
 
 // Recognized role strings from PDF 1.7 / PDF 2.0 standard structure types.
 const ROLE_TABLE   = new Set(['Table']);

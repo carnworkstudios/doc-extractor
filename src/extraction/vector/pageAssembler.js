@@ -17,7 +17,8 @@
 
 import { buildTable } from './tableBuilder.js';
 import { rebuildText } from './textRebuilder.js';
-import { RegionType, detectZoneColumns } from './contextClassifier.js';
+import { RegionType } from './classifiers/regionTypes.js';
+import { detectZoneColumns } from './contextClassifier.js';
 import { PageScale } from './pageScale.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -245,6 +246,10 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
     const textParts = [];
     let tableCount = 0;
 
+    // Create PageScale early for adaptive thresholds throughout assembly
+    const pageScale = textMeta.length > 0 ? new PageScale(textMeta, viewport) : null;
+    const pageScaleOpts = pageScale ? { pageScale: pageScale.toJSON() } : {};
+
     // Step 4: Figure+caption detection pre-pass
     _mergeFigureCaptions(regions, textMeta);
 
@@ -271,14 +276,13 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
     // clusters — it is irrelevant inside a bounded zone whose own height is the
     // persistence window.  A minimum zone height guard (10 body-text lines) keeps
     // Gate 3 active for caption bands and label clusters too short to trust.
-    if (textMeta.length > 0) {
-        const scale = new PageScale(textMeta, viewport);
+    if (textMeta.length > 0 && pageScale) {
         for (const zone of autoZones) {
             if (zone.cols > 1) continue; // page-level already found this split
             if (!zone.isFullWidth) continue; // classified as multi-col regions already — skip
             const zoneItems = textMeta.filter(tm => tm.vy >= zone.y0 && tm.vy < zone.y1);
             if (zoneItems.length < 6) continue;
-            const { splits: zoneSplits } = detectZoneColumns(zoneItems, viewport, scale);
+            const { splits: zoneSplits } = detectZoneColumns(zoneItems, viewport, pageScale);
             if (!zoneSplits.length) continue;
             // Promote zone to multi-column and patch columnIndex on its regions
             zone.cols = zoneSplits.length + 1;
@@ -304,7 +308,7 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
     // its viewport-space Y/X so the zone toolbar can rearrange without
     // re-running the extractor.
     const rendered = regions.map(region => {
-        const { html, text, tables } = _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages);
+        const { html, text, tables } = _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages, pageScaleOpts);
         tableCount += tables;
         if (text) textParts.push(text);
         const ry = Math.round(region.yCenter ?? 0);
@@ -475,7 +479,7 @@ function _scopeItems(region, textItems, textMeta) {
     });
 }
 
-function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages = {}) {
+function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages = {}, _pageScaleOpts = {}) {
     let html = '';
     let text = '';
     let tables = 0;
@@ -539,7 +543,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             }
             
             if (region.captionRegion) {
-                const capData = _renderRegion(region.captionRegion, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages);
+                const capData = _renderRegion(region.captionRegion, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages, _pageScaleOpts);
                 html = `<figure class="pdf-figure" style="margin: 16px 0;">${imgHtml}<figcaption class="pdf-figcaption" style="text-align: center; font-size: 0.9em; color: #666; margin-top: 8px;">${capData.html}</figcaption></figure>`;
                 text = capData.text;
             } else {
@@ -552,7 +556,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             const scopedItems = _scopeItems(region, textItems, textMeta);
             const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
             // Use inline-html to get styled runs without a wrapping <p>
-            const headingHtml = rebuildText(scopedItems, pageWidthPt, { format: 'inline-html' });
+            const headingHtml = rebuildText(scopedItems, pageWidthPt, { format: 'inline-html', ..._pageScaleOpts });
             if (!headingHtml.trim()) break;
 
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
@@ -561,7 +565,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             const tag = region.isH1 ? 'h1' : ((region.fontSize || 14) > 18 ? 'h2' : 'h3');
 
             html = `<${tag} class="${fontClass} ${alignClass}">${headingHtml}</${tag}>`;
-            text = rebuildText(scopedItems, pageWidthPt, { format: 'text' });
+            text = rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
             break;
         }
 
@@ -583,7 +587,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
         case RegionType.PARAGRAPH: {
             const scopedItems = _scopeItems(region, textItems, textMeta);
             const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
-            const paraHtml = rebuildText(scopedItems, pageWidthPt, { format: 'html' });
+            const paraHtml = rebuildText(scopedItems, pageWidthPt, { format: 'html', ..._pageScaleOpts });
             if (!paraHtml.trim()) break;
 
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
@@ -592,14 +596,14 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 
             // CSS inheritance propagates font-family/size/text-align down to <p> children
             html = `<div class="${fontClass} ${alignClass}">${paraHtml}</div>`;
-            text = rebuildText(scopedItems, pageWidthPt, { format: 'text' });
+            text = rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
             break;
         }
 
         case RegionType.BOX: {
             const scopedItems = _scopeItems(region, textItems, textMeta);
             const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
-            const innerHtml = rebuildText(scopedItems, pageWidthPt, { format: 'html' });
+            const innerHtml = rebuildText(scopedItems, pageWidthPt, { format: 'html', ..._pageScaleOpts });
             if (!innerHtml.trim()) break;
 
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
@@ -621,7 +625,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 
 
             html = `<aside class="pdf-box${roleClass} ${fontClass} ${alignClass}"${bgStyle}>${innerHtml}</aside>`;
-            text = rebuildText(scopedItems, pageWidthPt, { format: 'text' });
+            text = rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
             break;
         }
 
@@ -629,7 +633,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
         case RegionType.FOOTER: {
             const scopedItems = _scopeItems(region, textItems, textMeta);
             const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
-            const innerHtml   = rebuildText(scopedItems, pageWidthPt, { format: 'inline-html' });
+            const innerHtml   = rebuildText(scopedItems, pageWidthPt, { format: 'inline-html', ..._pageScaleOpts });
             if (!innerHtml.trim()) break;
 
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
@@ -637,7 +641,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             const tag = region.type === RegionType.HEADER ? 'header' : 'footer';
 
             html = `<${tag} class="pdf-${tag} ${fontClass}">${innerHtml}</${tag}>`;
-            text = rebuildText(scopedItems, pageWidthPt, { format: 'text' });
+            text = rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
             break;
         }
     }

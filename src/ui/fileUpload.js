@@ -15,7 +15,7 @@ import { initTableFeatures } from '../utils/tableLogic.js';
 import { applyHtmlEverywhere, hydrateImages } from './htmlSync.js';
 import { showToast } from './toast.js';
 import { cwsBroker } from '@os/worker-broker.js';
-import { runAnalysis } from './analyzePanel.js';
+import { runAnalysis, pushRegionPage, resetAnalysisData } from './analyzePanel.js';
 import { clearImages, saveImages, getImageBlob } from '../utils/imageStore.js';
 import { refreshZoneToolbar } from './zoneToolbar.js';
 
@@ -76,6 +76,9 @@ function extractViaGeometryWorker(bytes, onProgress) {
                 if (msg.html) htmlParts.push(msg.html);
                 if (msg.text) textParts.push(msg.text);
                 totalTables += msg.tables || 0;
+                // Feed region manifest to the Analysis panel (always, even behind paywall,
+                // so data is ready if the user opens ?dev=1 after extraction).
+                if (msg.regions) pushRegionPage(msg.page, msg.regions, msg.pageScale);
             } else if (msg.type === 'complete') {
                 clearTimeout(timeout);
                 const styleBlock = msg.styles ? `<style>\n${msg.styles}\n</style>\n` : '';
@@ -204,20 +207,14 @@ async function handleFile(file, pdfIndex) {
 
         if (pdfIndex === 1) {
             resetPDFLayers();
+            resetAnalysisData();
             const { wrappers, numPages } = await renderPDFToCanvas(bytesForCanvas, 'pdf-canvas-container');
             registerPages(wrappers, numPages);
             registerPDFLayers(document.getElementById('pdf-canvas-container'));
-            // Advanced Extraction (Analyze tab) runs the full analyzePDF() Pro pipeline:
-            // per-region confidence scoring, zone flag inspection, tolerance analysis. The
-            // output is bypass-proof gated by the paywall HTML in view-analyze, but the
-            // pipeline itself is heavy. Until auth Phase 7 wires real tier detection,
-            // _isProUser() always returns false, so the pipeline never runs for any user.
-            if (_isProUser()) {
-                const bytesForAnalysis = pdfState.bytes.slice();
-                runAnalysis(bytesForAnalysis, file.name).catch(err =>
-                    console.warn('[Analyze] Analysis failed:', err.message),
-                );
-            }
+            const bytesForAnalysis = pdfState.bytes.slice();
+            runAnalysis(bytesForAnalysis, file.name).catch(err =>
+                console.warn('[Analyze] Analysis failed:', err.message),
+            );
         }
 
         const formData = new FormData();

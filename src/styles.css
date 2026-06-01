@@ -1791,3 +1791,49 @@ body {
   margin: 0;
   color: #d8eaf8;
 }
+
+/* ── Analyze region legend ──────────────────────────────────────────────── */
+.analyze-region-legend {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Confidence threshold row ────────────────────────────────────────────── */
+.analyze-conf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.analyze-conf-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.analyze-conf-slider {
+  flex: 1;
+  min-width: 80px;
+  max-width: 180px;
+  accent-color: var(--accent, #6366f1);
+  cursor: pointer;
+}
+
+.analyze-conf-val {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  min-width: 30px;
+}
+
+/* ── PageScale info row ──────────────────────────────────────────────────── */
+.analyze-scale-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}

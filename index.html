@@ -472,29 +472,64 @@
 
     <!-- ── ANALYZE VIEW ─────────────────────────────────────────────── -->
     <div id="view-analyze" class="view-panel">
-        <div class="analyze-paywall">
-            <div class="analyze-paywall-blur-bg" aria-hidden="true">
-                <div class="mock-confidence-row"></div>
-                <div class="mock-confidence-row"></div>
-                <div class="mock-tolerance-row"></div>
-                <div class="mock-zone-flag"></div>
-                <div class="mock-zone-flag"></div>
+        <div class="analyze-layout" id="analyze-panel-inner">
+            <div class="analyze-meta-bar">
+                <span class="analyze-status-msg" id="analyze-status">Load a PDF to inspect its structure.</span>
+                <div class="analyze-meta" id="analyze-meta"></div>
             </div>
-            <div class="analyze-paywall-card">
-                <div class="analyze-paywall-badge">PRO</div>
-                <h3>Advanced Extraction Controls</h3>
-                <p>Full structural inspection and per-page re-extraction for precision workflows.</p>
-                <ul class="analyze-paywall-features">
-                    <li>Per-region confidence scores (color-coded by tier)</li>
-                    <li>Zone flag inspector — see why regions were ambiguous</li>
-                    <li>Snap and join tolerance sliders, per-page</li>
-                    <li>Per-page re-extraction without reprocessing the full document</li>
-                    <li>Confidence threshold mode — auto-queue low-confidence regions</li>
-                    <li>Before/after retest panel per page</li>
-                    <li>Confidence history across re-extraction attempts</li>
-                </ul>
-                <button class="analyze-paywall-btn" id="analyzeProWaitlist">Join Pro Waitlist</button>
-                <p class="analyze-paywall-note">Free extraction runs as normal. This panel is a Pro view of the extraction output.</p>
+            <div class="analyze-body">
+                <div class="analyze-canvas-wrap">
+                    <div class="analyze-canvas-header">
+                        <button class="icon-btn" id="analyze-page-prev" disabled title="Previous page">&#8592;</button>
+                        <span id="analyze-page-counter" style="font-size:12px;color:var(--text-muted)">—</span>
+                        <button class="icon-btn" id="analyze-page-next" disabled title="Next page">&#8594;</button>
+                    </div>
+                    <canvas class="analyze-canvas" id="analyze-canvas"></canvas>
+                    <!-- Geometry layers -->
+                    <div class="analyze-legend" id="analyze-legend">
+                        <button class="legend-toggle active" data-layer="hSegs" style="--lc:#3b82f6">H segs</button>
+                        <button class="legend-toggle active" data-layer="vSegs" style="--lc:#10b981">V segs</button>
+                        <button class="legend-toggle active" data-layer="diagSegs" style="--lc:#9ca3af">Diag</button>
+                        <button class="legend-toggle active" data-layer="rects" style="--lc:#f97316">Rects</button>
+                        <button class="legend-toggle active" data-layer="images" style="--lc:#ef4444">Images</button>
+                        <button class="legend-toggle active" data-layer="text" style="--lc:#eab308">Text Boundaries</button>
+                    </div>
+                    <!-- Region overlay layers -->
+                    <div class="analyze-legend analyze-region-legend" id="analyze-region-legend">
+                        <span class="analyze-section-title" style="width:100%;margin-bottom:2px">Regions</span>
+                        <button class="legend-toggle active" data-region="LATTICE_TABLE"  style="--lc:#2563eb">Lattice</button>
+                        <button class="legend-toggle active" data-region="STREAM_TABLE"   style="--lc:#06b6d4">Stream</button>
+                        <button class="legend-toggle active" data-region="BOX"            style="--lc:#f97316">Box</button>
+                        <button class="legend-toggle active" data-region="HEADING"        style="--lc:#8b5cf6">Heading</button>
+                        <button class="legend-toggle active" data-region="PARAGRAPH"      style="--lc:#6b7280">Para</button>
+                        <button class="legend-toggle active" data-region="LIST"           style="--lc:#14b8a6">List</button>
+                        <button class="legend-toggle active" data-region="IMAGE"          style="--lc:#ef4444">Image</button>
+                        <button class="legend-toggle active" data-region="DIVIDER"        style="--lc:#94a3b8">Divider</button>
+                        <button class="legend-toggle active" data-region="HEADER"         style="--lc:#f59e0b">Header</button>
+                        <button class="legend-toggle active" data-region="FOOTER"         style="--lc:#f59e0b">Footer</button>
+                    </div>
+                    <!-- Confidence threshold slider -->
+                    <div class="analyze-conf-row">
+                        <label for="analyze-conf-slider" class="analyze-conf-label">Min confidence</label>
+                        <input type="range" id="analyze-conf-slider" min="0" max="1" step="0.05" value="0" class="analyze-conf-slider">
+                        <span id="analyze-conf-val" class="analyze-conf-val">0.00</span>
+                    </div>
+                    <!-- PageScale info -->
+                    <div class="analyze-scale-row" id="analyze-scale-row" style="display:none">
+                        <span class="analyze-conf-label">Body S</span>
+                        <span id="analyze-scale-s" class="analyze-conf-val">—</span>
+                        <span class="analyze-conf-label" style="margin-left:12px">Col gap</span>
+                        <span id="analyze-scale-colgap" class="analyze-conf-val">—</span>
+                        <span class="analyze-conf-label" style="margin-left:12px">Y band</span>
+                        <span id="analyze-scale-yband" class="analyze-conf-val">—</span>
+                    </div>
+                </div>
+                <div class="analyze-stats-wrap">
+                    <div class="analyze-section-title">Page stats</div>
+                    <div id="analyze-stats"></div>
+                    <div class="analyze-section-title" style="margin-top:12px">Regions</div>
+                    <div id="analyze-region-stats"></div>
+                </div>
             </div>
         </div>
     </div>

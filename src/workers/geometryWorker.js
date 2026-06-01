@@ -150,7 +150,7 @@ self.onmessage = async (e) => {
             } catch (_) {}
 
             // ── Phase 2: Region classification ───────────────────────────────
-            const { regions, textMeta, columnSplits } = classifyPage(
+            const { regions, textMeta, columnSplits, rawSplits, scale } = classifyPage(
                 segments,
                 textContent.items,
                 viewport,
@@ -181,6 +181,17 @@ self.onmessage = async (e) => {
                 html: result.html,
                 text: result.text.trim(),
                 tables: result.tableCount,
+                regions: regions.map((r, i) => ({
+                    id: r.id || `p${p}-r${i}`,
+                    type: r.type,
+                    bbox: r.bbox,
+                    algorithm: r.algorithm ?? 'geometric',
+                    confidence: r.confidence ?? 1.0,
+                    columnIndex: r.columnIndex ?? -1,
+                    imageId: r.imageId ?? null,
+                })),
+                extractedImages,
+                pageScale: scale.toJSON(),
             });
 
             // Release page resources
