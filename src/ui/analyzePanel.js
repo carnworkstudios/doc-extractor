@@ -32,6 +32,18 @@ let _confThreshold = 0;
 // Active ghost overlay type while a slider is being dragged
 let _ghostType   = null;
 
+// Select Mode state variables
+let _selectModeActive = false;
+let _selectedRegionIndex = -1;
+let _isDraggingRegion = false;
+let _isResizingRegion = false;
+let _resizeHandleIndex = -1;
+let _dragStartX = 0;
+let _dragStartY = 0;
+let _dragStartBbox = null;
+const HANDLE_SIZE = 6;
+const _customRegionsByPage = new Map();
+
 // PageScale ratio overrides — updated by sliders, consumed by re-extract
 const _scaleOverrides = {
     R_Y_BAND:          0.45,
@@ -103,6 +115,13 @@ export function initAnalyzePanel(geoWorkerRef) {
     _wireSlider('analyze-colgap-slider',     'analyze-colgap-val',     v => { _scaleOverrides.R_COL_GAP_MIN = v; });
     _wireSlider('analyze-streamconf-slider', 'analyze-streamconf-val', v => { _scaleOverrides.STREAM_CONFIDENCE = v; });
 
+    // Select Mode canvas tool
+    document.getElementById('analyze-select-tool')?.addEventListener('click', _toggleSelectMode);
+
+    // Double-click to draw a box on canvas
+    const canvas = document.getElementById('analyze-canvas');
+    canvas?.addEventListener('dblclick', _onCanvasDblClick);
+
     // Re-extract page button
     document.getElementById('analyze-reextract')?.addEventListener('click', _doReextract);
 
@@ -157,8 +176,19 @@ export function pushRegionPage(pageNum, regions, pageScale) {
 
 export function resetAnalysisData() {
     _regionsByPage.clear();
+    _customRegionsByPage.clear();
     _currentPage = 0;
     _analysis = null;
+    _selectedRegionIndex = -1;
+    if (_selectModeActive) {
+        _selectModeActive = false;
+        const btn = document.getElementById('analyze-select-tool');
+        if (btn) btn.classList.remove('active');
+        const canvas = document.getElementById('analyze-canvas');
+        if (canvas) canvas.style.cursor = '';
+        _detachCanvasListeners();
+        _unregisterKeyboardShortcuts();
+    }
     _updateReextractBtn();
 }
 
@@ -183,8 +213,10 @@ export async function runAnalysis(bytes, filename) {
 
 function _updateReextractBtn() {
     const btn = document.getElementById('analyze-reextract');
-    if (!btn) return;
-    btn.disabled = !(_geoWorker && _analysis);
+    const selectBtn = document.getElementById('analyze-select-tool');
+    const hasData = !!(_geoWorker && _analysis);
+    if (btn) btn.disabled = !hasData;
+    if (selectBtn) selectBtn.disabled = !hasData;
 }
 
 function _doReextract() {
@@ -198,12 +230,19 @@ function _doReextract() {
     const btn = document.getElementById('analyze-reextract');
     if (btn) { btn.disabled = true; btn.textContent = 'Extracting…'; }
 
+    const pageNum = _currentPage + 1;
+    // Filter customRegions so skipped types don't get re-injected via the custom path
+    const skipSet = new Set(skip);
+    const pageCustoms = ((_customRegionsByPage.get(pageNum) || [])
+        .filter(r => !skipSet.has(r.type) || r.algorithm === 'custom-override'));
+
     _geoWorker.postMessage({
         type: 'reprocess',
-        page: _currentPage + 1,  // 1-based
+        page: pageNum,
         pipeline: {
             skip,
             scaleOverrides: { ..._scaleOverrides },
+            customRegions: pageCustoms,
         },
     });
 }
@@ -216,6 +255,9 @@ export function onReprocessResult(pageNum, html, regions, pageScale) {
     }
     // Update region data
     _regionsByPage.set(pageNum, { regions: regions || [], pageScale: pageScale || null });
+    // Reset custom regions and selection for this page so we show the new updated regions
+    _customRegionsByPage.delete(pageNum);
+    _selectedRegionIndex = -1;
     if (pageNum === _currentPage + 1) {
         _renderPageScale(pageScale);
         _renderRegionStats(regions);
@@ -407,13 +449,17 @@ function _renderCanvas(pg) {
         }
     }
 
-    // ── Region overlay ─────────────────────────────────────────────────────
+    // Use custom regions if select mode has loaded/modified them, otherwise automatic regions
     const pageData = _regionsByPage.get(_currentPage + 1);
-    if (pageData?.regions?.length) {
+    const customs = _customRegionsByPage?.get(_currentPage + 1);
+    const regionsToDraw = customs || pageData?.regions || [];
+
+    if (regionsToDraw.length) {
         const workerVpW  = pg.widthPx * (2.0 / 1.5);
         const rScale = canvas.width / workerVpW;
 
-        for (const r of pageData.regions) {
+        for (let i = 0; i < regionsToDraw.length; i++) {
+            const r = regionsToDraw[i];
             if (!r.bbox) continue;
             const conf = r.confidence ?? 1.0;
             if (conf < _confThreshold) continue;
@@ -432,10 +478,30 @@ function _renderCanvas(pg) {
             ctx.fillRect(rx, ry, rw, rh);
             ctx.strokeRect(rx, ry, rw, rh);
 
-            if (rw > 40 && rh > 12) {
+            // Draw selection dashed outline and handles if this is the active selected region
+            if (_selectModeActive && i === _selectedRegionIndex) {
+                ctx.strokeStyle = '#2563eb';
+                ctx.lineWidth = 2.0;
+                ctx.setLineDash([4, 4]);
+                ctx.strokeRect(rx, ry, rw, rh);
+                ctx.setLineDash([]);
+                
+                // Draw 8 handles
+                const handles = _getRegionHandles(r, canvas);
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = '#2563eb';
+                ctx.lineWidth = 1.5;
+                for (const h of handles) {
+                    ctx.fillRect(h.x - HANDLE_SIZE/2, h.y - HANDLE_SIZE/2, HANDLE_SIZE, HANDLE_SIZE);
+                    ctx.strokeRect(h.x - HANDLE_SIZE/2, h.y - HANDLE_SIZE/2, HANDLE_SIZE, HANDLE_SIZE);
+                }
+            }
+
+            if (rw > 30 && rh > 10) {
                 const label = r.algorithm === 'struct-tree' ? 'ST'
                     : r.algorithm === 'lattice' ? 'LT'
                     : r.algorithm === 'stream'  ? 'SM'
+                    : r.algorithm === 'custom-override' ? _getShortTypeCode(r.type)
                     : r.type.slice(0, 2);
                 const fs = Math.max(8, Math.min(11, rh * 0.35));
                 ctx.font      = `bold ${fs}px monospace`;
@@ -562,4 +628,498 @@ function _setStatus(msg) {
 
 function _esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function _toggleSelectMode() {
+    if (!_analysis) return;
+    _selectModeActive = !_selectModeActive;
+    
+    const btn = document.getElementById('analyze-select-tool');
+    if (btn) btn.classList.toggle('active', _selectModeActive);
+
+    const canvas = document.getElementById('analyze-canvas');
+    if (canvas) {
+        if (_selectModeActive) {
+            _attachCanvasListeners();
+            _registerKeyboardShortcuts();
+            canvas.style.cursor = 'default';
+        } else {
+            _detachCanvasListeners();
+            _unregisterKeyboardShortcuts();
+            canvas.style.cursor = '';
+            _selectedRegionIndex = -1;
+        }
+    }
+    _redrawCanvas();
+}
+
+function _attachCanvasListeners() {
+    const canvas = document.getElementById('analyze-canvas');
+    if (!canvas) return;
+    _detachCanvasListeners();
+
+    canvas.addEventListener('mousedown', _onCanvasMouseDown);
+    canvas.addEventListener('mousemove', _onCanvasMouseMove);
+    window.addEventListener('mouseup', _onCanvasMouseUp);
+}
+
+function _detachCanvasListeners() {
+    const canvas = document.getElementById('analyze-canvas');
+    if (!canvas) return;
+    canvas.removeEventListener('mousedown', _onCanvasMouseDown);
+    canvas.removeEventListener('mousemove', _onCanvasMouseMove);
+    window.removeEventListener('mouseup', _onCanvasMouseUp);
+}
+
+function _registerKeyboardShortcuts() {
+    _unregisterKeyboardShortcuts();
+    window.addEventListener('keydown', _onKeyDown);
+}
+
+function _unregisterKeyboardShortcuts() {
+    window.removeEventListener('keydown', _onKeyDown);
+}
+
+function _getCanvasMousePos(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    return { x, y };
+}
+
+function _getRegionHandles(r, canvas) {
+    if (!r?.bbox) return [];
+    const pg = _analysis.pages[_currentPage];
+    const workerVpW = pg.widthPx * (2.0 / 1.5);
+    const rScale = canvas.width / workerVpW;
+    const rx = r.bbox.x * rScale;
+    const ry = r.bbox.y * rScale;
+    const rw = r.bbox.w * rScale;
+    const rh = r.bbox.h * rScale;
+    return [
+        { x: rx,      y: ry },          // 0: top-left
+        { x: rx + rw, y: ry },          // 1: top-right
+        { x: rx + rw, y: ry + rh },     // 2: bottom-right
+        { x: rx,      y: ry + rh },     // 3: bottom-left
+        { x: rx + rw/2, y: ry },        // 4: top-mid
+        { x: rx + rw, y: ry + rh/2 },   // 5: right-mid
+        { x: rx + rw/2, y: ry + rh },   // 6: bottom-mid
+        { x: rx,      y: ry + rh/2 }    // 7: left-mid
+    ];
+}
+
+function _ensureCustomRegionsReady() {
+    const pageNum = _currentPage + 1;
+    if (!_customRegionsByPage.has(pageNum)) {
+        const pageData = _regionsByPage.get(pageNum);
+        const defaultRegions = pageData?.regions || [];
+        const copied = defaultRegions.map(r => ({
+            ...r,
+            bbox: r.bbox ? { ...r.bbox } : null
+        }));
+        _customRegionsByPage.set(pageNum, copied);
+    }
+    return _customRegionsByPage.get(pageNum);
+}
+
+function _getShortTypeCode(type) {
+    switch (type) {
+        case 'LATTICE_TABLE': return 'LA';
+        case 'STREAM_TABLE':  return 'SM';
+        case 'PARAGRAPH':     return 'PA';
+        case 'HEADING':       return 'HE';
+        case 'BOX':           return 'BO';
+        case 'IMAGE':         return 'IM';
+        case 'DIVIDER':       return 'DI';
+        case 'HEADER':        return 'HR';
+        case 'FOOTER':        return 'FO';
+        case 'LIST':          return 'LI';
+        default:              return type.slice(0, 2);
+    }
+}
+
+function _onCanvasMouseDown(e) {
+    if (!_selectModeActive || !_analysis) return;
+    const canvas = document.getElementById('analyze-canvas');
+    if (!canvas) return;
+
+    const pos = _getCanvasMousePos(canvas, e);
+    const pg = _analysis.pages[_currentPage];
+    const workerVpW = pg.widthPx * (2.0 / 1.5);
+    const rScale = canvas.width / workerVpW;
+
+    const customs = _ensureCustomRegionsReady();
+
+    // 1. Check if we clicked on any handle of the SELECTED region
+    if (_selectedRegionIndex >= 0 && _selectedRegionIndex < customs.length) {
+        const r = customs[_selectedRegionIndex];
+        if (r.bbox) {
+            const handles = _getRegionHandles(r, canvas);
+            for (let i = 0; i < handles.length; i++) {
+                const h = handles[i];
+                const dx = pos.x - h.x;
+                const dy = pos.y - h.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist <= 8) {
+                    _isResizingRegion = true;
+                    _resizeHandleIndex = i;
+                    _dragStartX = pos.x;
+                    _dragStartY = pos.y;
+                    _dragStartBbox = { ...r.bbox };
+                    return;
+                }
+            }
+        }
+    }
+
+    // 2. Check if we clicked inside any region to SELECT or DRAG it
+    for (let i = customs.length - 1; i >= 0; i--) {
+        const r = customs[i];
+        if (!r.bbox) continue;
+        const rx = r.bbox.x * rScale;
+        const ry = r.bbox.y * rScale;
+        const rw = r.bbox.w * rScale;
+        const rh = r.bbox.h * rScale;
+
+        if (pos.x >= rx && pos.x <= rx + rw && pos.y >= ry && pos.y <= ry + rh) {
+            _selectedRegionIndex = i;
+            _isDraggingRegion = true;
+            _dragStartX = pos.x;
+            _dragStartY = pos.y;
+            _dragStartBbox = { ...r.bbox };
+            _redrawCanvas();
+            return;
+        }
+    }
+
+    // 3. Clicked empty space - deselect
+    _selectedRegionIndex = -1;
+    _redrawCanvas();
+}
+
+function _onCanvasMouseMove(e) {
+    if (!_selectModeActive || !_analysis) return;
+    const canvas = document.getElementById('analyze-canvas');
+    if (!canvas) return;
+
+    const pos = _getCanvasMousePos(canvas, e);
+    const pg = _analysis.pages[_currentPage];
+    const workerVpW = pg.widthPx * (2.0 / 1.5);
+    const rScale = canvas.width / workerVpW;
+
+    const customs = _ensureCustomRegionsReady();
+
+    if (_isResizingRegion && _selectedRegionIndex >= 0) {
+        const r = customs[_selectedRegionIndex];
+        if (!r.bbox || !_dragStartBbox) return;
+
+        const dx = (pos.x - _dragStartX) / rScale;
+        const dy = (pos.y - _dragStartY) / rScale;
+
+        let x = _dragStartBbox.x;
+        let y = _dragStartBbox.y;
+        let w = _dragStartBbox.w;
+        let h = _dragStartBbox.h;
+
+        const MIN_SZ = 4;
+
+        switch (_resizeHandleIndex) {
+            case 0: // top-left
+                {
+                    let newW = _dragStartBbox.w - dx;
+                    let newH = _dragStartBbox.h - dy;
+                    let constrainedDx = dx;
+                    let constrainedDy = dy;
+                    if (newW < MIN_SZ) {
+                        newW = MIN_SZ;
+                        constrainedDx = _dragStartBbox.w - MIN_SZ;
+                    }
+                    if (newH < MIN_SZ) {
+                        newH = MIN_SZ;
+                        constrainedDy = _dragStartBbox.h - MIN_SZ;
+                    }
+                    x = _dragStartBbox.x + constrainedDx;
+                    y = _dragStartBbox.y + constrainedDy;
+                    w = newW;
+                    h = newH;
+                }
+                break;
+            case 1: // top-right
+                {
+                    let newW = _dragStartBbox.w + dx;
+                    let newH = _dragStartBbox.h - dy;
+                    let constrainedDy = dy;
+                    if (newW < MIN_SZ) {
+                        newW = MIN_SZ;
+                    }
+                    if (newH < MIN_SZ) {
+                        newH = MIN_SZ;
+                        constrainedDy = _dragStartBbox.h - MIN_SZ;
+                    }
+                    y = _dragStartBbox.y + constrainedDy;
+                    w = newW;
+                    h = newH;
+                }
+                break;
+            case 2: // bottom-right
+                {
+                    let newW = _dragStartBbox.w + dx;
+                    let newH = _dragStartBbox.h + dy;
+                    if (newW < MIN_SZ) newW = MIN_SZ;
+                    if (newH < MIN_SZ) newH = MIN_SZ;
+                    w = newW;
+                    h = newH;
+                }
+                break;
+            case 3: // bottom-left
+                {
+                    let newW = _dragStartBbox.w - dx;
+                    let newH = _dragStartBbox.h + dy;
+                    let constrainedDx = dx;
+                    if (newW < MIN_SZ) {
+                        newW = MIN_SZ;
+                        constrainedDx = _dragStartBbox.w - MIN_SZ;
+                    }
+                    if (newH < MIN_SZ) newH = MIN_SZ;
+                    x = _dragStartBbox.x + constrainedDx;
+                    w = newW;
+                    h = newH;
+                }
+                break;
+            case 4: // top-mid
+                {
+                    let newH = _dragStartBbox.h - dy;
+                    let constrainedDy = dy;
+                    if (newH < MIN_SZ) {
+                        newH = MIN_SZ;
+                        constrainedDy = _dragStartBbox.h - MIN_SZ;
+                    }
+                    y = _dragStartBbox.y + constrainedDy;
+                    h = newH;
+                }
+                break;
+            case 5: // right-mid
+                {
+                    let newW = _dragStartBbox.w + dx;
+                    if (newW < MIN_SZ) newW = MIN_SZ;
+                    w = newW;
+                }
+                break;
+            case 6: // bottom-mid
+                {
+                    let newH = _dragStartBbox.h + dy;
+                    if (newH < MIN_SZ) newH = MIN_SZ;
+                    h = newH;
+                }
+                break;
+            case 7: // left-mid
+                {
+                    let newW = _dragStartBbox.w - dx;
+                    let constrainedDx = dx;
+                    if (newW < MIN_SZ) {
+                        newW = MIN_SZ;
+                        constrainedDx = _dragStartBbox.w - MIN_SZ;
+                    }
+                    x = _dragStartBbox.x + constrainedDx;
+                    w = newW;
+                }
+                break;
+        }
+
+        r.bbox = { x, y, w, h };
+        r.algorithm = 'custom-override';
+        _redrawCanvas();
+        return;
+    }
+
+    if (_isDraggingRegion && _selectedRegionIndex >= 0) {
+        const r = customs[_selectedRegionIndex];
+        if (!r.bbox || !_dragStartBbox) return;
+
+        const dx = (pos.x - _dragStartX) / rScale;
+        const dy = (pos.y - _dragStartY) / rScale;
+
+        r.bbox.x = _dragStartBbox.x + dx;
+        r.bbox.y = _dragStartBbox.y + dy;
+        r.algorithm = 'custom-override';
+        _redrawCanvas();
+        return;
+    }
+
+    let hoverCursor = 'default';
+
+    if (_selectedRegionIndex >= 0 && _selectedRegionIndex < customs.length) {
+        const r = customs[_selectedRegionIndex];
+        if (r.bbox) {
+            const handles = _getRegionHandles(r, canvas);
+            for (let i = 0; i < handles.length; i++) {
+                const h = handles[i];
+                const dx = pos.x - h.x;
+                const dy = pos.y - h.y;
+                if (Math.sqrt(dx*dx + dy*dy) <= 8) {
+                    switch (i) {
+                        case 0:
+                        case 2:
+                            hoverCursor = 'nwse-resize';
+                            break;
+                        case 1:
+                        case 3:
+                            hoverCursor = 'nesw-resize';
+                            break;
+                        case 4:
+                        case 6:
+                            hoverCursor = 'ns-resize';
+                            break;
+                        case 5:
+                        case 7:
+                            hoverCursor = 'ew-resize';
+                            break;
+                    }
+                    canvas.style.cursor = hoverCursor;
+                    return;
+                }
+            }
+        }
+    }
+
+    for (let i = customs.length - 1; i >= 0; i--) {
+        const r = customs[i];
+        if (!r.bbox) continue;
+        const rx = r.bbox.x * rScale;
+        const ry = r.bbox.y * rScale;
+        const rw = r.bbox.w * rScale;
+        const rh = r.bbox.h * rScale;
+
+        if (pos.x >= rx && pos.x <= rx + rw && pos.y >= ry && pos.y <= ry + rh) {
+            hoverCursor = 'move';
+            canvas.style.cursor = hoverCursor;
+            return;
+        }
+    }
+
+    canvas.style.cursor = hoverCursor;
+}
+
+function _onCanvasMouseUp(e) {
+    _isDraggingRegion = false;
+    _isResizingRegion = false;
+    _resizeHandleIndex = -1;
+    _dragStartBbox = null;
+}
+
+function _onCanvasDblClick(e) {
+    if (!_selectModeActive || !_analysis) return;
+    const canvas = document.getElementById('analyze-canvas');
+    if (!canvas) return;
+
+    const pos = _getCanvasMousePos(canvas, e);
+    const pg = _analysis.pages[_currentPage];
+    const workerVpW = pg.widthPx * (2.0 / 1.5);
+    const rScale = canvas.width / workerVpW;
+
+    const customs = _ensureCustomRegionsReady();
+
+    for (let i = customs.length - 1; i >= 0; i--) {
+        const r = customs[i];
+        if (!r.bbox) continue;
+        const rx = r.bbox.x * rScale;
+        const ry = r.bbox.y * rScale;
+        const rw = r.bbox.w * rScale;
+        const rh = r.bbox.h * rScale;
+
+        if (pos.x >= rx && pos.x <= rx + rw && pos.y >= ry && pos.y <= ry + rh) {
+            _selectedRegionIndex = i;
+            _redrawCanvas();
+            return;
+        }
+    }
+
+    const sizeW = 60;
+    const sizeH = 40;
+    const clickX = pos.x / rScale;
+    const clickY = pos.y / rScale;
+
+    const newRegion = {
+        type: 'BOX',
+        algorithm: 'custom-override',
+        confidence: 1.0,
+        bbox: {
+            x: clickX - sizeW / 2,
+            y: clickY - sizeH / 2,
+            w: sizeW,
+            h: sizeH
+        }
+    };
+
+    customs.push(newRegion);
+    _selectedRegionIndex = customs.length - 1;
+    _redrawCanvas();
+    showToast('Created new region. Press keys to change type (L=Lattice, P=Para, etc.)', 'info');
+}
+
+function _onKeyDown(e) {
+    if (!_selectModeActive || _selectedRegionIndex < 0) return;
+
+    const pageNum = _currentPage + 1;
+    const customs = _customRegionsByPage.get(pageNum);
+    if (!customs || !customs[_selectedRegionIndex]) return;
+
+    const r = customs[_selectedRegionIndex];
+    let changed = false;
+    let deleted = false;
+
+    const key = e.key.toLowerCase();
+
+    if (key === 'l') {
+        r.type = 'LATTICE_TABLE';
+        r.algorithm = 'custom-override';
+        changed = true;
+    } else if (key === 's' || key === 't') {
+        r.type = 'STREAM_TABLE';
+        r.algorithm = 'custom-override';
+        changed = true;
+    } else if (key === 'p') {
+        r.type = 'PARAGRAPH';
+        r.algorithm = 'custom-override';
+        changed = true;
+    } else if (key === 'h') {
+        r.type = 'HEADING';
+        r.algorithm = 'custom-override';
+        changed = true;
+    } else if (key === 'b') {
+        r.type = 'BOX';
+        r.algorithm = 'custom-override';
+        changed = true;
+    } else if (key === 'i') {
+        r.type = 'IMAGE';
+        r.algorithm = 'custom-override';
+        changed = true;
+    } else if (key === 'd') {
+        r.type = 'DIVIDER';
+        r.algorithm = 'custom-override';
+        changed = true;
+    } else if (key === 'f') {
+        r.type = 'FOOTER';
+        r.algorithm = 'custom-override';
+        changed = true;
+    } else if (key === 'r') {
+        r.type = 'HEADER';
+        r.algorithm = 'custom-override';
+        changed = true;
+    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        customs.splice(_selectedRegionIndex, 1);
+        _selectedRegionIndex = -1;
+        deleted = true;
+        changed = true;
+        e.preventDefault();
+    }
+
+    if (changed) {
+        _redrawCanvas();
+        if (deleted) {
+            showToast('Deleted region', 'info');
+        } else {
+            showToast(`Changed region type to ${r.type}`, 'success');
+        }
+    }
 }

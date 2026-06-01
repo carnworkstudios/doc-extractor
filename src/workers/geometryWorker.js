@@ -240,7 +240,7 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
         return;
     }
 
-    const { skip = [], scaleOverrides = {} } = pipeline;
+    const { skip = [], scaleOverrides = {}, customRegions = [] } = pipeline;
     const skipSet = new Set(skip);
 
     try {
@@ -324,7 +324,7 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
                 structTree: rawStructTree,
                 OPS,
                 _opList: opList,
-                pipeline: { skip: skipSet, scaleOverrides },
+                pipeline: { skip: skipSet, scaleOverrides, customRegions },
             },
         );
 

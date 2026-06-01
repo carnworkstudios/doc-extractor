@@ -464,7 +464,7 @@ function _mergeFigureCaptions(regions, textMeta) {
 // font-style data from page.commonObjs) onto the raw PDF.js items so
 // textRebuilder can emit <strong>/<em>/<u> wrappers per-item.
 function _scopeItems(region, textItems, textMeta) {
-    return region.textItemIndices.map(i => {
+    return (region.textItemIndices || []).map(i => {
         const raw  = textItems[i];
         const meta = textMeta[i];
         if (!meta) return raw;

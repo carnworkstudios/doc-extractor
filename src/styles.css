@@ -1947,3 +1947,10 @@ body {
 .analyze-scale-readout {
   margin-top: 4px;
 }
+
+/* Active Select Mode styling on the Analyze panel */
+#analyze-select-tool.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}

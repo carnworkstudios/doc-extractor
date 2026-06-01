@@ -22,6 +22,7 @@ import { detectHeadersFooters } from './classifiers/headerFooterDetector.js';
 import { classifyHeading } from './classifiers/headingDetector.js';
 import { classifyList, BULLET_RE as _BULLET_RE, ORDERED_RE as _ORDERED_RE } from './classifiers/listDetector.js';
 import { RegionType } from './classifiers/regionTypes.js';
+import { LatticeReconstructor } from './latticeReconstructor.js';
 
 export { detectPageColumns, splitByColumns } from './classifiers/columnSplitDetector.js';
 export { RegionType } from './classifiers/regionTypes.js';
@@ -129,8 +130,124 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     // ── 4. Build PageGraph (shared spatial context) ─────────────────────────
     const pageGraph = PageGraph.build(segments, textMeta, viewport, imageBBoxes, underlineSegIds);
 
-    // Pre-seed assignedTextIndices with items claimed by Tier 1 struct regions
+    // ── Custom Override Regions ──────────────────────────────────────────────
+    const customRegions = opts.pipeline?.customRegions || [];
+    const customInjectedRegions = [];
+    const customClaimedTextIndices = new Set();
+
+    for (const cr of customRegions) {
+        if (!cr.bbox) continue;
+        const bbox = cr.bbox;
+        const type = cr.type;
+
+        // Find text items and segments inside this custom region
+        const pad = scale.tablePadPx ?? 5;
+        const textIndices = [];
+        const matchedItems = [];
+        for (const tm of textMeta) {
+            if (tm.str.trim() && insideBBox(tm.vx, tm.vy, bbox, pad)) {
+                textIndices.push(tm.idx);
+                matchedItems.push(tm);
+                customClaimedTextIndices.add(tm.idx);
+            }
+        }
+
+        const matchedTableSegs = [];
+        const epsS = 2;
+        for (const s of segments) {
+            if (insideBBox(s.x1, s.y1, bbox, epsS) && insideBBox(s.x2, s.y2, bbox, epsS)) {
+                matchedTableSegs.push(s);
+            }
+        }
+
+        // Build specific structural properties for tables
+        let lattice = null;
+        if (type === RegionType.LATTICE_TABLE || type === RegionType.TABLE) {
+            const reconstructor = new LatticeReconstructor(matchedTableSegs, {
+                eps: 5, scale, textMeta, pageHeight: viewport.height,
+            });
+            const lattices = reconstructor.reconstructAll();
+            lattice = lattices[0] || {
+                bbox,
+                cols: [bbox.x, bbox.x + bbox.w],
+                rows: [bbox.y, bbox.y + bbox.h],
+                cells: [[{ x1: bbox.x, y1: bbox.y, x2: bbox.x + bbox.w, y2: bbox.y + bbox.h, textIndices }]]
+            };
+        } else if (type === RegionType.STREAM_TABLE) {
+            const bands = _groupByYBand(matchedItems, scale.yBandTolPx);
+            if (bands.length > 0) {
+                const colTol = scale.colTolPx;
+                const tagged = [];
+                for (let bi = 0; bi < bands.length; bi++) {
+                    for (const item of bands[bi].items) {
+                        tagged.push({
+                            vx: item.vx, vy: item.vy, vWidth: item.vWidth || 0,
+                            str: item.str || '', _band: bi
+                        });
+                    }
+                }
+                const xClusters = _clusterByX(tagged, colTol);
+                const colAnchors = [];
+                for (const cluster of xClusters) {
+                    colAnchors.push({ x: _mean(cluster.map(i => i.vx)), items: cluster });
+                }
+                colAnchors.sort((a, b) => a.x - b.x);
+
+                let cols, rows;
+                if (colAnchors.length === 0) {
+                    cols = [bbox.x, bbox.x + bbox.w];
+                } else {
+                    const gutters = _detectGutters(bands, 0.6, scale.S * 0.15) || [];
+                    cols = [bbox.x];
+                    for (let i = 1; i < colAnchors.length; i++) {
+                        const lo = colAnchors[i - 1].x;
+                        const hi = colAnchors[i].x;
+                        const gutter = gutters.find(x => x > lo && x < hi);
+                        cols.push(gutter ?? (lo + hi) / 2);
+                    }
+                    cols.push(bbox.x + bbox.w);
+                }
+
+                rows = [bbox.y];
+                for (let i = 1; i < bands.length; i++) {
+                    rows.push((bands[i - 1].y + bands[i].y) / 2);
+                }
+                rows.push(bbox.y + bbox.h);
+
+                lattice = {
+                    rows, cols, hLines: [], vLines: [], bbox, border: false,
+                    detectionMethod: 'stream', confidence: 1.0
+                };
+            } else {
+                lattice = {
+                    rows: [bbox.y, bbox.y + bbox.h],
+                    cols: [bbox.x, bbox.x + bbox.w],
+                    hLines: [], vLines: [], bbox, border: false,
+                    detectionMethod: 'stream', confidence: 1.0
+                };
+            }
+        }
+
+        customInjectedRegions.push({
+            id: cr.id,
+            type,
+            bbox,
+            yCenter: bbox.y + bbox.h / 2,
+            textItemIndices: textIndices,
+            columnIndex: cr.columnIndex ?? -1,
+            lattice,
+            boxRole: cr.boxRole ?? 'generic',
+            fillColor: cr.fillColor ?? null,
+            listOrdered: cr.listOrdered ?? false,
+            algorithm: 'custom-override'
+        });
+    }
+
+    // Pre-seed assignedTextIndices with items claimed by Tier 1 struct regions and custom regions
     const assignedTextIndices = new Set(structTableIndices);
+    for (const idx of customClaimedTextIndices) {
+        assignedTextIndices.add(idx);
+    }
     const skip = opts.pipeline?.skip ?? new Set();
 
     // ── 5. Lattice table regions ─────────────────────────────────────────────
@@ -330,16 +447,38 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         }
     }
 
+    // ── 12.5. Overlap filtering and Custom Region Injection ─────────────────
+    let finalRegions = regions;
+    if (customRegions.length > 0) {
+        finalRegions = regions.filter(r => {
+            if (!r.bbox || r.algorithm === 'custom-override') return true;
+            return !customRegions.some(cr => {
+                const cb = cr.bbox;
+                if (!cb) return false;
+                const iw = Math.min(r.bbox.x + r.bbox.w, cb.x + cb.w) - Math.max(r.bbox.x, cb.x);
+                const ih = Math.min(r.bbox.y + r.bbox.h, cb.y + cb.h) - Math.max(r.bbox.y, cb.y);
+                if (iw > 0 && ih > 0) {
+                    const area = r.bbox.w * r.bbox.h;
+                    return area > 0 && (iw * ih) / area > 0.40; // 40% overlap threshold
+                }
+                return false;
+            });
+        });
+        for (const cr of customInjectedRegions) {
+            finalRegions.push(cr);
+        }
+    }
+
     // ── 13. Sort all regions top→bottom ─────────────────────────────────────
-    regions.sort((a, b) => a.yCenter - b.yCenter);
+    finalRegions.sort((a, b) => a.yCenter - b.yCenter);
 
     // ── 14. Header / Footer detection ───────────────────────────────────────
-    detectHeadersFooters(regions, textMeta, viewport, scale, filledRects);
+    detectHeadersFooters(finalRegions, textMeta, viewport, scale, filledRects);
 
     // columnSplits returned as plain X array (what pageAssembler expects).
     // rawSplits carries the full {x, leftFraction, rightFraction} objects for
     // callers that need the fractions (geometryWorker postMessage, zone layout).
-    return { regions, textMeta, columnSplits: rawSplits.map(s => s.x), rawSplits, scale };
+    return { regions: finalRegions, textMeta, columnSplits: rawSplits.map(s => s.x), rawSplits, scale };
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -446,4 +585,61 @@ export function detectZoneColumns(zoneTextMeta, viewport, scale) {
     const dropGate3 = zoneHeight >= MIN_ZONE_HEIGHT;
 
     return detectPageColumns(zoneTextMeta, viewport, scale, { dropGate3 });
+}
+
+function _mean(arr) {
+    return arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0;
+}
+
+function _clusterByX(items, tol) {
+    const sorted = [...items].sort((a, b) => a.vx - b.vx);
+    const clusters = [];
+    for (const item of sorted) {
+        let placed = false;
+        for (const cluster of clusters) {
+            const meanX = cluster.reduce((s, i) => s + i.vx, 0) / cluster.length;
+            if (Math.abs(item.vx - meanX) <= tol) {
+                cluster.push(item);
+                placed = true;
+                break;
+            }
+        }
+        if (!placed) clusters.push([item]);
+    }
+    return clusters;
+}
+
+function _detectGutters(bands, minFrac = 0.6, minGutterPx = 4) {
+    if (!bands.length) return [];
+    const allItems = bands.flatMap(b => b.items);
+    if (!allItems.length) return [];
+
+    const maxX = allItems.reduce((m, i) => Math.max(m, i.vx + (i.vWidth || 0)), 0);
+    const w = Math.ceil(maxX) + 1;
+    if (w < 8) return [];
+
+    const bandCount = new Float32Array(w);
+    for (const band of bands) {
+        const seen = new Uint8Array(w);
+        for (const item of band.items) {
+            const x1 = Math.max(0, Math.floor(item.vx));
+            const x2 = Math.min(w - 1, Math.ceil(item.vx + (item.vWidth || 0)));
+            for (let x = x1; x <= x2; x++) seen[x] = 1;
+        }
+        for (let x = 0; x < w; x++) bandCount[x] += seen[x];
+    }
+
+    const threshold = bands.length * minFrac;
+    const gutters = [];
+    let gStart = null;
+
+    for (let x = 0; x < w; x++) {
+        if (bandCount[x] < threshold) {
+            if (gStart === null) gStart = x;
+        } else if (gStart !== null) {
+            if (x - gStart >= minGutterPx) gutters.push((gStart + x) / 2);
+            gStart = null;
+        }
+    }
+    return gutters;
 }
