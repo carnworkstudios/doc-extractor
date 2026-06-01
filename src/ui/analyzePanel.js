@@ -68,6 +68,12 @@ const _regionLayers = {
     IMAGE: true, DIVIDER: true, HEADER: true, FOOTER: true,
 };
 
+// ── Column split tool state ───────────────────────────────────────────────────
+// manualSplits: Map<pageNum, [{x}]> — x in worker-viewport coords (scale 2.0)
+const _manualSplits = new Map();
+let _colSplitActive = false;   // col-split tool toggled on
+let _draggingSplitIdx = null;  // index of split being dragged, or null
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 export function initAnalyzePanel(geoWorkerRef) {
@@ -116,9 +122,13 @@ export function initAnalyzePanel(geoWorkerRef) {
     _wireSlider('analyze-streamconf-slider', 'analyze-streamconf-val', v => { _scaleOverrides.STREAM_CONFIDENCE = v; });
 
     // Select Mode canvas tool
+    document.getElementById('analyze-col-split-tool')?.addEventListener('click', _toggleColSplitTool);
     document.getElementById('analyze-select-tool')?.addEventListener('click', _toggleSelectMode);
 
-    // Double-click to draw a box on canvas
+    // Column split canvas interactions (click to place, drag to move, dblclick to remove)
+    _initColSplitCanvas();
+
+    // Double-click to draw a box on canvas (select mode)
     const canvas = document.getElementById('analyze-canvas');
     canvas?.addEventListener('dblclick', _onCanvasDblClick);
 
@@ -177,6 +187,7 @@ export function pushRegionPage(pageNum, regions, pageScale) {
 export function resetAnalysisData() {
     _regionsByPage.clear();
     _customRegionsByPage.clear();
+    _manualSplits.clear();
     _currentPage = 0;
     _analysis = null;
     _selectedRegionIndex = -1;
@@ -236,6 +247,8 @@ function _doReextract() {
     const pageCustoms = ((_customRegionsByPage.get(pageNum) || [])
         .filter(r => !skipSet.has(r.type) || r.algorithm === 'custom-override'));
 
+    const manualSplits = (_manualSplits.get(pageNum) || []).map(s => ({ x: s.x }));
+
     _geoWorker.postMessage({
         type: 'reprocess',
         page: pageNum,
@@ -243,6 +256,7 @@ function _doReextract() {
             skip,
             scaleOverrides: { ..._scaleOverrides },
             customRegions: pageCustoms,
+            manualSplits,
         },
     });
 }
@@ -465,9 +479,10 @@ function _renderCanvas(pg) {
             if (conf < _confThreshold) continue;
             if (!_regionLayers[r.type]) continue;
 
-            const hex    = REGION_COLORS[r.type] || '#888888';
-            const alpha  = Math.max(0.12, Math.min(0.50, conf * 0.50));
-            const sAlpha = Math.max(0.55, conf);
+            const isSkipped = r.skip === true;
+            const hex    = isSkipped ? '#6b7280' : (REGION_COLORS[r.type] || '#888888');
+            const alpha  = isSkipped ? 0.06 : Math.max(0.12, Math.min(0.50, conf * 0.50));
+            const sAlpha = isSkipped ? 0.30 : Math.max(0.55, conf);
 
             const rx = r.bbox.x * rScale, ry = r.bbox.y * rScale;
             const rw = r.bbox.w * rScale, rh = r.bbox.h * rScale;
@@ -475,8 +490,10 @@ function _renderCanvas(pg) {
             ctx.fillStyle   = hex + _alphaHex(alpha);
             ctx.strokeStyle = hex + _alphaHex(sAlpha);
             ctx.lineWidth   = 1.5;
+            if (isSkipped) ctx.setLineDash([4, 3]);
             ctx.fillRect(rx, ry, rw, rh);
             ctx.strokeRect(rx, ry, rw, rh);
+            if (isSkipped) ctx.setLineDash([]);
 
             // Draw selection dashed outline and handles if this is the active selected region
             if (_selectModeActive && i === _selectedRegionIndex) {
@@ -498,7 +515,8 @@ function _renderCanvas(pg) {
             }
 
             if (rw > 30 && rh > 10) {
-                const label = r.algorithm === 'struct-tree' ? 'ST'
+                const label = isSkipped ? '✕'
+                    : r.algorithm === 'struct-tree' ? 'ST'
                     : r.algorithm === 'lattice' ? 'LT'
                     : r.algorithm === 'stream'  ? 'SM'
                     : r.algorithm === 'custom-override' ? _getShortTypeCode(r.type)
@@ -511,9 +529,167 @@ function _renderCanvas(pg) {
         }
     }
 
+    // ── Manual column split lines ─────────────────────────────────────────
+    _drawManualSplits(ctx, pg, canvas);
+
     // ── Ghost overlay (while slider is dragged) ────────────────────────────
     if (_ghostType && pageData?.pageScale) {
         _drawGhost(ctx, pg, pageData, scale, canvas);
+    }
+}
+
+// ── Column split tool ─────────────────────────────────────────────────────────
+
+function _toggleColSplitTool() {
+    _colSplitActive = !_colSplitActive;
+    const btn = document.getElementById('analyze-col-split-tool');
+    if (btn) {
+        btn.classList.toggle('atb-btn--primary', _colSplitActive);
+        btn.setAttribute('aria-pressed', String(_colSplitActive));
+    }
+    // Deactivate select tool if active — mutually exclusive
+    if (_colSplitActive && typeof _selectModeActive !== 'undefined' && _selectModeActive) {
+        document.getElementById('analyze-select-tool')?.click();
+    }
+    const canvas = document.getElementById('analyze-canvas');
+    if (canvas) canvas.style.cursor = _colSplitActive ? 'col-resize' : 'default';
+    if (!_colSplitActive) _draggingSplitIdx = null;
+}
+
+function _colSplitCanvasX(e, canvas) {
+    const rect = canvas.getBoundingClientRect();
+    // Translate CSS layout click to canvas internal drawing coordinate space
+    return (e.clientX - rect.left) * (canvas.width / rect.width);
+}
+
+function _canvasXToWorkerX(canvasX, pg, canvas) {
+    const workerVpW = pg.widthPx * (2.0 / 1.5);
+    return canvasX * (workerVpW / canvas.width);
+}
+
+function _workerXToCanvasX(workerX, pg, canvas) {
+    const workerVpW = pg.widthPx * (2.0 / 1.5);
+    return workerX * (canvas.width / workerVpW);
+}
+
+// Hit-test: returns index of split whose handle is within 8px of canvasX, or -1
+function _hitSplitHandle(canvasX, pg, canvas) {
+    const splits = _manualSplits.get(_currentPage + 1) || [];
+    for (let i = 0; i < splits.length; i++) {
+        const cx = _workerXToCanvasX(splits[i].x, pg, canvas);
+        if (Math.abs(canvasX - cx) <= 8) return i;
+    }
+    return -1;
+}
+
+function _initColSplitCanvas() {
+    const canvas = document.getElementById('analyze-canvas');
+    if (!canvas) return;
+
+    canvas.addEventListener('pointerdown', e => {
+        if (!_colSplitActive || !_analysis?.pages?.length) return;
+        const pg = _analysis.pages[_currentPage];
+        const cx = _colSplitCanvasX(e, canvas);
+        const hitIdx = _hitSplitHandle(cx, pg, canvas);
+
+        if (hitIdx >= 0) {
+            // Start dragging existing split
+            _draggingSplitIdx = hitIdx;
+            canvas.setPointerCapture(e.pointerId);
+            e.preventDefault();
+        } else {
+            // Place new split
+            const workerX = _canvasXToWorkerX(cx, pg, canvas);
+            const pageNum = _currentPage + 1;
+            if (!_manualSplits.has(pageNum)) _manualSplits.set(pageNum, []);
+            _manualSplits.get(pageNum).push({ x: workerX });
+            // Keep sorted left→right
+            _manualSplits.get(pageNum).sort((a, b) => a.x - b.x);
+            _redrawCanvas();
+        }
+    });
+
+    canvas.addEventListener('pointermove', e => {
+        if (!_colSplitActive || _draggingSplitIdx === null || !_analysis?.pages?.length) return;
+        e.preventDefault();
+        const pg = _analysis.pages[_currentPage];
+        const cx = _colSplitCanvasX(e, canvas);
+        const workerX = _canvasXToWorkerX(cx, pg, canvas);
+        const pageNum = _currentPage + 1;
+        const splits = _manualSplits.get(pageNum);
+        if (splits?.[_draggingSplitIdx] !== undefined) {
+            splits[_draggingSplitIdx].x = workerX;
+            _redrawCanvas();
+        }
+    });
+
+    canvas.addEventListener('pointerup', e => {
+        if (!_colSplitActive) return;
+        if (_draggingSplitIdx !== null) {
+            // Re-sort after drag
+            const pageNum = _currentPage + 1;
+            _manualSplits.get(pageNum)?.sort((a, b) => a.x - b.x);
+            _draggingSplitIdx = null;
+            _redrawCanvas();
+        }
+    });
+
+    canvas.addEventListener('lostpointercapture', () => {
+        _draggingSplitIdx = null;
+    });
+
+    // Double-click on a split handle to remove it
+    canvas.addEventListener('dblclick', e => {
+        if (!_colSplitActive || !_analysis?.pages?.length) return;
+        const pg = _analysis.pages[_currentPage];
+        const cx = _colSplitCanvasX(e, canvas);
+        const hitIdx = _hitSplitHandle(cx, pg, canvas);
+        if (hitIdx >= 0) {
+            const pageNum = _currentPage + 1;
+            _manualSplits.get(pageNum)?.splice(hitIdx, 1);
+            _redrawCanvas();
+        }
+    });
+}
+
+function _drawManualSplits(ctx, pg, canvas) {
+    const splits = _manualSplits.get(_currentPage + 1);
+    if (!splits?.length) return;
+
+    for (let i = 0; i < splits.length; i++) {
+        const cx = _workerXToCanvasX(splits[i].x, pg, canvas);
+        const isDragging = i === _draggingSplitIdx;
+
+        // Vertical line
+        ctx.strokeStyle = isDragging ? '#f59e0b' : '#06b6d4';
+        ctx.lineWidth   = isDragging ? 2.5 : 1.5;
+        ctx.setLineDash([6, 3]);
+        ctx.beginPath();
+        ctx.moveTo(cx, 0);
+        ctx.lineTo(cx, canvas.height);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Handle pill at top: shows X position and signals draggability
+        const label = `col ↔`;
+        ctx.font = 'bold 10px Inter, sans-serif';
+        const tw  = ctx.measureText(label).width;
+        const pw  = tw + 12, ph = 18;
+        const px  = cx - pw / 2, py = 4;
+
+        ctx.fillStyle   = isDragging ? '#f59e0b' : '#06b6d4';
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(px, py, pw, ph, 4);
+        else ctx.rect(px, py, pw, ph);
+        ctx.fill();
+
+        ctx.fillStyle = '#fff';
+        ctx.fillText(label, px + 6, py + ph - 5);
+
+        // Small ✕ remove indicator (double-click hint)
+        ctx.font      = '9px Inter, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fillText('✕✕', cx - 7, py + ph + 10);
     }
 }
 
@@ -1107,7 +1283,10 @@ function _onKeyDown(e) {
         r.algorithm = 'custom-override';
         changed = true;
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        customs.splice(_selectedRegionIndex, 1);
+        // Mark as skipped rather than removing — pipeline will release
+        // the content in this bbox area to fall through to natural classification.
+        r.skip = true;
+        r.algorithm = 'custom-override';
         _selectedRegionIndex = -1;
         deleted = true;
         changed = true;

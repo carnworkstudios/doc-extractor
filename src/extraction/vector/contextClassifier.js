@@ -135,8 +135,38 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     const customInjectedRegions = [];
     const customClaimedTextIndices = new Set();
 
+    // ── Deleted region exclusion ──────────────────────────────────────────────
+    // skip:true means the user deleted this specific region. Pre-claim its text
+    // items so no classifier can pick them up, AND remove its segments from
+    // tableSegs so the lattice/stream detectors can't reconstruct a region there.
+    // The text items remain in textMeta (unclaimed), so they fall through to
+    // _classifyBucket and get re-classified naturally.
+    const deletedBboxes = customRegions.filter(cr => cr.skip && cr.bbox).map(cr => cr.bbox);
+    if (deletedBboxes.length) {
+        const pad = scale.tablePadPx ?? 5;
+        for (const tm of textMeta) {
+            if (!tm.str.trim()) continue;
+            if (deletedBboxes.some(b => insideBBox(tm.vx, tm.vy, b, pad))) {
+                customClaimedTextIndices.add(tm.idx);
+            }
+        }
+        // Remove segments inside deleted bboxes from tableSegs so lattice/stream
+        // detectors can't reconstruct a region over the deleted area.
+        const eps2 = 2;
+        const filteredTableSegs = tableSegs.filter(s =>
+            !deletedBboxes.some(b =>
+                insideBBox(s.x1, s.y1, b, eps2) && insideBBox(s.x2, s.y2, b, eps2)
+            )
+        );
+        // Reassign tableSegs for all downstream classifier steps
+        tableSegs.length = 0;
+        for (const s of filteredTableSegs) tableSegs.push(s);
+    }
+
     for (const cr of customRegions) {
         if (!cr.bbox) continue;
+        if (cr.skip) continue;  // already handled above — nothing to inject
+
         const bbox = cr.bbox;
         const type = cr.type;
 
@@ -308,8 +338,106 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         tm => !assignedTextIndices.has(tm.idx) && tm.str.trim(),
     );
 
-    let rawSplits = [];
+    // Manual splits from the Analysis col-split tool bypass all detection gates.
+    // They are injected directly into rawSplits and take priority over everything.
+    const manualSplitDefs = opts.pipeline?.manualSplits;
+    const vpW0 = viewport.width;
+    let rawSplits = (manualSplitDefs?.length)
+        ? manualSplitDefs
+            .filter(s => s.x > vpW0 * 0.05 && s.x < vpW0 * 0.95)
+            .sort((a, b) => a.x - b.x)
+            .map(s => ({ x: s.x, leftFraction: s.x / vpW0, rightFraction: 1 - s.x / vpW0 }))
+        : [];
     let fullWidthIndices = new Set();
+
+    // If manual splits exist, skip all automatic detection — user's word is final
+    if (rawSplits.length) {
+        for (const tm of remainingMeta) {
+            const itemEnd = tm.vx + (tm.vWidth || 0);
+            if (rawSplits.some(sp => tm.vx < sp.x && itemEnd > sp.x)) {
+                fullWidthIndices.add(tm.idx);
+            }
+        }
+        // Jump directly to column bucketing — skip geometry + bipartite detection
+        const columnSplitsEarly = rawSplits.map(s => s.x);
+        const tol0 = scale.proximityPx ?? 5;
+        const boundaries0 = [-Infinity, ...columnSplitsEarly, Infinity];
+        for (const idx of [...fullWidthIndices]) {
+            const tm = textMeta[idx];
+            if (!tm) continue;
+            const itemEnd = tm.vx + (tm.vWidth || 0);
+            if (boundaries0.slice(0, -1).some((lo, ci) =>
+                tm.vx >= lo - tol0 && itemEnd <= boundaries0[ci + 1] + tol0)) {
+                fullWidthIndices.delete(idx);
+            }
+        }
+        const narrowMeta0 = remainingMeta.filter(tm => !fullWidthIndices.has(tm.idx));
+        const fullWidthMeta0 = remainingMeta.filter(tm => fullWidthIndices.has(tm.idx));
+        const columnBuckets0 = splitByColumns(narrowMeta0, columnSplitsEarly);
+        if (columnSplitsEarly.length > 0) {
+            const epsC = 5;
+            for (const r of regions) {
+                if (r.columnIndex !== -1 || !r.bbox) continue;
+                const crossesSplit = columnSplitsEarly.some(sx =>
+                    r.bbox.x < sx - epsC && (r.bbox.x + r.bbox.w) > sx + epsC);
+                if (r.bbox.w >= viewport.width * 0.65 || crossesSplit) continue;
+                const cx = r.bbox.x + r.bbox.w / 2;
+                for (let ci = 0; ci <= columnSplitsEarly.length; ci++) {
+                    const lo = ci === 0 ? -Infinity : columnSplitsEarly[ci - 1];
+                    const hi = ci === columnSplitsEarly.length ? Infinity : columnSplitsEarly[ci];
+                    if (cx >= lo && cx < hi) { r.columnIndex = ci; break; }
+                }
+            }
+        }
+        const bodyFontSizePt0 = scale.S / scaleY;
+        for (let ci = 0; ci < columnBuckets0.length; ci++) {
+            const lines = _groupByYBand(columnBuckets0[ci], scale.yBandTolPx);
+            _classifyBucket(regions, lines, bodyFontSizePt0, scale, ci, skip);
+        }
+        if (fullWidthMeta0.length > 0) {
+            const lines = _groupByYBand(fullWidthMeta0, scale.yBandTolPx);
+            _classifyBucket(regions, lines, bodyFontSizePt0, scale, -1, skip);
+        }
+        // Skip to header/footer detection and return
+        if (opts._structRegions?.length) {
+            for (const sr of opts._structRegions) {
+                for (let i = regions.length - 1; i >= 0; i--) {
+                    const r = regions[i];
+                    if (!r.bbox || r.fromStructTree) continue;
+                    if (r.yCenter >= sr.bbox.y && r.yCenter <= sr.bbox.y + sr.bbox.h &&
+                        r.bbox.x >= sr.bbox.x - 10 && (r.bbox.x + r.bbox.w) <= sr.bbox.x + sr.bbox.w + 10) {
+                        regions.splice(i, 1);
+                    }
+                }
+                regions.push(sr);
+            }
+        }
+        regions.sort((a, b) => a.yCenter - b.yCenter);
+        detectHeadersFooters(regions, textMeta, viewport, scale, filledRects);
+        let finalRegions2 = regions;
+        const customRegions2 = opts.pipeline?.customRegions || [];
+        if (customRegions2.length > 0) {
+            finalRegions2 = regions.filter(r => {
+                if (!r.bbox || r.algorithm === 'custom-override') return true;
+                return !customRegions2.some(cr => {
+                    const cb = cr.bbox;
+                    if (!cb) return false;
+                    const iw = Math.min(r.bbox.x + r.bbox.w, cb.x + cb.w) - Math.max(r.bbox.x, cb.x);
+                    const ih = Math.min(r.bbox.y + r.bbox.h, cb.y + cb.h) - Math.max(r.bbox.y, cb.y);
+                    if (iw > 0 && ih > 0) {
+                        const area = r.bbox.w * r.bbox.h;
+                        return area > 0 && (iw * ih) / area > 0.40;
+                    }
+                    return false;
+                });
+            });
+            for (const cr of customInjectedRegions) finalRegions2.push(cr);
+        }
+        finalRegions2.sort((a, b) => a.yCenter - b.yCenter);
+        return { regions: finalRegions2, textMeta, columnSplits: columnSplitsEarly, rawSplits, scale };
+    }
+
+    // No manual splits — fall through to automatic detection below
 
     const nonEmptyMeta = textMeta.filter(tm => tm.str.trim());
     let columnRules = [];
