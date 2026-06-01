@@ -12,7 +12,7 @@ import { initContextMenu } from './ui/contextMenu.js';
 import { initDividerResize } from './ui/visualDiff.js';
 import { initMonacoEditor } from './editor/monacoSetup.js';
 import { initAnalyzePanel } from './ui/analyzePanel.js';
-import { initHTMLSync } from './ui/htmlSync.js';
+import { initHTMLSync, patchPageHtml } from './ui/htmlSync.js';
 import { initZoneToolbar } from './ui/zoneToolbar.js';
 import { initSelectionMode } from './ui/selectionMode.js';
 import { initViewCode } from './ui/viewCode.js';
@@ -21,6 +21,10 @@ import { initHistoryController } from './ui/historyController.js';
 
 // DOMPurify available globally for fileUpload / monacoSetup
 window.DOMPurify = DOMPurify;
+
+// patchPageHtml exposed globally so analyzePanel can call it from onReprocessResult
+// without a circular import (analyzePanel → htmlSync → state → analyzePanel).
+window._patchPageHtml = patchPageHtml;
 
 $(() => {
     initViewTabs();

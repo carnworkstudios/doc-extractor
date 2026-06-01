@@ -15,7 +15,7 @@ import { initTableFeatures } from '../utils/tableLogic.js';
 import { applyHtmlEverywhere, hydrateImages } from './htmlSync.js';
 import { showToast } from './toast.js';
 import { cwsBroker } from '@os/worker-broker.js';
-import { runAnalysis, pushRegionPage, resetAnalysisData } from './analyzePanel.js';
+import { runAnalysis, pushRegionPage, resetAnalysisData, setAnalyzeWorker, onReprocessResult, onReprocessError } from './analyzePanel.js';
 import { clearImages, saveImages, getImageBlob } from '../utils/imageStore.js';
 import { refreshZoneToolbar } from './zoneToolbar.js';
 
@@ -46,6 +46,21 @@ function ensureGeometryWorker() {
             new URL('../workers/geometryWorker.js', import.meta.url),
             { type: 'module' },
         );
+        
+        // Permanent listener for reprocess results and errors, which can happen anytime
+        _geoWorker.addEventListener('message', (e) => {
+            const msg = e.data;
+            if (msg.reprocess) {
+                if (msg.type === 'page') {
+                    onReprocessResult(msg.page, msg.html, msg.regions, msg.pageScale);
+                } else if (msg.type === 'error') {
+                    onReprocessError(msg.page, msg.error);
+                }
+            }
+        });
+
+        // Give analyzePanel a reference so Re-extract page can post messages
+        setAnalyzeWorker(_geoWorker);
     }
     return _geoWorker;
 }
@@ -70,14 +85,14 @@ function extractViaGeometryWorker(bytes, onProgress) {
 
         worker.onmessage = (e) => {
             const msg = e.data;
+            // Reprocess responses are handled by the permanent event listener, ignore here
+            if (msg.reprocess) return;
             if (msg.type === 'progress' && onProgress) {
                 onProgress(`Extracting page ${msg.page}/${msg.total}…`);
             } else if (msg.type === 'page') {
                 if (msg.html) htmlParts.push(msg.html);
                 if (msg.text) textParts.push(msg.text);
                 totalTables += msg.tables || 0;
-                // Feed region manifest to the Analysis panel (always, even behind paywall,
-                // so data is ready if the user opens ?dev=1 after extraction).
                 if (msg.regions) pushRegionPage(msg.page, msg.regions, msg.pageScale);
             } else if (msg.type === 'complete') {
                 clearTimeout(timeout);
@@ -212,6 +227,15 @@ async function handleFile(file, pdfIndex) {
             registerPages(wrappers, numPages);
             registerPDFLayers(document.getElementById('pdf-canvas-container'));
             const bytesForAnalysis = pdfState.bytes.slice();
+
+            // Unconditionally initialize geometry worker and give analyzePanel its reference
+            const worker = ensureGeometryWorker();
+            // Cache PDF bytes in the geometry worker so interactive re-extraction works on any pipeline
+            worker.postMessage({
+                type: 'cache-bytes',
+                bytes: bytesForAnalysis.slice()
+            });
+
             runAnalysis(bytesForAnalysis, file.name).catch(err =>
                 console.warn('[Analyze] Analysis failed:', err.message),
             );

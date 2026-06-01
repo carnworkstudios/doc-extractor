@@ -473,62 +473,121 @@
     <!-- ── ANALYZE VIEW ─────────────────────────────────────────────── -->
     <div id="view-analyze" class="view-panel">
         <div class="analyze-layout" id="analyze-panel-inner">
+
+            <!-- ── Meta bar: status + file info ───────────────────────── -->
             <div class="analyze-meta-bar">
                 <span class="analyze-status-msg" id="analyze-status">Load a PDF to inspect its structure.</span>
                 <div class="analyze-meta" id="analyze-meta"></div>
             </div>
+
+            <!-- ── Format toolbar: nav + actions ──────────────────────── -->
+            <div class="analyze-toolbar">
+                <div class="analyze-toolbar-nav">
+                    <button class="atb-btn" id="analyze-page-prev" disabled title="Previous page">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    <span id="analyze-page-counter" class="atb-page-counter">—</span>
+                    <button class="atb-btn" id="analyze-page-next" disabled title="Next page">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
+                </div>
+                <div class="analyze-toolbar-sep"></div>
+                <button class="atb-btn atb-btn--label" id="analyze-select-tool" title="Select a region to inspect or reclassify (coming soon)" disabled>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-7 2-2 7z"/></svg>
+                    Select
+                </button>
+                <button class="atb-btn atb-btn--label atb-btn--primary" id="analyze-reextract" title="Re-extract current page with current layer and threshold settings" disabled>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    Re-extract page
+                </button>
+                <button class="atb-btn atb-btn--label atb-btn--pro" id="analyze-bulk-extract" title="Re-extract all pages (Pro)">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    Bulk extract
+                    <span class="atb-pro-badge">PRO</span>
+                </button>
+            </div>
+
+            <!-- ── Body: canvas left, stats right ─────────────────────── -->
             <div class="analyze-body">
                 <div class="analyze-canvas-wrap">
-                    <div class="analyze-canvas-header">
-                        <button class="icon-btn" id="analyze-page-prev" disabled title="Previous page">&#8592;</button>
-                        <span id="analyze-page-counter" style="font-size:12px;color:var(--text-muted)">—</span>
-                        <button class="icon-btn" id="analyze-page-next" disabled title="Next page">&#8594;</button>
-                    </div>
                     <canvas class="analyze-canvas" id="analyze-canvas"></canvas>
-                    <!-- Geometry layers -->
+
+                    <!-- Geometry layer toggles -->
                     <div class="analyze-legend" id="analyze-legend">
-                        <button class="legend-toggle active" data-layer="hSegs" style="--lc:#3b82f6">H segs</button>
-                        <button class="legend-toggle active" data-layer="vSegs" style="--lc:#10b981">V segs</button>
+                        <button class="legend-toggle active" data-layer="hSegs"    style="--lc:#3b82f6">H segs</button>
+                        <button class="legend-toggle active" data-layer="vSegs"    style="--lc:#10b981">V segs</button>
                         <button class="legend-toggle active" data-layer="diagSegs" style="--lc:#9ca3af">Diag</button>
-                        <button class="legend-toggle active" data-layer="rects" style="--lc:#f97316">Rects</button>
-                        <button class="legend-toggle active" data-layer="images" style="--lc:#ef4444">Images</button>
-                        <button class="legend-toggle active" data-layer="text" style="--lc:#eab308">Text Boundaries</button>
+                        <button class="legend-toggle active" data-layer="rects"    style="--lc:#f97316">Rects</button>
+                        <button class="legend-toggle active" data-layer="images"   style="--lc:#ef4444">Images</button>
+                        <button class="legend-toggle active" data-layer="text"     style="--lc:#e879f9">Text</button>
                     </div>
-                    <!-- Region overlay layers -->
+
+                    <!-- Region type toggles -->
                     <div class="analyze-legend analyze-region-legend" id="analyze-region-legend">
                         <span class="analyze-section-title" style="width:100%;margin-bottom:2px">Regions</span>
-                        <button class="legend-toggle active" data-region="LATTICE_TABLE"  style="--lc:#2563eb">Lattice</button>
-                        <button class="legend-toggle active" data-region="STREAM_TABLE"   style="--lc:#06b6d4">Stream</button>
-                        <button class="legend-toggle active" data-region="BOX"            style="--lc:#f97316">Box</button>
-                        <button class="legend-toggle active" data-region="HEADING"        style="--lc:#8b5cf6">Heading</button>
-                        <button class="legend-toggle active" data-region="PARAGRAPH"      style="--lc:#6b7280">Para</button>
-                        <button class="legend-toggle active" data-region="LIST"           style="--lc:#14b8a6">List</button>
-                        <button class="legend-toggle active" data-region="IMAGE"          style="--lc:#ef4444">Image</button>
-                        <button class="legend-toggle active" data-region="DIVIDER"        style="--lc:#94a3b8">Divider</button>
-                        <button class="legend-toggle active" data-region="HEADER"         style="--lc:#f59e0b">Header</button>
-                        <button class="legend-toggle active" data-region="FOOTER"         style="--lc:#f59e0b">Footer</button>
-                    </div>
-                    <!-- Confidence threshold slider -->
-                    <div class="analyze-conf-row">
-                        <label for="analyze-conf-slider" class="analyze-conf-label">Min confidence</label>
-                        <input type="range" id="analyze-conf-slider" min="0" max="1" step="0.05" value="0" class="analyze-conf-slider">
-                        <span id="analyze-conf-val" class="analyze-conf-val">0.00</span>
-                    </div>
-                    <!-- PageScale info -->
-                    <div class="analyze-scale-row" id="analyze-scale-row" style="display:none">
-                        <span class="analyze-conf-label">Body S</span>
-                        <span id="analyze-scale-s" class="analyze-conf-val">—</span>
-                        <span class="analyze-conf-label" style="margin-left:12px">Col gap</span>
-                        <span id="analyze-scale-colgap" class="analyze-conf-val">—</span>
-                        <span class="analyze-conf-label" style="margin-left:12px">Y band</span>
-                        <span id="analyze-scale-yband" class="analyze-conf-val">—</span>
+                        <button class="legend-toggle active" data-region="LATTICE_TABLE" style="--lc:#2563eb">Lattice</button>
+                        <button class="legend-toggle active" data-region="STREAM_TABLE"  style="--lc:#06b6d4">Stream</button>
+                        <button class="legend-toggle active" data-region="BOX"           style="--lc:#f97316">Box</button>
+                        <button class="legend-toggle active" data-region="HEADING"       style="--lc:#8b5cf6">Heading</button>
+                        <button class="legend-toggle active" data-region="PARAGRAPH"     style="--lc:#6b7280">Para</button>
+                        <button class="legend-toggle active" data-region="LIST"          style="--lc:#14b8a6">List</button>
+                        <button class="legend-toggle active" data-region="IMAGE"         style="--lc:#ef4444">Image</button>
+                        <button class="legend-toggle active" data-region="DIVIDER"       style="--lc:#94a3b8">Divider</button>
+                        <button class="legend-toggle active" data-region="HEADER"        style="--lc:#f59e0b">Header</button>
+                        <button class="legend-toggle active" data-region="FOOTER"        style="--lc:#f59e0b">Footer</button>
                     </div>
                 </div>
+
+                <!-- ── Right panel: stats + sliders ───────────────────── -->
                 <div class="analyze-stats-wrap">
                     <div class="analyze-section-title">Page stats</div>
                     <div id="analyze-stats"></div>
-                    <div class="analyze-section-title" style="margin-top:12px">Regions</div>
+
+                    <div class="analyze-section-title" style="margin-top:14px">Regions</div>
                     <div id="analyze-region-stats"></div>
+
+                    <!-- Confidence threshold -->
+                    <div class="analyze-section-title" style="margin-top:14px">Pipeline thresholds</div>
+                    <div class="analyze-slider-group">
+                        <div class="analyze-slider-row">
+                            <label class="aslider-label" for="analyze-conf-slider">Min confidence</label>
+                            <span id="analyze-conf-val" class="aslider-val">0.00</span>
+                            <input type="range" id="analyze-conf-slider" min="0" max="1" step="0.05" value="0" class="aslider" data-ghost="conf">
+                        </div>
+                        <div class="analyze-slider-row">
+                            <label class="aslider-label" for="analyze-yband-slider">Y-band tol (R_Y_BAND)</label>
+                            <span id="analyze-yband-val" class="aslider-val">0.45</span>
+                            <input type="range" id="analyze-yband-slider" min="0.15" max="1.20" step="0.05" value="0.45" class="aslider" data-ghost="yband">
+                        </div>
+                        <div class="analyze-slider-row">
+                            <label class="aslider-label" for="analyze-paragap-slider">Para gap (R_PARA_GAP)</label>
+                            <span id="analyze-paragap-val" class="aslider-val">1.80</span>
+                            <input type="range" id="analyze-paragap-slider" min="0.80" max="4.00" step="0.10" value="1.80" class="aslider" data-ghost="paragap">
+                        </div>
+                        <div class="analyze-slider-row">
+                            <label class="aslider-label" for="analyze-colgap-slider">Col gap (R_COL_GAP_MIN)</label>
+                            <span id="analyze-colgap-val" class="aslider-val">1.50</span>
+                            <input type="range" id="analyze-colgap-slider" min="0.50" max="4.00" step="0.10" value="1.50" class="aslider" data-ghost="colgap">
+                        </div>
+                        <div class="analyze-slider-row">
+                            <label class="aslider-label" for="analyze-streamconf-slider">Stream conf (STREAM_CONFIDENCE)</label>
+                            <span id="analyze-streamconf-val" class="aslider-val">0.60</span>
+                            <input type="range" id="analyze-streamconf-slider" min="0.10" max="0.95" step="0.05" value="0.60" class="aslider" data-ghost="streamconf">
+                        </div>
+                    </div>
+
+                    <!-- PageScale readout (live, populated by JS) -->
+                    <div class="analyze-scale-readout" id="analyze-scale-row" style="display:none">
+                        <div class="analyze-section-title" style="margin-top:14px">Calibration (px)</div>
+                        <table class="astat-table">
+                            <tbody>
+                                <tr><td class="astat-key">Body S</td><td class="astat-val" id="analyze-scale-s">—</td></tr>
+                                <tr><td class="astat-key">Col gap min</td><td class="astat-val" id="analyze-scale-colgap">—</td></tr>
+                                <tr><td class="astat-key">Y band tol</td><td class="astat-val" id="analyze-scale-yband">—</td></tr>
+                                <tr><td class="astat-key">Para gap</td><td class="astat-val" id="analyze-scale-paragap">—</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>

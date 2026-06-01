@@ -5,12 +5,14 @@
 // Does not require any backend. Runs entirely in the browser.
 // Handles tables, paragraphs, headings, lists, and image regions.
 //
-// Message in:  { type: 'process', bytes: Uint8Array }
+// Message in:
+//   { type: 'process',   bytes: Uint8Array }           — full extraction
+//   { type: 'reprocess', page: number, pipeline: {} }  — single page re-extract
 // Messages out:
-//   { type: 'progress', page: number, total: number, status: string }
-//   { type: 'page',     page: number, html: string, text: string, tables: number }
-//   { type: 'complete', pageCount: number, tableCount: number }
-//   { type: 'error',    error: string }
+//   { type: 'progress', page, total, status }
+//   { type: 'page',     page, html, text, tables, regions, pageScale, reprocess? }
+//   { type: 'complete', pageCount, tableCount, styles }
+//   { type: 'error',    error }
 //
 // DESIGN NOTE: Results are streamed per-page via 'page' messages instead of
 // accumulated into one massive 'complete' message. This prevents structured
@@ -49,13 +51,30 @@ class OffscreenCanvasFactory {
     }
 }
 
+// Cached PDF bytes and font registry — kept after initial 'process' so
+// 'reprocess' can re-run a single page without re-parsing the whole document.
+let _cachedBytes       = null;
+let _cachedFontRegistry = null;
+
 self.onmessage = async (e) => {
+    if (e.data.type === 'cache-bytes') {
+        _cachedBytes = e.data.bytes ? e.data.bytes.slice() : null;
+        return;
+    }
+    if (e.data.type === 'reprocess') {
+        await _handleReprocess(e.data);
+        return;
+    }
     if (e.data.type !== 'process') return;
     const { bytes, pdfWorkerSrc } = e.data;
 
     if (pdfWorkerSrc) {
         pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
     }
+
+    // Cache bytes for single-page re-extraction
+    _cachedBytes        = bytes ? bytes.slice() : null;
+    _cachedFontRegistry = null;  // reset; will be rebuilt during this run
 
     try {
         const canvasFactoryOpt = typeof OffscreenCanvas !== 'undefined'
@@ -65,6 +84,7 @@ self.onmessage = async (e) => {
         const numPages = pdf.numPages;
         let totalTables = 0;
         const fontRegistry = createFontRegistry();
+        _cachedFontRegistry = fontRegistry;
 
         for (let p = 1; p <= numPages; p++) {
             self.postMessage({ type: 'progress', page: p, total: numPages, status: 'Extracting…' });
@@ -190,7 +210,6 @@ self.onmessage = async (e) => {
                     columnIndex: r.columnIndex ?? -1,
                     imageId: r.imageId ?? null,
                 })),
-                extractedImages,
                 pageScale: scale.toJSON(),
             });
 
@@ -208,4 +227,147 @@ self.onmessage = async (e) => {
         self.postMessage({ type: 'error', error: err.message || String(err) });
     }
 };
+
+// ── Single-page re-extraction ─────────────────────────────────────────────────
+async function _handleReprocess({ page: pageNum, pipeline = {} }) {
+    if (!_cachedBytes) {
+        self.postMessage({
+            type: 'error',
+            reprocess: true,
+            page: pageNum,
+            error: 'No PDF loaded. Run a full extraction first.'
+        });
+        return;
+    }
+
+    const { skip = [], scaleOverrides = {} } = pipeline;
+    const skipSet = new Set(skip);
+
+    try {
+        const canvasFactoryOpt = typeof OffscreenCanvas !== 'undefined'
+            ? { CanvasFactory: OffscreenCanvasFactory }
+            : {};
+        // Use a slice of the cached bytes to prevent detaching the original cached buffer
+        const pdf = await pdfjsLib.getDocument({ data: _cachedBytes.slice(), ...canvasFactoryOpt }).promise;
+        const page = await pdf.getPage(pageNum);
+        const viewport    = page.getViewport({ scale: 2.0 });
+        const pageWidthPt = page.view[2] - page.view[0];
+
+        const [opList, textContent, rawStructTree] = await Promise.all([
+            page.getOperatorList(),
+            page.getTextContent(),
+            page.getStructTree().catch(() => null),
+        ]);
+
+        const { subpaths, imageMeta, filledRects: rawFilledRects } = extractSubpaths(opList, viewport, OPS);
+        const { segments, filledRects } = reconcile(subpaths, rawFilledRects, viewport);
+
+        // Image extraction
+        const IMG_SCALE = 4.0;
+        const upRatio   = IMG_SCALE / 2.0;
+        const extractedImages = {};
+        if (imageMeta.length > 0 && typeof OffscreenCanvas !== 'undefined') {
+            try {
+                const imgViewport = page.getViewport({ scale: IMG_SCALE });
+                const cw = Math.round(imgViewport.width);
+                const ch = Math.round(imgViewport.height);
+                const pageCanvas = new OffscreenCanvas(cw, ch);
+                await page.render({ canvasContext: pageCanvas.getContext('2d'), viewport: imgViewport }).promise;
+                const seen = new Set();
+                for (const meta of imageMeta) {
+                    if (seen.has(meta.id)) continue;
+                    seen.add(meta.id);
+                    const { x, y, w, h } = meta.bbox;
+                    const sx = Math.max(0, Math.round(x * upRatio));
+                    const sy = Math.max(0, Math.round(y * upRatio));
+                    const sw = Math.min(Math.round(w * upRatio), cw - sx);
+                    const sh = Math.min(Math.round(h * upRatio), ch - sy);
+                    if (sw < 4 || sh < 4) continue;
+                    try {
+                        const crop = new OffscreenCanvas(sw, sh);
+                        crop.getContext('2d').drawImage(pageCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+                        const blob = await crop.convertToBlob({ type: 'image/png' });
+                        const arr  = new Uint8Array(await blob.arrayBuffer());
+                        let binary = '';
+                        for (let b = 0; b < arr.length; b += 8192) binary += String.fromCharCode(...arr.subarray(b, b + 8192));
+                        extractedImages[meta.id] = { dataUrl: 'data:image/png;base64,' + btoa(binary), pw: sw, ph: sh };
+                    } catch (_) {}
+                }
+            } catch (_) {}
+        }
+
+        // Font style map
+        const fontStyleMap = {};
+        try {
+            const uniqueFontNames = [...new Set(textContent.items.map(i => i.fontName).filter(Boolean))];
+            for (const fn of uniqueFontNames) {
+                const obj = page.commonObjs.get(fn);
+                if (!obj) continue;
+                const cleaned = (obj.name || fn).replace(/^[A-Z]{6}\+/, '');
+                fontStyleMap[fn] = {
+                    bold:   !!obj.bold   || /bold|heavy|black/i.test(cleaned),
+                    italic: !!obj.italic || /italic|oblique|slanted/i.test(cleaned),
+                };
+            }
+        } catch (_) {}
+
+        // Classify — pass skip set and scale overrides through opts
+        const { regions, textMeta, columnSplits, scale } = classifyPage(
+            segments,
+            textContent.items,
+            viewport,
+            pageWidthPt,
+            imageMeta,
+            {
+                filledRects,
+                fontStyleMap,
+                structTree: rawStructTree,
+                OPS,
+                _opList: opList,
+                pipeline: { skip: skipSet, scaleOverrides },
+            },
+        );
+
+        const fontRegistry = _cachedFontRegistry ?? createFontRegistry();
+        const result = assemblePage(
+            regions,
+            textMeta,
+            textContent.items,
+            viewport,
+            pageWidthPt,
+            pageNum,
+            fontRegistry,
+            columnSplits,
+            extractedImages,
+        );
+
+        page.cleanup();
+
+        self.postMessage({
+            type: 'page',
+            reprocess: true,   // flag so fileUpload routes this to analyzePanel
+            page: pageNum,
+            html: result.html,
+            text: result.text.trim(),
+            tables: result.tableCount,
+            regions: regions.map((r, i) => ({
+                id: r.id || `p${pageNum}-r${i}`,
+                type: r.type,
+                bbox: r.bbox,
+                algorithm: r.algorithm ?? 'geometric',
+                confidence: r.confidence ?? 1.0,
+                columnIndex: r.columnIndex ?? -1,
+                imageId: r.imageId ?? null,
+            })),
+            pageScale: scale.toJSON(),
+        });
+    } catch (err) {
+        self.postMessage({
+            type: 'error',
+            reprocess: true,
+            page: pageNum,
+            error: `Reprocess page ${pageNum}: ${err.message || err}`
+        });
+    }
+}
 

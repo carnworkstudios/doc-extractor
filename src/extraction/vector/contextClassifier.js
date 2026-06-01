@@ -75,6 +75,18 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
 
     const scale = new PageScale(textMeta, viewport);
     if (opts.headingScale !== undefined) scale.HEADING_SCALE = opts.headingScale;
+
+    // Apply per-page threshold overrides from the Analysis panel sliders.
+    // Only the four exposed ratios can be overridden; all other PageScale
+    // values (S, vScale, computed getters) remain calibrated to this page.
+    const so = opts.pipeline?.scaleOverrides;
+    if (so) {
+        if (so.R_Y_BAND          !== undefined) scale.R_Y_BAND          = so.R_Y_BAND;
+        if (so.R_PARA_GAP        !== undefined) scale.R_PARA_GAP        = so.R_PARA_GAP;
+        if (so.R_COL_GAP_MIN     !== undefined) scale.R_COL_GAP_MIN     = so.R_COL_GAP_MIN;
+        if (so.STREAM_CONFIDENCE !== undefined) scale.STREAM_CONFIDENCE = so.STREAM_CONFIDENCE;
+    }
+
     const tablePad = opts.tablePad ?? scale.tablePadPx;
 
     // ── Tier 1: Structure tree (highest fidelity) ─────────────────────────────
@@ -119,10 +131,13 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
 
     // Pre-seed assignedTextIndices with items claimed by Tier 1 struct regions
     const assignedTextIndices = new Set(structTableIndices);
+    const skip = opts.pipeline?.skip ?? new Set();
 
     // ── 5. Lattice table regions ─────────────────────────────────────────────
-    const latticeRegions = detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts);
-    for (const r of latticeRegions) regions.push(r);
+    if (!skip.has('LATTICE_TABLE')) {
+        const latticeRegions = detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts);
+        for (const r of latticeRegions) regions.push(r);
+    }
 
     // ── 6. Additional image regions from opts ───────────────────────────────
     const extraImageRegions = opts.imageRegions || [];
@@ -140,36 +155,36 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     const unclaimedMeta = textMeta.filter(
         tm => !assignedTextIndices.has(tm.idx) && tm.str.trim(),
     );
-    const streamTables = detectStreamTableRegions(unclaimedMeta, scale, regions, tableSegs, pageGraph);
-    for (const lattice of streamTables) {
-        if (!lattice?.bbox) continue;
-        const bbox = lattice.bbox;
-        const tableTextIndices = [];
-        for (const tm of unclaimedMeta) {
-            if (assignedTextIndices.has(tm.idx)) continue;
-            if (insideBBox(tm.vx, tm.vy, bbox, tablePad)) {
-                tableTextIndices.push(tm.idx);
-                assignedTextIndices.add(tm.idx);
+    if (!skip.has('STREAM_TABLE')) {
+        const streamTables = detectStreamTableRegions(unclaimedMeta, scale, regions, tableSegs, pageGraph);
+        for (const lattice of streamTables) {
+            if (!lattice?.bbox) continue;
+            const bbox = lattice.bbox;
+            const tableTextIndices = [];
+            for (const tm of unclaimedMeta) {
+                if (assignedTextIndices.has(tm.idx)) continue;
+                if (insideBBox(tm.vx, tm.vy, bbox, tablePad)) {
+                    tableTextIndices.push(tm.idx);
+                    assignedTextIndices.add(tm.idx);
+                }
             }
+            regions.push({
+                type: RegionType.STREAM_TABLE,
+                bbox,
+                yCenter: bbox.y + bbox.h / 2,
+                lattice,
+                textItemIndices: tableTextIndices,
+                columnIndex: -1,
+                proximityPx: scale.proximityPx,
+            });
         }
-        regions.push({
-            type: RegionType.STREAM_TABLE,
-            bbox,
-            yCenter: bbox.y + bbox.h / 2,
-            lattice,
-            textItemIndices: tableTextIndices,
-            columnIndex: -1,
-            proximityPx: scale.proximityPx,
-        });
     }
 
     // ── 8. Isolated-rectangle box detection ─────────────────────────────────
-    const boxRegions = detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale, viewport, regions, filledRects, assignedTextIndices);
-    for (const r of boxRegions) regions.push(r);
-
-    // ── 9. Divider detection ────────────────────────────────────────────────
-    const dividerRegions = detectDividers(hSegs, underlineSegIds, textMeta, scale, viewport, regions);
-    for (const r of dividerRegions) regions.push(r);
+    if (!skip.has('BOX')) {
+        const boxRegions = detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale, viewport, regions, filledRects, assignedTextIndices);
+        for (const r of boxRegions) regions.push(r);
+    }
 
     // ── 10. Page-level column detection ──────────────────────────────────────
     const remainingMeta = textMeta.filter(
@@ -285,12 +300,19 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
 
     for (let ci = 0; ci < columnBuckets.length; ci++) {
         const lines = _groupByYBand(columnBuckets[ci], scale.yBandTolPx);
-        _classifyBucket(regions, lines, bodyFontSizePt, scale, ci);
+        _classifyBucket(regions, lines, bodyFontSizePt, scale, ci, skip);
     }
 
     if (fullWidthMeta.length > 0) {
         const lines = _groupByYBand(fullWidthMeta, scale.yBandTolPx);
-        _classifyBucket(regions, lines, bodyFontSizePt, scale, -1);
+        _classifyBucket(regions, lines, bodyFontSizePt, scale, -1, skip);
+    }
+
+    // ── 11.5. Divider detection — runs AFTER text classification so paragraph/
+    //         heading/list regions are present and the bbox-containment guard works.
+    if (!skip.has('DIVIDER')) {
+        const dividerRegions = detectDividers(hSegs, underlineSegIds, textMeta, scale, viewport, regions);
+        for (const r of dividerRegions) regions.push(r);
     }
 
     // ── 12. Merge Tier 1 struct regions ─────────────────────────────────────
@@ -322,7 +344,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-function _classifyBucket(regions, lines, bodyFontSizePt, scale, columnIndex) {
+function _classifyBucket(regions, lines, bodyFontSizePt, scale, columnIndex, skip = new Set()) {
     let currentBlock = [];
     let currentType = null;
 
@@ -334,11 +356,15 @@ function _classifyBucket(regions, lines, bodyFontSizePt, scale, columnIndex) {
         let lineType;
         const headingType = classifyHeading(line, bodyFontSizePt, scale);
         const listResult  = classifyList(line, bodyFontSizePt, scale);
-        if (headingType) {
+
+        // When a type is skipped, demote it to PARAGRAPH so items stay in the
+        // text flow instead of disappearing (they just won't be classified)
+        if (headingType && !skip.has('HEADING')) {
             lineType = headingType;
-        } else if (listResult) {
+        } else if (listResult && !skip.has('LIST')) {
             lineType = listResult.type;
         } else {
+            if (skip.has('PARAGRAPH')) continue; // skip means omit from output
             lineType = RegionType.PARAGRAPH;
         }
 

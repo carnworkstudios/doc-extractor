@@ -90,6 +90,48 @@ function sanitize(html) {
         : html;
 }
 
+/**
+ * Replace the HTML for a single page in all surfaces without touching other pages.
+ * Called by analyzePanel after a 'reprocess' result arrives.
+ * @param {number} pageNum  — 1-based page number (matches data-page attribute)
+ * @param {string} newHtml  — new page HTML from assemblePage
+ */
+export function patchPageHtml(pageNum, newHtml) {
+    if (_syncing) return;
+    _syncing = true;
+    try {
+        const clean = sanitize(newHtml);
+
+        // Replace in live surfaces
+        for (const id of SURFACE_IDS) {
+            const container = document.getElementById(id);
+            if (!container) continue;
+            const existing = container.querySelector(`[data-page="${pageNum}"]`);
+            if (!existing) continue;
+            const tmp = document.createElement('div');
+            tmp.innerHTML = clean;
+            const newSection = tmp.querySelector(`[data-page="${pageNum}"]`) || tmp.firstElementChild;
+            if (newSection) {
+                existing.replaceWith(newSection);
+                initTableFeatures(container);
+                hydrateImages(container);
+            }
+        }
+
+        // Rebuild full state HTML from the live preview surface
+        const preview = document.getElementById('html-preview');
+        if (preview) {
+            state.pdf1.extractedHTML = preview.innerHTML;
+            const editor = state.monacoEditor;
+            if (editor && editor.getValue() !== state.pdf1.extractedHTML) {
+                editor.getModel()?.setValue(state.pdf1.extractedHTML);
+            }
+        }
+    } finally {
+        _syncing = false;
+    }
+}
+
 export async function hydrateImages(containerEl) {
     const images = containerEl.querySelectorAll('img[data-img-id]');
     for (const img of images) {

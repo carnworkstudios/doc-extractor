@@ -168,9 +168,9 @@ body {
   gap: 5px;
   padding: 5px 11px;
   border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgb(57 56 56);
   background: rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.8);
+  color: rgb(0 0 0 / 80%);
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -1799,41 +1799,151 @@ body {
   border-top: 1px solid var(--border);
 }
 
-/* ── Confidence threshold row ────────────────────────────────────────────── */
-.analyze-conf-row {
+/* ── Analyze format toolbar ──────────────────────────────────────────────── */
+.analyze-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  flex-wrap: wrap;
+  gap: 4px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
 }
 
-.analyze-conf-label {
+.analyze-toolbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.atb-page-counter {
   font-size: 11px;
   color: var(--text-muted);
+  min-width: 56px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.analyze-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border-dark);
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
+.atb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
   white-space: nowrap;
 }
 
-.analyze-conf-slider {
-  flex: 1;
-  min-width: 80px;
-  max-width: 180px;
-  accent-color: var(--accent, #6366f1);
-  cursor: pointer;
-}
-
-.analyze-conf-val {
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
+.atb-btn:hover:not(:disabled) {
+  background: var(--bg);
   color: var(--text);
-  min-width: 30px;
+  border-color: var(--border-dark);
 }
 
-/* ── PageScale info row ──────────────────────────────────────────────────── */
-.analyze-scale-row {
+.atb-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.atb-btn--label {
+  padding: 4px 10px;
+}
+
+.atb-btn--primary {
+  background: var(--accent-dim);
+  color: var(--accent-dark);
+  border-color: var(--accent-mid);
+}
+
+.atb-btn--primary:hover:not(:disabled) {
+  background: var(--accent-mid);
+  color: var(--accent-dark);
+  border-color: var(--accent);
+}
+
+.atb-btn--pro {
+  color: var(--text-muted);
+}
+
+.atb-pro-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: rgba(234, 179, 8, 0.15);
+  color: #92710a;
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  line-height: 1.4;
+}
+
+/* ── Pipeline threshold sliders (right panel) ────────────────────────────── */
+.analyze-slider-group {
   display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.analyze-slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.aslider-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  flex-wrap: wrap;
+}
+
+.aslider-val {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-dark);
+  float: right;
+}
+
+.aslider {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+  height: 4px;
+}
+
+/* Ghost overlay indicator shown while dragging a slider */
+.analyze-ghost-label {
+  position: absolute;
+  background: rgba(0,0,0,0.72);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 7px;
+  border-radius: 4px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 10;
+}
+
+/* ── PageScale calibration readout ───────────────────────────────────────── */
+.analyze-scale-readout {
+  margin-top: 4px;
 }
