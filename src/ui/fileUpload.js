@@ -15,7 +15,28 @@ import { initTableFeatures } from '../utils/tableLogic.js';
 import { applyHtmlEverywhere, hydrateImages } from './htmlSync.js';
 import { showToast } from './toast.js';
 import { cwsBroker } from '@os/worker-broker.js';
-import { runAnalysis, pushRegionPage, resetAnalysisData, setAnalyzeWorker, onReprocessResult, onReprocessError } from './analyzePanel.js';
+// analyzePanel.js is injected by os-shell.js into this iframe at runtime.
+// All calls are proxied through window.__GX_PDF_CORE__ dispatchers set up in app.js.
+const _core = () => window.__GX_PDF_CORE__;
+
+async function runAnalysis(bytes, filename) {
+    const core = _core();
+    if (!core) return;
+    // Status updates go through the shared setStatus in viewController
+    // (analyzePanel's own _setStatus will handle in-panel messaging once injected).
+    try {
+        const analysis = await core.getAnalyzePDF()(bytes, () => {});
+        core._dispatchAnalysisReady(analysis);
+    } catch (e) {
+        console.warn('[Analyze] Analysis failed:', e.message);
+    }
+}
+
+const pushRegionPage    = (n, r, s)    => _core()?._dispatchRegionPage(n, r, s);
+const resetAnalysisData = ()           => _core()?._dispatchReset();
+const setAnalyzeWorker  = (w)          => { window.__GX_PDF_GEO_WORKER__ = w; _core()?._dispatchWorkerReady(w); };
+const onReprocessResult = (n, h, r, s) => _core()?._dispatchReprocessResult(n, h, r, s);
+const onReprocessError  = (n, e)       => _core()?._dispatchReprocessError(n, e);
 import { clearImages, saveImages, getImageBlob } from '../utils/imageStore.js';
 import { refreshZoneToolbar } from './zoneToolbar.js';
 

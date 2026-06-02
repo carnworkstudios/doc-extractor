@@ -1298,6 +1298,7 @@ body {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  position: relative;
 }
 
 .analyze-meta-bar {
@@ -1808,7 +1809,11 @@ body {
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   flex-shrink: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.analyze-toolbar::-webkit-scrollbar { display: none; }
 
 .analyze-toolbar-nav {
   display: flex;
@@ -1953,4 +1958,226 @@ body {
   background: var(--accent-dim);
   border-color: var(--accent);
   color: var(--accent-dark);
+}
+
+/* ── Toolbar label variants ───────────────────────────────────────────────── */
+.atb-label-short { display: none; }
+.atb-label-full  { display: inline; }
+
+/* Desktop-only / mobile-only toolbar items */
+.atb-mobile-only { display: none; }
+.atb-desktop-only { display: inline-flex; }
+
+/* ── Mobile stats drawer ─────────────────────────────────────────────────── */
+/* On mobile the stats panel slides in as a bottom sheet triggered by the
+   Controls button. On desktop it stays as the fixed right column. */
+.analyze-stats-wrap {
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+
+/* ── User guide panel ────────────────────────────────────────────────────── */
+.analyze-guide-panel {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 360px;
+  max-width: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px 20px 32px;
+  z-index: 20;
+  box-shadow: -4px 0 16px rgba(0,0,0,0.12);
+  animation: agd-slide-in 0.2s ease;
+}
+.analyze-guide-panel[hidden] { display: none; }
+
+@keyframes agd-slide-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.analyze-guide-close {
+  position: absolute;
+  top: 12px; right: 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.analyze-guide-close:hover { background: var(--bg); color: var(--text); }
+
+.agd-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 16px;
+  padding-right: 24px;
+}
+
+.agd-section {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.agd-section:last-child { border-bottom: none; margin-bottom: 0; }
+
+.agd-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+
+.agd-p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary, var(--text-muted));
+  margin: 0 0 8px;
+}
+.agd-p:last-child { margin-bottom: 0; }
+
+.agd-tip {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-left: 3px solid var(--accent-mid, var(--accent));
+  padding: 6px 10px;
+  border-radius: 0 4px 4px 0;
+  font-style: italic;
+}
+
+.agd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.agd-chip {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 12px;
+  border: 1.5px solid color-mix(in srgb, var(--cc, #888) 50%, transparent);
+  color: var(--cc, var(--text-muted));
+  background: color-mix(in srgb, var(--cc, #888) 10%, transparent);
+  white-space: nowrap;
+}
+
+.agd-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.agd-row  { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; }
+
+.agd-key {
+  flex-shrink: 0;
+  min-width: 90px;
+  font-weight: 600;
+  color: var(--text);
+}
+.agd-key--kbd {
+  min-width: 60px;
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border-dark);
+  border-radius: 4px;
+  padding: 1px 7px;
+  text-align: center;
+  line-height: 1.8;
+}
+.agd-val { color: var(--text-muted); line-height: 1.5; flex: 1; }
+
+.agd-ol {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-muted);
+  padding-left: 18px;
+  margin: 8px 0 0;
+}
+.agd-ol li { margin-bottom: 4px; }
+.agd-ol strong { color: var(--text); }
+
+/* ── Responsive analyze panel ────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* Toolbar: hide desktop-only buttons, show mobile ones */
+  .atb-desktop-only { display: none !important; }
+  .atb-mobile-only  { display: inline-flex !important; }
+  .atb-label-full   { display: none; }
+  .atb-label-short  { display: inline; }
+  .atb-sep-desktop  { display: none; }
+
+  /* Body stacks canvas on top, stats hidden by default */
+  .analyze-body {
+    flex-direction: column;
+    position: relative;
+  }
+
+  /* Stats panel becomes a bottom sheet */
+  .analyze-stats-wrap {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    width: 100% !important;
+    max-height: 55vh;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    border-right: none;
+    background: var(--surface);
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.14);
+    z-index: 10;
+    transform: translateY(100%);
+    transition: transform 0.22s ease;
+    padding: 12px 16px 24px;
+  }
+  .analyze-stats-wrap.is-open {
+    transform: translateY(0);
+  }
+
+  /* Tighter canvas wrap when stats panel not visible */
+  .analyze-canvas-wrap {
+    border-right: none;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* Legend wraps compactly */
+  .analyze-legend {
+    gap: 4px;
+  }
+  .legend-toggle {
+    padding: 2px 8px 2px 6px;
+    font-size: 10px;
+  }
+
+  /* Guide panel goes full-width on mobile */
+  .analyze-guide-panel {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.14);
+    top: auto;
+    bottom: 0;
+    height: 72vh;
+    animation: agd-slide-up 0.22s ease;
+  }
+  @keyframes agd-slide-up {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  /* Tablet: toolbar buttons visible but tighter */
+  .atb-label-full  { display: none; }
+  .atb-label-short { display: inline; }
+
+  /* Stats panel stacks below canvas, needs a max-height so it doesn't take over */
+  .analyze-stats-wrap {
+    width: 100%;
+    max-height: 280px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    border-right: none;
+  }
 }

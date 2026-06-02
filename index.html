@@ -491,24 +491,111 @@
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
                     </button>
                 </div>
-                <div class="analyze-toolbar-sep"></div>
-                <button class="atb-btn atb-btn--label" id="analyze-col-split-tool" title="Click on the canvas to place a column split line. Drag to reposition, click ✕ to remove.">
+                <div class="analyze-toolbar-sep atb-sep-desktop"></div>
+                <button class="atb-btn atb-btn--label atb-desktop-only" id="analyze-col-split-tool" title="Click on the canvas to place a column split line. Drag to reposition, click ✕ to remove.">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="8 7 12 3 16 7"/><polyline points="8 17 12 21 16 17"/></svg>
                     Col split
                 </button>
-                <button class="atb-btn atb-btn--label" id="analyze-select-tool" title="Select a region to inspect, resize, drag or reclassify" disabled>
+                <button class="atb-btn atb-btn--label atb-desktop-only" id="analyze-select-tool" title="Select a region to inspect, resize, drag or reclassify" disabled>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-7 2-2 7z"/></svg>
                     Select
                 </button>
                 <button class="atb-btn atb-btn--label atb-btn--primary" id="analyze-reextract" title="Re-extract current page with current layer and threshold settings" disabled>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                    Re-extract page
+                    <span class="atb-label-full">Re-extract page</span>
+                    <span class="atb-label-short">Re-extract</span>
                 </button>
-                <button class="atb-btn atb-btn--label atb-btn--pro" id="analyze-bulk-extract" title="Re-extract all pages (Pro)">
+                <button class="atb-btn atb-btn--label atb-btn--pro atb-desktop-only" id="analyze-bulk-extract" title="Re-extract all pages (Pro)">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                     Bulk extract
                     <span class="atb-pro-badge">PRO</span>
                 </button>
+                <!-- Mobile: stats drawer toggle -->
+                <button class="atb-btn atb-btn--label atb-mobile-only" id="analyze-stats-toggle" title="Pipeline controls &amp; stats" aria-expanded="false">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                    Controls
+                </button>
+                <div class="analyze-toolbar-sep" style="margin-left:auto"></div>
+                <!-- User guide toggle -->
+                <button class="atb-btn atb-btn--label" id="analyze-guide-btn" title="User guide" aria-expanded="false" aria-controls="analyze-guide-panel">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    Guide
+                </button>
+            </div>
+
+            <!-- ── User guide panel (hidden by default) ───────────────── -->
+            <div class="analyze-guide-panel" id="analyze-guide-panel" hidden>
+                <button class="analyze-guide-close" id="analyze-guide-close" aria-label="Close guide">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+                <h3 class="agd-title">Analyze Panel — Quick Guide</h3>
+
+                <div class="agd-section">
+                    <div class="agd-section-title">What you're looking at</div>
+                    <p class="agd-p">The canvas shows a structural X-ray of your PDF page. Coloured overlays are geometry layers (lines, rectangles, text positions) detected by the pipeline — not visual rendering.</p>
+                    <div class="agd-chips">
+                        <span class="agd-chip" style="--cc:#3b82f6">H segs — horizontal rule lines</span>
+                        <span class="agd-chip" style="--cc:#10b981">V segs — vertical rule lines</span>
+                        <span class="agd-chip" style="--cc:#f97316">Rects — closed border boxes</span>
+                        <span class="agd-chip" style="--cc:#ef4444">Images — raster/vector image bounds</span>
+                        <span class="agd-chip" style="--cc:#e879f9">Text dots — baseline anchor points</span>
+                    </div>
+                </div>
+
+                <div class="agd-section">
+                    <div class="agd-section-title">Region types</div>
+                    <p class="agd-p">After Re-extract, the pipeline labels content blocks. Toggle any region type in the legend to hide it from both the canvas and the next re-extraction.</p>
+                    <div class="agd-chips">
+                        <span class="agd-chip" style="--cc:#2563eb">Lattice — table with visible grid lines</span>
+                        <span class="agd-chip" style="--cc:#06b6d4">Stream — table detected by whitespace alignment</span>
+                        <span class="agd-chip" style="--cc:#8b5cf6">Heading — section title</span>
+                        <span class="agd-chip" style="--cc:#6b7280">Para — paragraph text block</span>
+                        <span class="agd-chip" style="--cc:#f97316">Box — bordered content region</span>
+                        <span class="agd-chip" style="--cc:#f59e0b">Header / Footer — page margins</span>
+                    </div>
+                </div>
+
+                <div class="agd-section">
+                    <div class="agd-section-title">Pipeline threshold sliders</div>
+                    <div class="agd-rows">
+                        <div class="agd-row"><span class="agd-key">Min confidence</span><span class="agd-val">Hide low-confidence regions on the canvas. Does not affect extraction — visual filter only.</span></div>
+                        <div class="agd-row"><span class="agd-key">Y-band tol</span><span class="agd-val">How much vertical drift is allowed before two text items are considered different lines. Increase for skewed PDFs.</span></div>
+                        <div class="agd-row"><span class="agd-key">Para gap</span><span class="agd-val">Minimum vertical gap to split two paragraphs. Increase if paragraphs are merging; decrease if lines are splitting.</span></div>
+                        <div class="agd-row"><span class="agd-key">Col gap</span><span class="agd-val">Minimum whitespace width to detect a column boundary. Increase for dense two-column PDFs.</span></div>
+                        <div class="agd-row"><span class="agd-key">Stream conf</span><span class="agd-val">Confidence threshold for accepting a stream table. Lower = more aggressive table detection; may increase false positives.</span></div>
+                    </div>
+                    <p class="agd-p agd-tip">Drag a slider to see a ghost overlay on the canvas showing exactly what that threshold affects on the current page.</p>
+                </div>
+
+                <div class="agd-section">
+                    <div class="agd-section-title">Col split tool</div>
+                    <p class="agd-p">Click on the canvas to drop a vertical column split guide. The pipeline uses these to force column boundaries the auto-detector missed. Drag to reposition, double-click to remove.</p>
+                </div>
+
+                <div class="agd-section">
+                    <div class="agd-section-title">Select tool</div>
+                    <p class="agd-p">Click a region box to select it. Drag to move, drag a corner/edge handle to resize. Double-click empty canvas space to draw a new custom region.</p>
+                    <div class="agd-rows">
+                        <div class="agd-row"><span class="agd-key agd-key--kbd">L</span><span class="agd-val">Reclassify as Lattice Table</span></div>
+                        <div class="agd-row"><span class="agd-key agd-key--kbd">S / T</span><span class="agd-val">Reclassify as Stream Table</span></div>
+                        <div class="agd-row"><span class="agd-key agd-key--kbd">P</span><span class="agd-val">Reclassify as Paragraph</span></div>
+                        <div class="agd-row"><span class="agd-key agd-key--kbd">H</span><span class="agd-val">Reclassify as Heading</span></div>
+                        <div class="agd-row"><span class="agd-key agd-key--kbd">B</span><span class="agd-val">Reclassify as Box</span></div>
+                        <div class="agd-row"><span class="agd-key agd-key--kbd">Del / ⌫</span><span class="agd-val">Mark region as skipped (shown strikethrough)</span></div>
+                    </div>
+                </div>
+
+                <div class="agd-section">
+                    <div class="agd-section-title">Workflow</div>
+                    <ol class="agd-ol">
+                        <li>Load a PDF — the canvas auto-populates with geometry layers.</li>
+                        <li>Hit <strong>Re-extract page</strong> to run the pipeline and see region overlays.</li>
+                        <li>Adjust sliders and toggle regions to tune the pipeline for this page.</li>
+                        <li>Use Col split or Select to fix any remaining layout errors.</li>
+                        <li>Hit Re-extract again — changes apply immediately to the HTML output.</li>
+                        <li>Switch to the <strong>Extract</strong> tab to see the final HTML and export.</li>
+                    </ol>
+                </div>
             </div>
 
             <!-- ── Body: canvas left, stats right ─────────────────────── -->
