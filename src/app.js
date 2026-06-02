@@ -30,6 +30,10 @@ window._patchPageHtml = patchPageHtml;
 // ── __GX_PDF_CORE__ — stable hook surface for the injected analyzePanel.js ──
 // os-shell.js injects /assets/pdf-processor/ui/analyzePanel.js into this iframe
 // after load. That script reads this object instead of using static imports.
+//
+// Each on* registration replays the last known value immediately if it arrived
+// before analyzePanel.js booted. This closes the race where file extraction
+// completes before the inject fires: regions/analysis are never silently dropped.
 const _analysisReadyCallbacks  = [];
 const _workerReadyCallbacks    = [];
 const _regionPageCallbacks     = [];
@@ -37,23 +41,56 @@ const _resetCallbacks          = [];
 const _reprocessResultCallbacks = [];
 const _reprocessErrorCallbacks  = [];
 
+// Replay cache — holds the last dispatched value for each channel.
+// Cleared on reset so stale data from a previous file is never replayed.
+let _cachedAnalysis  = null;               // last _dispatchAnalysisReady arg
+let _cachedWorker    = null;               // last _dispatchWorkerReady arg
+let _cachedRegions   = new Map();          // pageNum → [regions, pageScale]
+
 window.__GX_PDF_CORE__ = {
     getAnalyzePDF:     () => analyzePDF,
     getGeoWorker:      () => window.__GX_PDF_GEO_WORKER__ || null,
     patchPageHtml:     (page, html) => patchPageHtml(page, html),
     showToast:         (msg, type) => showToast(msg, type),
-    // Callbacks registered by analyzePanel.js
-    onAnalysisReady:     (cb) => _analysisReadyCallbacks.push(cb),
-    onWorkerReady:       (cb) => _workerReadyCallbacks.push(cb),
-    onRegionPage:        (cb) => _regionPageCallbacks.push(cb),
+
+    // Callbacks registered by analyzePanel.js.
+    // Each replays the cached value immediately if data arrived before registration.
+    onAnalysisReady(cb) {
+        _analysisReadyCallbacks.push(cb);
+        if (_cachedAnalysis) cb(_cachedAnalysis);
+    },
+    onWorkerReady(cb) {
+        _workerReadyCallbacks.push(cb);
+        if (_cachedWorker) cb(_cachedWorker);
+    },
+    onRegionPage(cb) {
+        _regionPageCallbacks.push(cb);
+        // Replay all pages that arrived before analyzePanel.js registered.
+        _cachedRegions.forEach(([regions, pageScale], pageNum) => cb(pageNum, regions, pageScale));
+    },
     onResetAnalysis:     (cb) => _resetCallbacks.push(cb),
     onReprocessResult:   (cb) => _reprocessResultCallbacks.push(cb),
     onReprocessError:    (cb) => _reprocessErrorCallbacks.push(cb),
+
     // Dispatch helpers called by fileUpload.js
-    _dispatchAnalysisReady:   (a)           => _analysisReadyCallbacks.forEach(cb => cb(a)),
-    _dispatchWorkerReady:     (w)           => _workerReadyCallbacks.forEach(cb => cb(w)),
-    _dispatchRegionPage:      (n, r, s)     => _regionPageCallbacks.forEach(cb => cb(n, r, s)),
-    _dispatchReset:           ()            => _resetCallbacks.forEach(cb => cb()),
+    _dispatchAnalysisReady(a) {
+        _cachedAnalysis = a;
+        _analysisReadyCallbacks.forEach(cb => cb(a));
+    },
+    _dispatchWorkerReady(w) {
+        _cachedWorker = w;
+        _workerReadyCallbacks.forEach(cb => cb(w));
+    },
+    _dispatchRegionPage(n, r, s) {
+        _cachedRegions.set(n, [r, s]);
+        _regionPageCallbacks.forEach(cb => cb(n, r, s));
+    },
+    _dispatchReset() {
+        // Clear replay cache so the next file starts fresh.
+        _cachedAnalysis = null;
+        _cachedRegions  = new Map();
+        _resetCallbacks.forEach(cb => cb());
+    },
     _dispatchReprocessResult: (n, h, r, s)  => _reprocessResultCallbacks.forEach(cb => cb(n, h, r, s)),
     _dispatchReprocessError:  (n, e)        => _reprocessErrorCallbacks.forEach(cb => cb(n, e)),
 };
