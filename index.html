@@ -791,7 +791,7 @@
         function openProWaitlist(featureSlug, subtitle) {
             var copy = subtitle || PDF_PRO_COPY[featureSlug] || 'This is a Pro feature. Join the waitlist to get early access when Pro launches.';
             if (window.parent !== window) {
-                window.parent.postMessage({ type: 'gx:pro-gate-click', featureSlug: featureSlug, subtitle: copy }, '*');
+                window.parent.postMessage({ type: 'gx:pro-gate-click', featureSlug: featureSlug, subtitle: copy }, window.location.origin);
             } else if (window.GxModals) {
                 window.GxModals.open('pro_waitlist', { featureSlug: featureSlug, subtitle: copy });
             }
@@ -819,7 +819,7 @@
             if (!sendBtn) return;
             sendBtn.addEventListener('click', function () {
                 if (window.parent !== window) {
-                    window.parent.postMessage({ type: 'gx:open-ipc-panel' }, '*');
+                    window.parent.postMessage({ type: 'gx:open-ipc-panel' }, window.location.origin);
                 } else {
                     openProWaitlist('ipc-cross-tool', 'Send extracted tables to TAFNE or vector regions to Schema Editor. Cross-tool flow is a Pro feature.');
                 }
