@@ -113,19 +113,23 @@ function _renderAnalyzeStandaloneCTA() {
     container.innerHTML = `
         <div class="gx-analyze-cta" style="
             display:flex;flex-direction:column;align-items:center;justify-content:center;
-            gap:16px;padding:48px 24px;text-align:center;max-width:420px;margin:0 auto;
+            gap:16px;padding:48px 24px;text-align:center;max-width:400px;margin:0 auto;
         ">
-            <div style="font-size:1.2rem;font-weight:600;color:var(--text-primary,#f1f5f9)">
-                Analyze — Pro Feature
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.5" style="opacity:0.9">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+            </svg>
+            <div style="font-size:1.05rem;font-weight:600;color:var(--text-tertiary,#f1f5f9)">
+                See inside your PDF
             </div>
-            <div style="font-size:0.875rem;color:var(--text-secondary,#94a3b8);line-height:1.6">
-                The Analyze tab includes the geometry canvas, region overlay, and
-                pipeline threshold sliders. Open this tool inside Ginexys to access it.
+            <div style="font-size:0.85rem;color:var(--text-secondary,#94a3b8);line-height:1.65">
+                Analyze shows the geometry canvas, region overlays, and pipeline controls —
+                the full structural view of your document. Available inside the Ginexys platform.
             </div>
-            <a href="https://ginexys.com/app/pdf/analyze" class="gx-btn-gold" style="
+            <a href="https://ginexys.com/app/pdf/analyze" style="
                 display:inline-block;padding:10px 24px;border-radius:6px;
                 background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;
-                font-size:0.875rem;font-weight:600;text-decoration:none;margin-top:4px;
+                font-size:0.85rem;font-weight:600;text-decoration:none;margin-top:4px;
             ">Open in Ginexys</a>
         </div>
     `;
