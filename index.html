@@ -530,73 +530,75 @@
                 <button class="analyze-guide-close" id="analyze-guide-close" aria-label="Close guide">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
-                <h3 class="agd-title">Analyze Panel — Quick Guide</h3>
+                <h3 class="agd-title">Quick Guide</h3>
 
+                <!-- Tools -->
                 <div class="agd-section">
-                    <div class="agd-section-title">What you're looking at</div>
-                    <p class="agd-p">The canvas shows a structural X-ray of your PDF page. Coloured overlays are geometry layers (lines, rectangles, text positions) detected by the pipeline — not visual rendering.</p>
+                    <div class="agd-section-title">Tools</div>
+                    <div class="agd-tool-card">
+                        <div class="agd-tool-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="8 7 12 3 16 7"/><polyline points="8 17 12 21 16 17"/></svg>
+                        </div>
+                        <div class="agd-tool-body">
+                            <span class="agd-tool-name">Col split</span>
+                            <span class="agd-tool-desc">Click canvas → drop a column boundary. Drag to move, double-click to remove. Forces splits the auto-detector missed.</span>
+                        </div>
+                    </div>
+                    <div class="agd-tool-card">
+                        <div class="agd-tool-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-7 2-2 7z"/></svg>
+                        </div>
+                        <div class="agd-tool-body">
+                            <span class="agd-tool-name">Select</span>
+                            <span class="agd-tool-desc">Click a region to select. Drag to move, drag handles to resize. Double-click empty space to create a new region.</span>
+                            <div class="agd-kbd-row">
+                                <span class="agd-kbd">L</span><span class="agd-kbd-label">Lattice</span>
+                                <span class="agd-kbd">S</span><span class="agd-kbd-label">Stream</span>
+                                <span class="agd-kbd">P</span><span class="agd-kbd-label">Para</span>
+                                <span class="agd-kbd">H</span><span class="agd-kbd-label">Heading</span>
+                                <span class="agd-kbd">B</span><span class="agd-kbd-label">Box</span>
+                                <span class="agd-kbd">⌫</span><span class="agd-kbd-label">Skip</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="agd-tool-card">
+                        <div class="agd-tool-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                        </div>
+                        <div class="agd-tool-body">
+                            <span class="agd-tool-name">Re-extract page</span>
+                            <span class="agd-tool-desc">Reruns the pipeline with current slider values and visible regions. Result updates the Extract tab immediately.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Legend toggles -->
+                <div class="agd-section">
+                    <div class="agd-section-title">Legend toggles</div>
+                    <p class="agd-p">Click any chip to hide that layer or region type. Hidden regions are also skipped on the next re-extraction.</p>
                     <div class="agd-chips">
-                        <span class="agd-chip" style="--cc:#3b82f6">H segs — horizontal rule lines</span>
-                        <span class="agd-chip" style="--cc:#10b981">V segs — vertical rule lines</span>
-                        <span class="agd-chip" style="--cc:#f97316">Rects — closed border boxes</span>
-                        <span class="agd-chip" style="--cc:#ef4444">Images — raster/vector image bounds</span>
-                        <span class="agd-chip" style="--cc:#e879f9">Text dots — baseline anchor points</span>
+                        <span class="agd-chip" style="--cc:#3b82f6">H segs</span>
+                        <span class="agd-chip" style="--cc:#10b981">V segs</span>
+                        <span class="agd-chip" style="--cc:#f97316">Rects</span>
+                        <span class="agd-chip" style="--cc:#ef4444">Images</span>
+                        <span class="agd-chip" style="--cc:#e879f9">Text</span>
+                        <span class="agd-chip" style="--cc:#2563eb">Lattice</span>
+                        <span class="agd-chip" style="--cc:#06b6d4">Stream</span>
+                        <span class="agd-chip" style="--cc:#8b5cf6">Heading</span>
+                        <span class="agd-chip" style="--cc:#6b7280">Para</span>
                     </div>
                 </div>
 
+                <!-- Sliders -->
                 <div class="agd-section">
-                    <div class="agd-section-title">Region types</div>
-                    <p class="agd-p">After Re-extract, the pipeline labels content blocks. Toggle any region type in the legend to hide it from both the canvas and the next re-extraction.</p>
-                    <div class="agd-chips">
-                        <span class="agd-chip" style="--cc:#2563eb">Lattice — table with visible grid lines</span>
-                        <span class="agd-chip" style="--cc:#06b6d4">Stream — table detected by whitespace alignment</span>
-                        <span class="agd-chip" style="--cc:#8b5cf6">Heading — section title</span>
-                        <span class="agd-chip" style="--cc:#6b7280">Para — paragraph text block</span>
-                        <span class="agd-chip" style="--cc:#f97316">Box — bordered content region</span>
-                        <span class="agd-chip" style="--cc:#f59e0b">Header / Footer — page margins</span>
+                    <div class="agd-section-title">Sliders</div>
+                    <p class="agd-p agd-tip">Drag any slider — a ghost overlay appears on the canvas showing exactly what changes.</p>
+                    <div class="agd-slider-guide">
+                        <div class="agd-sg-row"><span class="agd-sg-key">Y-band</span><span class="agd-sg-val">Vertical tolerance for grouping text into the same line. ↑ for skewed PDFs.</span></div>
+                        <div class="agd-sg-row"><span class="agd-sg-key">Para gap</span><span class="agd-sg-val">Gap needed to split paragraphs. ↑ if paragraphs merge, ↓ if lines split.</span></div>
+                        <div class="agd-sg-row"><span class="agd-sg-key">Col gap</span><span class="agd-sg-val">Whitespace width to detect a column split. ↑ for dense multi-column layouts.</span></div>
+                        <div class="agd-sg-row"><span class="agd-sg-key">Stream conf</span><span class="agd-sg-val">Threshold for whitespace-detected tables. ↓ catches more tables, may add false positives.</span></div>
                     </div>
-                </div>
-
-                <div class="agd-section">
-                    <div class="agd-section-title">Pipeline threshold sliders</div>
-                    <div class="agd-rows">
-                        <div class="agd-row"><span class="agd-key">Min confidence</span><span class="agd-val">Hide low-confidence regions on the canvas. Does not affect extraction — visual filter only.</span></div>
-                        <div class="agd-row"><span class="agd-key">Y-band tol</span><span class="agd-val">How much vertical drift is allowed before two text items are considered different lines. Increase for skewed PDFs.</span></div>
-                        <div class="agd-row"><span class="agd-key">Para gap</span><span class="agd-val">Minimum vertical gap to split two paragraphs. Increase if paragraphs are merging; decrease if lines are splitting.</span></div>
-                        <div class="agd-row"><span class="agd-key">Col gap</span><span class="agd-val">Minimum whitespace width to detect a column boundary. Increase for dense two-column PDFs.</span></div>
-                        <div class="agd-row"><span class="agd-key">Stream conf</span><span class="agd-val">Confidence threshold for accepting a stream table. Lower = more aggressive table detection; may increase false positives.</span></div>
-                    </div>
-                    <p class="agd-p agd-tip">Drag a slider to see a ghost overlay on the canvas showing exactly what that threshold affects on the current page.</p>
-                </div>
-
-                <div class="agd-section">
-                    <div class="agd-section-title">Col split tool</div>
-                    <p class="agd-p">Click on the canvas to drop a vertical column split guide. The pipeline uses these to force column boundaries the auto-detector missed. Drag to reposition, double-click to remove.</p>
-                </div>
-
-                <div class="agd-section">
-                    <div class="agd-section-title">Select tool</div>
-                    <p class="agd-p">Click a region box to select it. Drag to move, drag a corner/edge handle to resize. Double-click empty canvas space to draw a new custom region.</p>
-                    <div class="agd-rows">
-                        <div class="agd-row"><span class="agd-key agd-key--kbd">L</span><span class="agd-val">Reclassify as Lattice Table</span></div>
-                        <div class="agd-row"><span class="agd-key agd-key--kbd">S / T</span><span class="agd-val">Reclassify as Stream Table</span></div>
-                        <div class="agd-row"><span class="agd-key agd-key--kbd">P</span><span class="agd-val">Reclassify as Paragraph</span></div>
-                        <div class="agd-row"><span class="agd-key agd-key--kbd">H</span><span class="agd-val">Reclassify as Heading</span></div>
-                        <div class="agd-row"><span class="agd-key agd-key--kbd">B</span><span class="agd-val">Reclassify as Box</span></div>
-                        <div class="agd-row"><span class="agd-key agd-key--kbd">Del / ⌫</span><span class="agd-val">Mark region as skipped (shown strikethrough)</span></div>
-                    </div>
-                </div>
-
-                <div class="agd-section">
-                    <div class="agd-section-title">Workflow</div>
-                    <ol class="agd-ol">
-                        <li>Load a PDF — the canvas auto-populates with geometry layers.</li>
-                        <li>Hit <strong>Re-extract page</strong> to run the pipeline and see region overlays.</li>
-                        <li>Adjust sliders and toggle regions to tune the pipeline for this page.</li>
-                        <li>Use Col split or Select to fix any remaining layout errors.</li>
-                        <li>Hit Re-extract again — changes apply immediately to the HTML output.</li>
-                        <li>Switch to the <strong>Extract</strong> tab to see the final HTML and export.</li>
-                    </ol>
                 </div>
             </div>
 

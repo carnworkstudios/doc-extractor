@@ -708,6 +708,7 @@ body {
 .view-panel {
   display: none;
   flex: 1;
+  width: 100%;
   overflow: hidden;
   min-height: 0;
 }
@@ -2067,37 +2068,99 @@ body {
   white-space: nowrap;
 }
 
-.agd-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.agd-row  { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; }
+/* ── Guide tool cards ────────────────────────────────────────────────────── */
+.agd-tool-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.agd-tool-card:last-child { border-bottom: none; }
 
-.agd-key {
+.agd-tool-icon {
   flex-shrink: 0;
-  min-width: 90px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.agd-tool-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.agd-tool-name {
+  font-size: 12px;
   font-weight: 600;
   color: var(--text);
 }
-.agd-key--kbd {
-  min-width: 60px;
-  font-family: ui-monospace, 'Cascadia Code', monospace;
-  font-size: 11px;
-  background: var(--bg);
-  border: 1px solid var(--border-dark);
-  border-radius: 4px;
-  padding: 1px 7px;
-  text-align: center;
-  line-height: 1.8;
-}
-.agd-val { color: var(--text-muted); line-height: 1.5; flex: 1; }
 
-.agd-ol {
-  font-size: 12px;
-  line-height: 1.7;
+.agd-tool-desc {
+  font-size: 11px;
   color: var(--text-muted);
-  padding-left: 18px;
-  margin: 8px 0 0;
+  line-height: 1.5;
 }
-.agd-ol li { margin-bottom: 4px; }
-.agd-ol strong { color: var(--text); }
+
+/* Keyboard shortcut row inside a tool card */
+.agd-kbd-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-top: 5px;
+}
+
+.agd-kbd {
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  font-size: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border-dark, var(--border));
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: var(--text);
+  line-height: 1.7;
+}
+
+.agd-kbd-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+
+/* Slider guide rows */
+.agd-slider-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.agd-sg-row {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.agd-sg-key {
+  flex-shrink: 0;
+  width: 72px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.agd-sg-val {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
 
 /* ── Responsive analyze panel ────────────────────────────────────────────── */
 @media (max-width: 640px) {
@@ -2114,27 +2177,35 @@ body {
     position: relative;
   }
 
-  /* Stats panel becomes a bottom sheet */
+  /* Stats panel: fixed overlay bottom sheet — does not push canvas */
   .analyze-stats-wrap {
-    position: absolute;
+    position: fixed;
     bottom: 0; left: 0; right: 0;
     width: 100% !important;
-    max-height: 55vh;
+    max-height: 60vh;
     overflow-y: auto;
-    border-top: 1px solid var(--border);
+    border-top: 2px solid var(--border);
     border-right: none;
     background: var(--surface);
-    box-shadow: 0 -4px 16px rgba(0,0,0,0.14);
-    z-index: 10;
+    box-shadow: 0 -6px 24px rgba(0,0,0,0.18);
+    z-index: 200;
     transform: translateY(100%);
     transition: transform 0.22s ease;
-    padding: 12px 16px 24px;
+    padding: 12px 16px 32px;
   }
   .analyze-stats-wrap.is-open {
     transform: translateY(0);
   }
+  /* Backdrop — tapping outside closes the drawer */
+  .analyze-stats-wrap.is-open::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    bottom: 100%;
+    background: rgba(0,0,0,0.3);
+    z-index: -1;
+  }
 
-  /* Tighter canvas wrap when stats panel not visible */
   .analyze-canvas-wrap {
     border-right: none;
     flex: 1;
