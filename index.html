@@ -164,6 +164,8 @@
     <link rel="stylesheet" href="/assets/css/ginexys-modals-tokens.css">
     <link rel="stylesheet" href="/assets/css/ginexys-modals.css">
     <script src="/assets/js/ginexys-modals.js" defer></script>
+    <script src="/assets/js/ginexys-auth.js" defer></script>
+    <script src="/assets/js/ginexys-gate.js" defer></script>
 </head>
 
 <body>
@@ -821,6 +823,17 @@
                 }
             });
         })();
+
+        // Export auth gate — fires on the main export button
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.GxGate) {
+                GxGate.init({
+                    toolKey: 'pdf_export_count',
+                    repo: 'carnworkstudios/doc-extractor',
+                    triggerIds: ['btn-export-main'],
+                });
+            }
+        });
     </script>
 
     <!-- ── VIEW CODE DIALOG ──────────────────────────────────────────────── -->
