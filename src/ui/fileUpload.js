@@ -173,6 +173,15 @@ export function initFileInputs() {
     if (window.CwsBridge?.isEmbedded) {
         window.CwsBridge.send('ginexys:pdf-ready', {});
         window.addEventListener('message', e => {
+            // MCP round-trip: extension host requests extracted text, reply with it
+            if (e.data?.__ginexys && e.data.type === 'ginexys:mcp-extract-text') {
+                const text = window.state?.pdf1?.extractedText ?? '';
+                window.CwsBridge.send('ginexys:mcp-reply', {
+                    requestId: e.data.requestId,
+                    payload: { text: text || null },
+                });
+                return;
+            }
             if (e.data?.type === 'ginexys:pdf-bytes') {
                 const { buffer, fileName, mode } = e.data.payload;
                 const name = fileName ?? 'document.pdf';

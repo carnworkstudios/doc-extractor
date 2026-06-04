@@ -105,7 +105,6 @@ function _tryInjectAnalyzePanel() {
     }
     if (window.CwsBridge && window.CwsBridge.isEmbedded) {
         // Inside VS Code webview — PdfEditorProvider injects analyzePanel.js via vsc-bridge.js.
-        // Nothing to do here; the extension handles injection after the webview signals ready.
         return;
     }
     // Standalone direct navigation — show a CTA card on the Analyze tab.
@@ -155,6 +154,7 @@ $(() => {
     initPDFEditMode();
     initHistoryController();
     _tryInjectAnalyzePanel();
+    _initMcpPill();
 
     // Sync toolbar to the default active tab (PDF) on first load
     syncToolbarToView('pdf');
@@ -163,3 +163,24 @@ $(() => {
     import('./ui/diffViewController.js').then(m => m.initDiffTabsAndLayout());
 });
 
+
+function _initMcpPill() {
+    var btn = document.getElementById('mcpPillBtn');
+    var popover = document.getElementById('mcpPopover');
+    if (!btn || !popover) return;
+    document.body.appendChild(popover);
+    btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var open = popover.classList.toggle('open');
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) {
+            var r = btn.getBoundingClientRect();
+            popover.style.top  = (r.bottom + 8) + 'px';
+            popover.style.left = Math.max(8, r.right - 340) + 'px';
+        }
+    });
+    document.addEventListener('click', function () {
+        popover.classList.remove('open');
+        btn.setAttribute('aria-expanded', 'false');
+    });
+}

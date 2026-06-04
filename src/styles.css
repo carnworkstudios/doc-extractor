@@ -127,6 +127,13 @@ body {
   display: flex;
   gap: 2px;
   margin-left: auto;
+  padding: 3px;
+  border-radius: 10px;
+  background: #495057; /* #616161 */
+  box-shadow:
+    inset 2px 2px 5px rgba(0, 0, 0, 0.12),
+    inset -1px -1px 3px rgba(255, 255, 255, 0.55);
+  flex-shrink: 0;
 }
 
 .tab-btn {
@@ -1081,7 +1088,7 @@ body {
   flex: 1;
   overflow: auto;
   padding: 0;
-  font-family: 'DM Mono', 'Fira Mono', monospace;
+  font-family: "DM Mono", "Fira Mono", monospace;
   font-size: 12.5px;
   line-height: 1.55;
 }
@@ -1093,10 +1100,18 @@ body {
   white-space: pre-wrap;
   word-break: break-all;
 }
-.diff-row--equal   { background: transparent; }
-.diff-row--remove  { background: rgba(239,68,68,0.10); }
-.diff-row--add     { background: rgba(34,197,94,0.10); }
-.diff-row--empty   { background: rgba(0,0,0,0.04); }
+.diff-row--equal {
+  background: transparent;
+}
+.diff-row--remove {
+  background: rgba(239, 68, 68, 0.1);
+}
+.diff-row--add {
+  background: rgba(34, 197, 94, 0.1);
+}
+.diff-row--empty {
+  background: rgba(0, 0, 0, 0.04);
+}
 
 .diff-gutter {
   display: flex;
@@ -1117,8 +1132,12 @@ body {
   line-height: 1.55;
   opacity: 0.6;
 }
-.diff-lineno--left  { min-width: 30px; }
-.diff-lineno--right { min-width: 30px; }
+.diff-lineno--left {
+  min-width: 30px;
+}
+.diff-lineno--right {
+  min-width: 30px;
+}
 
 .diff-glyph {
   font-size: 11px;
@@ -1127,8 +1146,12 @@ body {
   text-align: center;
   flex-shrink: 0;
 }
-.diff-row--remove .diff-glyph { color: #ef4444; }
-.diff-row--add    .diff-glyph { color: #22c55e; }
+.diff-row--remove .diff-glyph {
+  color: #ef4444;
+}
+.diff-row--add .diff-glyph {
+  color: #22c55e;
+}
 
 .diff-line {
   flex: 1;
@@ -1139,13 +1162,13 @@ body {
 
 /* Inline word/char marks */
 mark.diff-inline-remove {
-  background: rgba(239,68,68,0.35);
+  background: rgba(239, 68, 68, 0.35);
   color: inherit;
   border-radius: 2px;
   padding: 0 1px;
 }
 mark.diff-inline-add {
-  background: rgba(34,197,94,0.35);
+  background: rgba(34, 197, 94, 0.35);
   color: inherit;
   border-radius: 2px;
   padding: 0 1px;
@@ -1517,10 +1540,12 @@ mark.diff-inline-add {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
   z-index: 10;
   transform: translateX(calc(100% + 12px));
-  transition: transform 0.2s ease, opacity 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease;
   opacity: 0;
   pointer-events: none;
 }
@@ -1905,7 +1930,9 @@ mark.diff-inline-add {
   overflow-x: auto;
   scrollbar-width: none;
 }
-.analyze-toolbar::-webkit-scrollbar { display: none; }
+.analyze-toolbar::-webkit-scrollbar {
+  display: none;
+}
 
 .analyze-toolbar-nav {
   display: flex;
@@ -1941,7 +1968,10 @@ mark.diff-inline-add {
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
   white-space: nowrap;
 }
 
@@ -2029,7 +2059,7 @@ mark.diff-inline-add {
 /* Ghost overlay indicator shown while dragging a slider */
 .analyze-ghost-label {
   position: absolute;
-  background: rgba(0,0,0,0.72);
+  background: rgba(0, 0, 0, 0.72);
   color: #fff;
   font-size: 10px;
   font-weight: 600;
@@ -2053,12 +2083,20 @@ mark.diff-inline-add {
 }
 
 /* ── Toolbar label variants ───────────────────────────────────────────────── */
-.atb-label-short { display: none; }
-.atb-label-full  { display: inline; }
+.atb-label-short {
+  display: none;
+}
+.atb-label-full {
+  display: inline;
+}
 
 /* Desktop-only / mobile-only toolbar items */
-.atb-mobile-only { display: none; }
-.atb-desktop-only { display: inline-flex; }
+.atb-mobile-only {
+  display: none;
+}
+.atb-desktop-only {
+  display: inline-flex;
+}
 
 /* ── Stats panel: desktop overlay FAB, mobile bottom sheet ──────────────── */
 /* Collapsed/open toggled by .is-open via the Controls button in the toolbar. */
@@ -2066,7 +2104,9 @@ mark.diff-inline-add {
 /* ── User guide panel ────────────────────────────────────────────────────── */
 .analyze-guide-panel {
   position: absolute;
-  top: 0; right: 0; bottom: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
   width: 360px;
   max-width: 100%;
   background: var(--surface);
@@ -2074,19 +2114,28 @@ mark.diff-inline-add {
   overflow-y: auto;
   padding: 20px 20px 32px;
   z-index: 20;
-  box-shadow: -4px 0 16px rgba(0,0,0,0.12);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.12);
   animation: agd-slide-in 0.2s ease;
 }
-.analyze-guide-panel[hidden] { display: none; }
+.analyze-guide-panel[hidden] {
+  display: none;
+}
 
 @keyframes agd-slide-in {
-  from { opacity: 0; transform: translateX(16px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .analyze-guide-close {
   position: absolute;
-  top: 12px; right: 12px;
+  top: 12px;
+  right: 12px;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -2097,7 +2146,10 @@ mark.diff-inline-add {
   align-items: center;
   justify-content: center;
 }
-.analyze-guide-close:hover { background: var(--bg); color: var(--text); }
+.analyze-guide-close:hover {
+  background: var(--bg);
+  color: var(--text);
+}
 
 .agd-title {
   font-size: 14px;
@@ -2112,7 +2164,10 @@ mark.diff-inline-add {
   padding-bottom: 20px;
   border-bottom: 1px solid var(--border);
 }
-.agd-section:last-child { border-bottom: none; margin-bottom: 0; }
+.agd-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
 
 .agd-section-title {
   font-size: 11px;
@@ -2129,7 +2184,9 @@ mark.diff-inline-add {
   color: var(--text-secondary, var(--text-muted));
   margin: 0 0 8px;
 }
-.agd-p:last-child { margin-bottom: 0; }
+.agd-p:last-child {
+  margin-bottom: 0;
+}
 
 .agd-tip {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
@@ -2163,7 +2220,9 @@ mark.diff-inline-add {
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
 }
-.agd-tool-card:last-child { border-bottom: none; }
+.agd-tool-card:last-child {
+  border-bottom: none;
+}
 
 .agd-tool-icon {
   flex-shrink: 0;
@@ -2207,7 +2266,7 @@ mark.diff-inline-add {
 }
 
 .agd-kbd {
-  font-family: ui-monospace, 'Cascadia Code', monospace;
+  font-family: ui-monospace, "Cascadia Code", monospace;
   font-size: 10px;
   background: var(--bg);
   border: 1px solid var(--border-dark, var(--border));
@@ -2252,11 +2311,21 @@ mark.diff-inline-add {
 /* ── Responsive analyze panel ────────────────────────────────────────────── */
 @media (max-width: 640px) {
   /* Toolbar: hide desktop-only buttons, show mobile ones */
-  .atb-desktop-only { display: none !important; }
-  .atb-mobile-only  { display: inline-flex !important; }
-  .atb-label-full   { display: none; }
-  .atb-label-short  { display: inline; }
-  .atb-sep-desktop  { display: none; }
+  .atb-desktop-only {
+    display: none !important;
+  }
+  .atb-mobile-only {
+    display: inline-flex !important;
+  }
+  .atb-label-full {
+    display: none;
+  }
+  .atb-label-short {
+    display: inline;
+  }
+  .atb-sep-desktop {
+    display: none;
+  }
 
   /* Body stacks canvas on top, stats hidden by default */
   .analyze-body {
@@ -2267,14 +2336,16 @@ mark.diff-inline-add {
   /* Stats panel: fixed overlay bottom sheet — does not push canvas */
   .analyze-stats-wrap {
     position: fixed;
-    bottom: 0; left: 0; right: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
     width: 100% !important;
     max-height: 60vh;
     overflow-y: auto;
     border-top: 2px solid var(--border);
     border-right: none;
     background: var(--surface);
-    box-shadow: 0 -6px 24px rgba(0,0,0,0.18);
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.18);
     z-index: 200;
     transform: translateY(100%);
     transition: transform 0.22s ease;
@@ -2285,11 +2356,11 @@ mark.diff-inline-add {
   }
   /* Backdrop — tapping outside closes the drawer */
   .analyze-stats-wrap.is-open::before {
-    content: '';
+    content: "";
     position: fixed;
     inset: 0;
     bottom: 100%;
-    background: rgba(0,0,0,0.3);
+    background: rgba(0, 0, 0, 0.3);
     z-index: -1;
   }
 
@@ -2313,20 +2384,137 @@ mark.diff-inline-add {
     width: 100%;
     border-left: none;
     border-top: 1px solid var(--border);
-    box-shadow: 0 -4px 16px rgba(0,0,0,0.14);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.14);
     top: auto;
     bottom: 0;
     height: 72vh;
     animation: agd-slide-up 0.22s ease;
   }
   @keyframes agd-slide-up {
-    from { opacity: 0; transform: translateY(16px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 }
 
 @media (min-width: 641px) and (max-width: 1024px) {
   /* Tablet: toolbar buttons visible but tighter */
-  .atb-label-full  { display: none; }
-  .atb-label-short { display: inline; }
+  .atb-label-full {
+    display: none;
+  }
+  .atb-label-short {
+    display: inline;
+  }
+}
+
+/* ── MCP Pill ──────────────────────────────────────────────────────────── */
+.gx-mcp-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary, #888);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+  user-select: none;
+}
+.gx-mcp-pill:hover {
+  border-color: var(--accent, #4fa8f5);
+  color: var(--accent, #4fa8f5);
+}
+.gx-mcp-pill svg {
+  flex-shrink: 0;
+}
+
+.gx-mcp-popover {
+  display: none;
+  position: fixed;
+  z-index: 99999;
+  min-width: 280px;
+  max-width: 340px;
+  background: var(--surface-overlay, #1e1e2e);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+  padding: 14px 16px;
+  color: var(--text-primary, #e0e0e0);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.gx-mcp-popover.open {
+  display: block;
+}
+.gx-mcp-popover-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary, #888);
+  margin-bottom: 10px;
+}
+.gx-mcp-popover-ref {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-base, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: monospace;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+.gx-mcp-popover-ref button {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  color: var(--text-secondary, #888);
+  border-radius: 4px;
+}
+.gx-mcp-popover-ref button:hover {
+  color: var(--accent, #4fa8f5);
+}
+.gx-mcp-popover-sample {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+  margin-bottom: 4px;
+}
+.gx-mcp-popover-sample code {
+  display: block;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--surface-base, rgba(0, 0, 0, 0.2));
+  border-radius: 5px;
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-primary, #e0e0e0);
+  word-break: break-word;
+}
+.gx-mcp-popover-docs {
+  margin-top: 10px;
+  font-size: 11px;
+  text-align: right;
+}
+.gx-mcp-popover-docs a {
+  color: var(--accent, #4fa8f5);
+  text-decoration: none;
+}
+.gx-mcp-pill-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
 }

@@ -228,6 +228,30 @@
         </nav>
 
         <div class="header-right">
+            <!-- MCP Pill (VS Code only) -->
+            <div class="gx-mcp-pill-wrap" id="mcpPillWrap">
+                <button class="gx-mcp-pill" id="mcpPillBtn" aria-label="Use with Copilot" aria-expanded="false">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/><path d="M12 8v4l3 3"/></svg>
+                    MCP
+                </button>
+                <div class="gx-mcp-popover" id="mcpPopover" role="tooltip">
+                    <div class="gx-mcp-popover-title">Use with Copilot</div>
+                    <div class="gx-mcp-popover-ref">
+                        <span>#ginexys_extract_pdf_text</span>
+                        <button title="Copy" onclick="navigator.clipboard.writeText('#ginexys_extract_pdf_text')">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        </button>
+                    </div>
+                    <div class="gx-mcp-popover-sample">
+                        Sample prompt:
+                        <code>#ginexys_extract_pdf_text extract all tables and write them to output.md</code>
+                    </div>
+                    <div class="gx-mcp-popover-docs">
+                        <a href="https://ginexys.com/docs#mcp-tools" target="_blank">Full MCP docs &rarr;</a>
+                    </div>
+                </div>
+            </div>
+
             <!-- Ginexys Send To -->
             <button id="pdfSendBtn" class="gx-tool-send-btn" title="Send to another Ginexys tool (Pro)">
                 <img src="/assets/images/Ginexys_Logo.png" width="18" height="18" alt="Ginexys" style="border-radius:50%;display:block;">
