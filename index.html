@@ -194,14 +194,14 @@
                 <span id="file1-name">Open File</span>
                 <input id="file1-input" type="file" accept="application/pdf,text/html,.html,text/markdown,.md" />
             </label>
-            <label class="file-btn file-btn--secondary" id="file2-label" title="Load second PDF to compare">
+            <label class="file-btn file-btn--secondary" id="file2-label" title="Load a second file to compare (PDF, HTML, Markdown)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <circle cx="12" cy="12" r="10" />
                     <line x1="12" y1="8" x2="12" y2="16" />
                     <line x1="8" y1="12" x2="16" y2="12" />
                 </svg>
-                <span id="file2-name">Compare PDF</span>
-                <input id="file2-input" type="file" accept="application/pdf" />
+                <span id="file2-name">Compare File</span>
+                <input id="file2-input" type="file" accept="application/pdf,text/html,.html,text/markdown,.md" />
             </label>
 
             <!-- AI Open Core Premium Features UI -->
@@ -377,8 +377,8 @@
     <div id="view-visual-diff" class="view-panel visual-diff-layout">
         <div class="vd-pane">
             <div class="vd-pane-header">
-                <span class="vd-label vd-label--pdf">PDF Original</span>
-                <span class="vd-hint">Rendered PDF with editable text overlay</span>
+                <span class="vd-label vd-label--pdf" id="vd-label-left">Original</span>
+                <span class="vd-hint" id="vd-hint-left">Rendered source with editable text overlay</span>
             </div>
             <div id="visual-diff-pdf" class="canvas-scroll"></div>
         </div>
@@ -494,11 +494,11 @@
                     </button>
                 </div>
                 <div class="analyze-toolbar-sep atb-sep-desktop"></div>
-                <button class="atb-btn atb-btn--label atb-desktop-only" id="analyze-col-split-tool" title="Click on the canvas to place a column split line. Drag to reposition, click ✕ to remove.">
+                <button class="atb-btn atb-btn--label" id="analyze-col-split-tool" title="Click on the canvas to place a column split line. Drag to reposition, click ✕ to remove.">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="8 7 12 3 16 7"/><polyline points="8 17 12 21 16 17"/></svg>
                     Col split
                 </button>
-                <button class="atb-btn atb-btn--label atb-desktop-only" id="analyze-select-tool" title="Select a region to inspect, resize, drag or reclassify" disabled>
+                <button class="atb-btn atb-btn--label" id="analyze-select-tool" title="Select a region to inspect, resize, drag or reclassify" disabled>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-7 2-2 7z"/></svg>
                     Select
                 </button>
@@ -512,8 +512,8 @@
                     Bulk extract
                     <span class="atb-pro-badge">PRO</span>
                 </button>
-                <!-- Mobile: stats drawer toggle -->
-                <button class="atb-btn atb-btn--label atb-mobile-only" id="analyze-stats-toggle" title="Pipeline controls &amp; stats" aria-expanded="false">
+                <!-- Stats / controls toggle (desktop FAB + mobile drawer) -->
+                <button class="atb-btn atb-btn--label" id="analyze-stats-toggle" title="Pipeline controls &amp; stats" aria-expanded="false">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
                     Controls
                 </button>

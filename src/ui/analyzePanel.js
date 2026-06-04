@@ -121,6 +121,26 @@ export function initAnalyzePanel(geoWorkerRef) {
     _wireSlider('analyze-colgap-slider',     'analyze-colgap-val',     v => { _scaleOverrides.R_COL_GAP_MIN = v; });
     _wireSlider('analyze-streamconf-slider', 'analyze-streamconf-val', v => { _scaleOverrides.STREAM_CONFIDENCE = v; });
 
+    // Stats/controls panel toggle (desktop overlay + mobile drawer)
+    const _statsToggleBtn = document.getElementById('analyze-stats-toggle');
+    const _statsWrap = document.querySelector('.analyze-stats-wrap');
+    if (_statsToggleBtn && _statsWrap) {
+        _statsToggleBtn.addEventListener('click', () => {
+            const open = _statsWrap.classList.toggle('is-open');
+            _statsToggleBtn.setAttribute('aria-expanded', String(open));
+        });
+        // Close when clicking outside the panel on desktop
+        document.addEventListener('click', (e) => {
+            if (_statsWrap.classList.contains('is-open') &&
+                !_statsWrap.contains(e.target) &&
+                e.target !== _statsToggleBtn &&
+                !_statsToggleBtn.contains(e.target)) {
+                _statsWrap.classList.remove('is-open');
+                _statsToggleBtn.setAttribute('aria-expanded', 'false');
+            }
+        });
+    }
+
     // Select Mode canvas tool
     document.getElementById('analyze-col-split-tool')?.addEventListener('click', _toggleColSplitTool);
     document.getElementById('analyze-select-tool')?.addEventListener('click', _toggleSelectMode);

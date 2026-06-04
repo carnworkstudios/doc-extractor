@@ -103,6 +103,11 @@ function _tryInjectAnalyzePanel() {
         // Nothing to do here; the shell fires on iframe 'load'.
         return;
     }
+    if (window.CwsBridge && window.CwsBridge.isEmbedded) {
+        // Inside VS Code webview — PdfEditorProvider injects analyzePanel.js via vsc-bridge.js.
+        // Nothing to do here; the extension handles injection after the webview signals ready.
+        return;
+    }
     // Standalone direct navigation — show a CTA card on the Analyze tab.
     _renderAnalyzeStandaloneCTA();
 }

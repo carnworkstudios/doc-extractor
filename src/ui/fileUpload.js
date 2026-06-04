@@ -160,27 +160,35 @@ export function initFileInputs() {
     });
 
     $('#file2-input').on('change', e => {
-        if (e.target.files[0]) handleFile(e.target.files[0], 2);
+        const file = e.target.files[0];
+        if (!file) return;
+        if (/\.(html?|md)$/i.test(file.name)) {
+            handleDocumentFile(file, 2);
+        } else {
+            handleFile(file, 2);
+        }
     });
 
-    // VS Code extension: signal ready then receive PDF bytes from extension host
+    // VS Code extension: signal ready then receive file bytes from extension host
     if (window.CwsBridge?.isEmbedded) {
         window.CwsBridge.send('ginexys:pdf-ready', {});
         window.addEventListener('message', e => {
             if (e.data?.type === 'ginexys:pdf-bytes') {
                 const { buffer, fileName, mode } = e.data.payload;
+                const name = fileName ?? 'document.pdf';
+                const isHtml = /\.html?$/i.test(name);
+                const mimeType = isHtml ? 'text/html' : 'application/pdf';
                 const bytes = new Uint8Array(buffer);
-                const blob = new Blob([bytes], { type: 'application/pdf' });
-                const file = new File([blob], fileName ?? 'document.pdf', { type: 'application/pdf' });
-                handleFile(file, 1).then(() => {
-                    if (mode) switchView(mode);
-                });
+                const blob = new Blob([bytes], { type: mimeType });
+                const file = new File([blob], name, { type: mimeType });
+                const process = isHtml ? handleDocumentFile(file) : handleFile(file, 1);
+                process.then(() => { if (mode) switchView(mode); });
             }
         });
     }
 }
 
-async function handleDocumentFile(file) {
+async function handleDocumentFile(file, slot = 1) {
     const text = await file.text();
     let html = text;
 
@@ -188,17 +196,39 @@ async function handleDocumentFile(file) {
         html = markdownToHtml(text);
     }
 
+    // For external HTML files, preserve <style> blocks so the document renders
+    // with its own styles. DOMPurify strips <style> by default.
+    // <link rel="stylesheet"> pointing to external URLs is intentionally not
+    // allowed -- it would load arbitrary third-party CSS into the tool page.
+    // Scripts remain blocked regardless.
     const clean = typeof DOMPurify !== 'undefined'
-        ? DOMPurify.sanitize(html, { ADD_TAGS: ['img'], ALLOW_DATA_ATTR: true })
+        ? DOMPurify.sanitize(html, {
+            ADD_TAGS: ['style'],
+            ALLOW_DATA_ATTR: true,
+            FORCE_BODY: false,
+          })
         : html;
 
-    state.pdf1.extractedHTML = clean;
-    state.pdf1.file = file;
-    $('#file1-name').text(file.name);
-    $('#file1-input').closest('.file-btn').addClass('loaded');
+    const pdfState = slot === 2 ? state.pdf2 : state.pdf1;
+    const label = slot === 2 ? 'file2' : 'file1';
+
+    pdfState.extractedHTML = clean;
+    pdfState.extractedText = clean.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    pdfState.file = file;
+    $(`#${label}-name`).text(file.name);
+    $(`#${label}-input`).closest('.file-btn').addClass('loaded');
+
+    if (slot === 2) {
+        // Slot 2 is compare-only — trigger diff refresh if slot 1 also has content
+        if (state.pdf1.extractedHTML) refreshCodeDiff();
+        _updateVisualDiffLabels();
+        showToast(`${file.name} loaded for compare`, 'success');
+        return;
+    }
 
     applyHtmlEverywhere(clean, null);
     switchView('html');
+    _updateVisualDiffLabels();
     showToast(`${file.name} loaded`, 'success');
 }
 
@@ -335,6 +365,7 @@ async function handleFile(file, pdfIndex) {
         const tableSuffix = data.source === 'local' && data.tableCount != null
             ? ` — ${data.tableCount} table${data.tableCount !== 1 ? 's' : ''} detected`
             : '';
+        _updateVisualDiffLabels();
         showToast(`PDF loaded via ${source}${tableSuffix}${warnSuffix}`, 'success');
         hideStatus();
 
@@ -360,6 +391,15 @@ export function populateHTMLPreview(html, containerId = 'html-preview') {
 }
 
 
+
+function _updateVisualDiffLabels() {
+    const f1 = state.pdf1.file?.name ?? '';
+    const f2 = state.pdf2.file?.name ?? '';
+    const labelEl = document.getElementById('vd-label-left');
+    const hintEl  = document.getElementById('vd-hint-left');
+    if (labelEl) labelEl.textContent = f1 || 'Original';
+    if (hintEl)  hintEl.textContent  = f2 ? `${f1 || 'Left'} vs ${f2}` : (f1 || 'Rendered source');
+}
 
 function refreshCodeDiff() {
     import('../ui/diffViewController.js').then(m => m.refreshCompareDiff());
