@@ -218,7 +218,8 @@ function mergeDashes(classifiedSubpaths, eps) {
             id: `sm_${id}_${mergeIdCounter++}`,
             x1, y1, x2, y2,
             strokeWidth: run.c.strokeWidth,
-            strokeColor: run.c.strokeColor
+            strokeColor: run.c.strokeColor,
+            srcType: 'DASH_RUN'
         });
     }
     
@@ -241,7 +242,8 @@ export function reconcile(subpaths, rawFilledRects, viewport) {
                 id: `s${c.id}_${segIdCounter++}`,
                 x1: s.ax, y1: s.ay, x2: s.bx, y2: s.by,
                 strokeWidth: c.strokeWidth,
-                strokeColor: c.strokeColor
+                strokeColor: c.strokeColor,
+                srcType: 'RECT'
             });
         }
     }
@@ -256,7 +258,9 @@ export function reconcile(subpaths, rawFilledRects, viewport) {
                     id: `s${c.id}_${segIdCounter++}`,
                     x1: s.ax, y1: s.ay, x2: s.bx, y2: s.by,
                     strokeWidth: c.strokeWidth,
-                    strokeColor: c.strokeColor
+                    strokeColor: c.strokeColor,
+                    srcType: c.type,
+                    srcSegCount: c.segsViewport.length
                 });
             }
         } else if (c.type === 'FREE_PATH' && c.segsViewport.length === 1) {
@@ -268,7 +272,9 @@ export function reconcile(subpaths, rawFilledRects, viewport) {
                     id: `s${c.id}_${segIdCounter++}`,
                     x1: s.ax, y1: s.ay, x2: s.bx, y2: s.by,
                     strokeWidth: c.strokeWidth,
-                    strokeColor: c.strokeColor
+                    strokeColor: c.strokeColor,
+                    srcType: c.type,
+                    srcSegCount: c.segsViewport.length
                 });
             }
         }

@@ -56,6 +56,72 @@ class OffscreenCanvasFactory {
 let _cachedBytes       = null;
 let _cachedFontRegistry = null;
 
+// Render the page once at 4× and crop every image-like area:
+//   - raster XObjects from imageMeta (keyed by meta.id)
+//   - vector line-art figure regions from the classifier (keyed by region.id)
+// Geometry pipeline uses scale 2.0; upRatio converts those bbox coords into
+// 4×-canvas pixel coords. Returns {} when OffscreenCanvas is unavailable.
+async function _extractPageImages(page, imageMeta, regions) {
+    const extractedImages = {};
+    const figureRegions = (regions || []).filter(r => r.vectorFigure && r.bbox && r.id);
+    if ((imageMeta.length === 0 && figureRegions.length === 0) ||
+        typeof OffscreenCanvas === 'undefined') {
+        return extractedImages;
+    }
+
+    const IMG_SCALE = 4.0;
+    const upRatio   = IMG_SCALE / 2.0;
+    try {
+        const imgViewport = page.getViewport({ scale: IMG_SCALE });
+        const cw = Math.round(imgViewport.width);
+        const ch = Math.round(imgViewport.height);
+        const pageCanvas = new OffscreenCanvas(cw, ch);
+        await page.render({
+            canvasContext: pageCanvas.getContext('2d'),
+            viewport: imgViewport,
+        }).promise;
+
+        const crops = [];
+        const seen = new Set();
+        for (const meta of imageMeta) {
+            if (seen.has(meta.id)) continue;
+            seen.add(meta.id);
+            crops.push({ id: meta.id, bbox: meta.bbox });
+        }
+        for (const fig of figureRegions) {
+            if (seen.has(fig.id)) continue;
+            seen.add(fig.id);
+            crops.push({ id: fig.id, bbox: fig.bbox });
+        }
+
+        for (const { id, bbox } of crops) {
+            const { x, y, w, h } = bbox;
+            const sx = Math.max(0, Math.round(x * upRatio));
+            const sy = Math.max(0, Math.round(y * upRatio));
+            const sw = Math.min(Math.round(w * upRatio), cw - sx);
+            const sh = Math.min(Math.round(h * upRatio), ch - sy);
+            if (sw < 4 || sh < 4) continue;
+            try {
+                const crop = new OffscreenCanvas(sw, sh);
+                crop.getContext('2d').drawImage(pageCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+                const blob = await crop.convertToBlob({ type: 'image/png' });
+                const arr = new Uint8Array(await blob.arrayBuffer());
+                let binary = '';
+                for (let b = 0; b < arr.length; b += 8192) {
+                    binary += String.fromCharCode(...arr.subarray(b, b + 8192));
+                }
+                extractedImages[id] = {
+                    dataUrl: 'data:image/png;base64,' + btoa(binary),
+                    pw: sw,  // pixel width of the crop at IMG_SCALE
+                    ph: sh,  // pixel height of the crop at IMG_SCALE
+                };
+            } catch (_) { /* skip uncroppable region */ }
+        }
+    } catch (_) { /* render failed — no images for this page */ }
+
+    return extractedImages;
+}
+
 self.onmessage = async (e) => {
     if (e.data.type === 'cache-bytes') {
         _cachedBytes = e.data.bytes ? e.data.bytes.slice() : null;
@@ -103,71 +169,24 @@ self.onmessage = async (e) => {
             const { subpaths, imageMeta, filledRects: rawFilledRects } = extractSubpaths(opList, viewport, OPS);
             const { segments, filledRects } = reconcile(subpaths, rawFilledRects, viewport);
 
-            // ── Phase 1.5: Image extraction via high-res canvas render + crop ───
-            // Geometry pipeline uses scale 2.0; images get their own 4× render so
-            // crops aren't blurry when CSS-stretched to fill their container.
-            // upRatio converts 2.0-scale bbox coords into 4×-canvas pixel coords.
-            const IMG_SCALE = 4.0;
-            const upRatio   = IMG_SCALE / 2.0;
-            const extractedImages = {};
-            if (imageMeta.length > 0 && typeof OffscreenCanvas !== 'undefined') {
-                try {
-                    const imgViewport = page.getViewport({ scale: IMG_SCALE });
-                    const cw = Math.round(imgViewport.width);
-                    const ch = Math.round(imgViewport.height);
-                    const pageCanvas = new OffscreenCanvas(cw, ch);
-                    await page.render({
-                        canvasContext: pageCanvas.getContext('2d'),
-                        viewport: imgViewport,
-                    }).promise;
-
-                    const seen = new Set();
-                    for (const meta of imageMeta) {
-                        if (seen.has(meta.id)) continue;
-                        seen.add(meta.id);
-                        const { x, y, w, h } = meta.bbox;
-                        const sx = Math.max(0, Math.round(x * upRatio));
-                        const sy = Math.max(0, Math.round(y * upRatio));
-                        const sw = Math.min(Math.round(w * upRatio), cw - sx);
-                        const sh = Math.min(Math.round(h * upRatio), ch - sy);
-                        if (sw < 4 || sh < 4) continue;
-                        try {
-                            const crop = new OffscreenCanvas(sw, sh);
-                            crop.getContext('2d').drawImage(pageCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
-                            const blob = await crop.convertToBlob({ type: 'image/png' });
-                            const arr = new Uint8Array(await blob.arrayBuffer());
-                            let binary = '';
-                            for (let b = 0; b < arr.length; b += 8192) {
-                                binary += String.fromCharCode(...arr.subarray(b, b + 8192));
-                            }
-                            extractedImages[meta.id] = {
-                                dataUrl: 'data:image/png;base64,' + btoa(binary),
-                                pw: sw,  // pixel width of the crop at IMG_SCALE
-                                ph: sh,  // pixel height of the crop at IMG_SCALE
-                            };
-                        } catch (_) { /* skip uncroppable region */ }
-                    }
-                } catch (_) { /* render failed — no images for this page */ }
-            }
-
             // ── Phase 1.7: Font style map from commonObjs ────────────────────
-            // page.commonObjs is populated after render. Each font object exposes
-            // .italic (bool) and .name (string) reliably — far more accurate than
+            // getOperatorList() resolves fonts into page.commonObjs. Each font
+            // object exposes .italic/.bold and .name — far more accurate than
             // parsing the internal fontName strings from text items.
+            // Per-font try/catch: one unresolved font must not wipe the whole map.
             const fontStyleMap = {};
-            try {
-                const uniqueFontNames = [...new Set(textContent.items.map(i => i.fontName).filter(Boolean))];
-                for (const fn of uniqueFontNames) {
+            const uniqueFontNames = [...new Set(textContent.items.map(i => i.fontName).filter(Boolean))];
+            for (const fn of uniqueFontNames) {
+                try {
                     const obj = page.commonObjs.get(fn);
                     if (!obj) continue;
-                    const rawName = obj.name || fn;
-                    const cleaned = rawName.replace(/^[A-Z]{6}\+/, '');
+                    const cleaned = (obj.name || fn).replace(/^[A-Z]{6}\+/, '');
                     fontStyleMap[fn] = {
                         bold:   !!obj.bold || /bold|heavy|black/i.test(cleaned),
                         italic: !!obj.italic || /italic|oblique|slanted/i.test(cleaned),
                     };
-                }
-            } catch (_) {}
+                } catch (_) { /* font not resolved — fall back to name parsing downstream */ }
+            }
 
             // ── Phase 2: Region classification ───────────────────────────────
             const { regions, textMeta, columnSplits, rawSplits, scale } = classifyPage(
@@ -179,6 +198,12 @@ self.onmessage = async (e) => {
                 { filledRects, fontStyleMap, structTree: rawStructTree, OPS, _opList: opList }
             );
 
+            // ── Phase 2.5: Image + vector-figure extraction via 4× render ────
+            // Runs AFTER classification so vector line-art figures (diagrams the
+            // classifier detected from path segments) get cropped too, not just
+            // raster XObjects.
+            const extractedImages = await _extractPageImages(page, imageMeta, regions);
+
             // ── Phase 3+4: Scoped extraction + assembly ─────────────────────
             const result = assemblePage(
                 regions,
@@ -188,7 +213,7 @@ self.onmessage = async (e) => {
                 pageWidthPt,
                 p,
                 fontRegistry,
-                columnSplits,
+                rawSplits ?? columnSplits,
                 extractedImages
             );
 
@@ -262,45 +287,11 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
         const { subpaths, imageMeta, filledRects: rawFilledRects } = extractSubpaths(opList, viewport, OPS);
         const { segments, filledRects } = reconcile(subpaths, rawFilledRects, viewport);
 
-        // Image extraction
-        const IMG_SCALE = 4.0;
-        const upRatio   = IMG_SCALE / 2.0;
-        const extractedImages = {};
-        if (imageMeta.length > 0 && typeof OffscreenCanvas !== 'undefined') {
-            try {
-                const imgViewport = page.getViewport({ scale: IMG_SCALE });
-                const cw = Math.round(imgViewport.width);
-                const ch = Math.round(imgViewport.height);
-                const pageCanvas = new OffscreenCanvas(cw, ch);
-                await page.render({ canvasContext: pageCanvas.getContext('2d'), viewport: imgViewport }).promise;
-                const seen = new Set();
-                for (const meta of imageMeta) {
-                    if (seen.has(meta.id)) continue;
-                    seen.add(meta.id);
-                    const { x, y, w, h } = meta.bbox;
-                    const sx = Math.max(0, Math.round(x * upRatio));
-                    const sy = Math.max(0, Math.round(y * upRatio));
-                    const sw = Math.min(Math.round(w * upRatio), cw - sx);
-                    const sh = Math.min(Math.round(h * upRatio), ch - sy);
-                    if (sw < 4 || sh < 4) continue;
-                    try {
-                        const crop = new OffscreenCanvas(sw, sh);
-                        crop.getContext('2d').drawImage(pageCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
-                        const blob = await crop.convertToBlob({ type: 'image/png' });
-                        const arr  = new Uint8Array(await blob.arrayBuffer());
-                        let binary = '';
-                        for (let b = 0; b < arr.length; b += 8192) binary += String.fromCharCode(...arr.subarray(b, b + 8192));
-                        extractedImages[meta.id] = { dataUrl: 'data:image/png;base64,' + btoa(binary), pw: sw, ph: sh };
-                    } catch (_) {}
-                }
-            } catch (_) {}
-        }
-
-        // Font style map
+        // Font style map — per-font try/catch, same as the process path
         const fontStyleMap = {};
-        try {
-            const uniqueFontNames = [...new Set(textContent.items.map(i => i.fontName).filter(Boolean))];
-            for (const fn of uniqueFontNames) {
+        const uniqueFontNames = [...new Set(textContent.items.map(i => i.fontName).filter(Boolean))];
+        for (const fn of uniqueFontNames) {
+            try {
                 const obj = page.commonObjs.get(fn);
                 if (!obj) continue;
                 const cleaned = (obj.name || fn).replace(/^[A-Z]{6}\+/, '');
@@ -308,11 +299,11 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
                     bold:   !!obj.bold   || /bold|heavy|black/i.test(cleaned),
                     italic: !!obj.italic || /italic|oblique|slanted/i.test(cleaned),
                 };
-            }
-        } catch (_) {}
+            } catch (_) {}
+        }
 
         // Classify — pass skip set and scale overrides through opts
-        const { regions, textMeta, columnSplits, scale } = classifyPage(
+        const { regions, textMeta, columnSplits, rawSplits, scale } = classifyPage(
             segments,
             textContent.items,
             viewport,
@@ -328,6 +319,9 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
             },
         );
 
+        // Image + vector-figure crops (after classification, same as process path)
+        const extractedImages = await _extractPageImages(page, imageMeta, regions);
+
         const fontRegistry = _cachedFontRegistry ?? createFontRegistry();
         const result = assemblePage(
             regions,
@@ -337,7 +331,7 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
             pageWidthPt,
             pageNum,
             fontRegistry,
-            columnSplits,
+            rawSplits ?? columnSplits,
             extractedImages,
         );
 

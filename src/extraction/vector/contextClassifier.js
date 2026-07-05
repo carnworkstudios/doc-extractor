@@ -14,6 +14,7 @@ import { PageGraph } from './spatialGraph.js';
 import { detectPageColumns, splitByColumns } from './classifiers/columnSplitDetector.js';
 import { detectUnderlines } from './classifiers/underlineDetector.js';
 import { detectImageRegions, filterTableSegs } from './classifiers/imageRegionDetector.js';
+import { detectVectorFigures } from './classifiers/figureDetector.js';
 import { detectLatticeTables } from './classifiers/latticeDetector.js';
 import { detectStreamTableRegions } from './classifiers/streamTableDetector.js';
 import { detectBoxRegions } from './classifiers/boxDetector.js';
@@ -89,6 +90,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     }
 
     const tablePad = opts.tablePad ?? scale.tablePadPx;
+    const skip = opts.pipeline?.skip ?? new Set();
 
     // ── Tier 1: Structure tree (highest fidelity) ─────────────────────────────
     let structTableIndices = new Set();
@@ -124,8 +126,35 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
 
     // ── 3. Image regions + filtered segments ────────────────────────────────
     const { regions: imageRegions, imageBBoxes, isInsideImage } = detectImageRegions(imageMeta);
-    const tableSegs = filterTableSegs(segments, underlineSegIds, isInsideImage);
-    const regions = [...imageRegions];
+
+    // ── 3.5. Vector line-art figures (diagrams drawn as paths, not XObjects) ─
+    // Detected BEFORE lattice so a wiring diagram's wire runs can't be
+    // reconstructed into a bogus table grid. Their segments are excluded from
+    // the table pool and their label text is claimed for the figure.
+    const figureRegions = (!skip.has('IMAGE'))
+        ? detectVectorFigures(segments, textMeta, viewport, scale, isInsideImage)
+        : [];
+
+    const insideFigure = (x, y) => figureRegions.some(f =>
+        x >= f.bbox.x - 2 && x <= f.bbox.x + f.bbox.w + 2 &&
+        y >= f.bbox.y - 2 && y <= f.bbox.y + f.bbox.h + 2
+    );
+    const isInsideImageOrFigure = (x, y) => isInsideImage(x, y) || insideFigure(x, y);
+
+    // Raster images swallowed by a figure bbox are dropped: the figure crop
+    // renders the whole area, including the embedded raster content.
+    const keptImageRegions = imageRegions.filter(ir => {
+        if (!figureRegions.length) return true;
+        const b = ir.bbox;
+        return !figureRegions.some(f => {
+            const iw = Math.min(b.x + b.w, f.bbox.x + f.bbox.w) - Math.max(b.x, f.bbox.x);
+            const ih = Math.min(b.y + b.h, f.bbox.y + f.bbox.h) - Math.max(b.y, f.bbox.y);
+            return iw > 0 && ih > 0 && (iw * ih) / (b.w * b.h || 1) > 0.6;
+        });
+    });
+
+    const tableSegs = filterTableSegs(segments, underlineSegIds, isInsideImageOrFigure);
+    const regions = [...keptImageRegions, ...figureRegions];
 
     // ── 4. Build PageGraph (shared spatial context) ─────────────────────────
     const pageGraph = PageGraph.build(segments, textMeta, viewport, imageBBoxes, underlineSegIds);
@@ -278,7 +307,23 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     for (const idx of customClaimedTextIndices) {
         assignedTextIndices.add(idx);
     }
-    const skip = opts.pipeline?.skip ?? new Set();
+
+    // Claim figure label text: items whose center sits inside a vector figure
+    // belong to the figure crop, not to the paragraph flow.
+    if (figureRegions.length) {
+        for (const tm of textMeta) {
+            if (!tm.str.trim() || assignedTextIndices.has(tm.idx)) continue;
+            const cx = tm.vx + (tm.vWidth || 0) / 2;
+            const fig = figureRegions.find(f =>
+                cx >= f.bbox.x && cx <= f.bbox.x + f.bbox.w &&
+                tm.vy >= f.bbox.y && tm.vy <= f.bbox.y + f.bbox.h
+            );
+            if (fig) {
+                fig.textItemIndices.push(tm.idx);
+                assignedTextIndices.add(tm.idx);
+            }
+        }
+    }
 
     // ── 5. Lattice table regions ─────────────────────────────────────────────
     if (!skip.has('LATTICE_TABLE')) {
@@ -397,6 +442,11 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         if (fullWidthMeta0.length > 0) {
             const lines = _groupByYBand(fullWidthMeta0, scale.yBandTolPx);
             _classifyBucket(regions, lines, bodyFontSizePt0, scale, -1, skip);
+        }
+        // Divider detection — same post-classification pass as the automatic path
+        if (!skip.has('DIVIDER')) {
+            const dividerRegions0 = detectDividers(hSegs, underlineSegIds, textMeta, scale, viewport, regions);
+            for (const r of dividerRegions0) regions.push(r);
         }
         // Skip to header/footer detection and return
         if (opts._structRegions?.length) {
@@ -614,6 +664,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
 function _classifyBucket(regions, lines, bodyFontSizePt, scale, columnIndex, skip = new Set()) {
     let currentBlock = [];
     let currentType = null;
+    let lastMarkerX = null; // left edge of the most recent list-marker line
 
     for (let li = 0; li < lines.length; li++) {
         const line = lines[li];
@@ -630,9 +681,24 @@ function _classifyBucket(regions, lines, bodyFontSizePt, scale, columnIndex, ski
             lineType = headingType;
         } else if (listResult && !skip.has('LIST')) {
             lineType = listResult.type;
+            lastMarkerX = Math.min(...line.items.map(t => t.vx));
         } else {
             if (skip.has('PARAGRAPH')) continue; // skip means omit from output
             lineType = RegionType.PARAGRAPH;
+
+            // Wrapped list-item continuation: an unmarked line directly under a
+            // LIST block, indented past the marker column, belongs to the same
+            // list item — keep it in the LIST block instead of splitting a new
+            // paragraph region between every marker line. Compared against the
+            // marker line's X (not the previous line's) so multi-line wraps hold.
+            if (currentType === RegionType.LIST && !skip.has('LIST') &&
+                currentBlock.length && lastMarkerX !== null) {
+                const thisX = Math.min(...line.items.map(t => t.vx));
+                const closeGap = li > 0 && Math.abs(line.y - lines[li - 1].y) <= scale.paraGapPx;
+                if (closeGap && thisX > lastMarkerX + scale.S * 0.4) {
+                    lineType = RegionType.LIST;
+                }
+            }
         }
 
         const hasGap = li > 0 && Math.abs(line.y - lines[li - 1].y) > scale.paraGapPx;

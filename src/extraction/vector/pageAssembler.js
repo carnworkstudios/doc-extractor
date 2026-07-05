@@ -246,6 +246,13 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
     const textParts = [];
     let tableCount = 0;
 
+    // Accept both plain X numbers and {x, leftFraction} objects. Plain numbers
+    // previously made `splits[0]?.leftFraction` undefined, so every 2-col zone
+    // silently rendered 50/50 regardless of the real gutter position.
+    columnSplits = (columnSplits || []).map(s => (typeof s === 'number')
+        ? { x: s, leftFraction: viewport.width ? s / viewport.width : 0.5 }
+        : s);
+
     // Create PageScale early for adaptive thresholds throughout assembly
     const pageScale = textMeta.length > 0 ? new PageScale(textMeta, viewport) : null;
     const pageScaleOpts = pageScale ? { pageScale: pageScale.toJSON() } : {};
@@ -277,10 +284,23 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
     // persistence window.  A minimum zone height guard (10 body-text lines) keeps
     // Gate 3 active for caption bands and label clusters too short to trust.
     if (textMeta.length > 0 && pageScale) {
+        // Text already claimed by structural regions (tables, figures, boxes)
+        // must not feed zone-level column re-detection: table columns and
+        // figure labels form disjoint X clusters that read as phantom text
+        // columns.
+        const structurallyClaimed = new Set();
+        for (const r of regions) {
+            if (r.type === RegionType.LATTICE_TABLE || r.type === RegionType.STREAM_TABLE ||
+                r.type === RegionType.TABLE || r.type === RegionType.IMAGE ||
+                r.type === RegionType.BOX) {
+                for (const idx of (r.textItemIndices || [])) structurallyClaimed.add(idx);
+            }
+        }
         for (const zone of autoZones) {
             if (zone.cols > 1) continue; // page-level already found this split
             if (!zone.isFullWidth) continue; // classified as multi-col regions already — skip
-            const zoneItems = textMeta.filter(tm => tm.vy >= zone.y0 && tm.vy < zone.y1);
+            const zoneItems = textMeta.filter(tm =>
+                tm.vy >= zone.y0 && tm.vy < zone.y1 && !structurallyClaimed.has(tm.idx));
             if (zoneItems.length < 6) continue;
             const { splits: zoneSplits } = detectZoneColumns(zoneItems, viewport, pageScale);
             if (!zoneSplits.length) continue;
@@ -652,7 +672,8 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 // ── List builder ──────────────────────────────────────────────────────────────
 
 const BULLET_STRIP_RE = /^[•‣◦▪▫–—―·○o◦◉▪▫-]\s*/;
-const ORDERED_STRIP_RE = /^(?:\d{1,3}[.)]\s*|[a-zA-Z][.)]\s*|[ivxIVX]+[.)]\s*)/;
+// (?!\d) prevents decimal values ("0.5 amp") from being read as marker "0."
+const ORDERED_STRIP_RE = /^(?:\d{1,3}[.)](?!\d)\s*|[a-zA-Z][.)](?:\s+|$)|[ivxIVX]+[.)](?:\s+|$))/;
 
 // Inline-style helpers (mirrors textRebuilder without the module dependency)
 function _itemStyle(item) {
@@ -699,15 +720,28 @@ function _buildList(textItems, pageWidthPt, isOrdered) {
 
     const tag = isOrdered ? 'ol' : 'ul';
     const stripRe = isOrdered ? ORDERED_STRIP_RE : BULLET_STRIP_RE;
+    const markerRe = isOrdered ? ORDERED_STRIP_RE : BULLET_STRIP_RE;
 
-    const listItems = lines
-        .map(l => {
-            // Build styled spans per item then strip bullet marker from the first item
-            const styled = l.items.map((item, idx) => {
-                let str = item.str.trim();
-                if (idx === 0) str = str.replace(stripRe, '').trim();
-                return str ? _wrapStyle(str, _itemStyle(item)) : '';
-            }).filter(Boolean).join(' ');
+    // Group visual lines into list items: a line starting with a marker opens a
+    // new <li>; an unmarked line is the wrapped continuation of the current one.
+    // (One <li> per visual line split every wrapped item into fake siblings.)
+    const itemGroups = [];
+    for (const l of lines) {
+        const firstStr = (l.items[0]?.str || '').trimStart();
+        const startsNew = markerRe.test(firstStr) || !itemGroups.length;
+        if (startsNew) itemGroups.push([]);
+        itemGroups[itemGroups.length - 1].push(l);
+    }
+
+    const listItems = itemGroups
+        .map(group => {
+            const styled = group.flatMap((l, lineIdx) =>
+                l.items.map((item, idx) => {
+                    let str = item.str.trim();
+                    if (lineIdx === 0 && idx === 0) str = str.replace(stripRe, '').trim();
+                    return str ? _wrapStyle(str, _itemStyle(item)) : '';
+                })
+            ).filter(Boolean).join(' ');
             return styled ? `<li>${styled}</li>` : '';
         })
         .filter(Boolean);
@@ -750,7 +784,7 @@ function _buildStandaloneList(rawHtml, fontClass) {
         const plainText = content.replace(/<[^>]+>/g, '').trim();
         // Strip leading bullet/number prefix that was kept by _buildList in edge cases
         const stripped = content
-            .replace(/^(\s*(?:<[^>]+>\s*)*)(?:\d+[.)]\s*|[•‣◦▪▫–—―·○◦◉▪▫-]\s*)/, '$1');
+            .replace(/^(\s*(?:<[^>]+>\s*)*)(?:\d+[.)](?!\d)\s*|[•‣◦▪▫–—―·○◦◉▪▫-]\s*)/, '$1');
 
         // Detect nested items: lines inside the content that begin with an
         // indented bullet or numbered prefix (after any inline tags)

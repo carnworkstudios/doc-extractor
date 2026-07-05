@@ -70,9 +70,30 @@ export class LatticeReconstructor {
         // First try spatial clustering to find disjoint table regions
         const clusters = this._spatialCluster(this.segments);
         const results = [];
-        for (const cluster of clusters) {
+        const queue = [...clusters];
+        let guard = 0;
+        while (queue.length && guard++ < 40) {
+            const cluster = queue.shift();
             const lattice = this._reconstructFromSegments(cluster);
-            if (lattice) results.push(lattice);
+            if (!lattice) continue;
+
+            // Vertical-continuity check: in a real table, every band between two
+            // consecutive row lines is spanned by at least one vertical line (the
+            // outer border at minimum). A band no V line crosses means the grid is
+            // actually two stacked structures (stacked tables, or a table with an
+            // unrelated bordered box below) — split the cluster there and redo each
+            // half so rows AND columns are recomputed per structure.
+            const splitY = this._findRowDiscontinuity(lattice);
+            if (splitY !== null) {
+                const above = cluster.filter(s => (s.y1 + s.y2) / 2 < splitY);
+                const below = cluster.filter(s => (s.y1 + s.y2) / 2 >= splitY);
+                if (above.length >= 6 && below.length >= 6 &&
+                    above.length < cluster.length && below.length < cluster.length) {
+                    queue.push(above, below);
+                    continue;
+                }
+            }
+            results.push(lattice);
         }
         if (results.length) return results;
 
@@ -81,6 +102,38 @@ export class LatticeReconstructor {
         if (full) return [full];
 
         return [];
+    }
+
+    // Returns the Y midpoint of the first inter-row band not spanned by any
+    // merged vertical line, or null if the grid is vertically continuous.
+    // Page-frame / crop-mark lines (near-full page height) are excluded: they
+    // "span" every band and would mask every real structural break.
+    _findRowDiscontinuity(lattice) {
+        const { rows, vLines } = lattice;
+        if (!rows || rows.length < 3 || !vLines?.length) return null;
+        const eps = lattice.clusterEps ?? this.eps * 3;
+        const structural = this.pageHeight > 0
+            ? vLines.filter(v => (v.yMax - v.yMin) < this.pageHeight * 0.9)
+            : vLines;
+        if (!structural.length) return null;
+
+        // A break must be an OUTLIER gap, not just an unspanned band: zebra-striped
+        // borderless tables have no V line between any two stripe rows, but their
+        // row pitch is uniform. Only a band much taller than the table's own median
+        // row gap separates two independent structures.
+        const gaps = [];
+        for (let i = 0; i + 1 < rows.length; i++) gaps.push(rows[i + 1] - rows[i]);
+        const sortedGaps = [...gaps].sort((a, b) => a - b);
+        const medianGap = sortedGaps[Math.floor(sortedGaps.length / 2)] || 0;
+        const minBreak = Math.max(medianGap * 2, eps * 2);
+
+        for (let i = 0; i + 1 < rows.length; i++) {
+            const y0 = rows[i], y1 = rows[i + 1];
+            if (y1 - y0 <= minBreak) continue;
+            const spanned = structural.some(v => v.yMin <= y0 + eps && v.yMax >= y1 - eps);
+            if (!spanned) return (y0 + y1) / 2;
+        }
+        return null;
     }
 
     _reconstructFromSegments(segments) {

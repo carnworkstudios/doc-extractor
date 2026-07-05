@@ -218,5 +218,7 @@ export function splitByColumns(textMeta, splits) {
         }
     }
 
-    return buckets.filter(b => b.length > 0);
+    // Keep empty buckets: the caller uses the bucket's array position as the
+    // columnIndex, so filtering empties would shift every later column left.
+    return buckets;
 }

@@ -40,6 +40,11 @@ export function detectHeadersFooters(regions, textMeta, viewport, scale, filledR
         const nonSpaceLen = regionText.replace(/\s/g, '').length;
         if (nonSpaceLen < 2 && !patternMatch) continue;
 
+        // Running headers/footers are 1–2 short lines. A multi-line block or a
+        // long paragraph near the margin is body content, not page furniture.
+        const tooTall = r.bbox && r.bbox.h > scale.S * 3;
+        if (tooTall || nonSpaceLen > 200) continue;
+
         const inColoredBand = inTop
             ? headerBands.some(fr => r.bbox && r.bbox.y >= fr.y && r.bbox.y <= fr.y + fr.h)
             : footerBands.some(fr => r.bbox && (r.bbox.y + r.bbox.h) <= fr.y + fr.h && r.bbox.y >= fr.y);
