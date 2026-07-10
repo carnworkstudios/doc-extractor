@@ -629,27 +629,28 @@ body {
   border-color: var(--accent-dark);
 }
 
-/* Zone layout (mirrors .pdf-zone--cols-N from generateDocumentStyles) */
-.pdf-zone--cols-2 {
+/* Page-row model (mirrors generateDocumentStyles pdf-page-row rules) */
+.pdf-page-row {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: calc(var(--left-col, 0.5) * 100%) 1fr;
   column-gap: 20px;
 }
-.pdf-zone--cols-3 {
-  display: grid;
+.pdf-page-row--cols-1 {
+  display: block;
+}
+.pdf-page-row--cols-3 {
   grid-template-columns: repeat(3, 1fr);
   column-gap: 14px;
 }
-.pdf-zone--cols-4 {
-  display: grid;
+.pdf-page-row--cols-4 {
   grid-template-columns: repeat(4, 1fr);
   column-gap: 10px;
 }
-.pdf-zone--flex-center {
-  display: block;
-}
 .pdf-col {
   min-width: 0;
+}
+.pdf-col--full {
+  grid-column: 1 / -1;
 }
 .pdf-col--left {
   padding-right: 10px;
@@ -661,11 +662,13 @@ body {
 .pdf-col--right {
   padding-left: 10px;
 }
+/* Zone wrappers inside columns — kept for selectionMode / zoneToolbar */
+.pdf-zone--flex-center {
+  display: block;
+}
 
 @media (max-width: 720px) {
-  .pdf-zone--cols-2,
-  .pdf-zone--cols-3,
-  .pdf-zone--cols-4 {
+  .pdf-page-row {
     grid-template-columns: 1fr;
   }
 }
@@ -937,6 +940,43 @@ body {
   font-style: italic;
   pointer-events: none;
 }
+
+/* ── Safety admonition boxes (WARNING/CAUTION/NOTICE) ──────────────────────
+   Extracted-HTML preview styling to mirror the source's boxed admonitions.
+   Role variants override the generic blue-left-border box above. */
+.pdf-box--warning,
+.pdf-box--caution,
+.pdf-box--note,
+.pdf-box--tip {
+  border: 1.5px solid #111;
+  border-left-width: 1.5px;
+  border-radius: 3px;
+}
+.pdf-box--warning { background: #fff5f5; }
+.pdf-box--caution { background: #fffbe6; }
+.pdf-box--note    { background: #f0f8ff; }
+.pdf-box--tip     { background: #f4fff4; border-color: #107c10; }
+
+/* Banner header: black bar with icon + big centered label, matching the PDF. */
+.pdf-box:has(.pdf-box-banner) { padding: 0; overflow: hidden; }
+.pdf-box:has(.pdf-box-banner) > :not(.pdf-box-banner) { margin-left: 14px; margin-right: 14px; }
+.pdf-box:has(.pdf-box-banner) > :first-of-type:not(.pdf-box-banner) { margin-top: 10px; }
+.pdf-box:has(.pdf-box-banner) > :last-child { margin-bottom: 10px; }
+.pdf-box-banner {
+  background: #111;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: .06em;
+  font-size: 1.35em;
+  text-align: center;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-transform: uppercase;
+}
+.pdf-box-icon { font-size: 1.1em; line-height: 1; }
 
 /* ── Undo / Redo button disabled state ─────────────────────────────────── */
 #btn-undo[disabled],

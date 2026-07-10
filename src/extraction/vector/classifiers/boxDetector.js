@@ -91,6 +91,22 @@ export function detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale,
                 }
             }
 
+            // Banner detection: a short box whose text is dominated by a single
+            // role keyword in a large font (the black "! WARNING" / "! CAUTION"
+            // bar atop a safety admonition). Flagged so it can be merged with the
+            // bordered body box directly below and rendered as a styled header.
+            const bannerText = boxTextIndices
+                .map(i => textMeta[i].str.trim())
+                .filter(s => /^[A-Za-z]/.test(s))
+                .join(' ')
+                .toUpperCase();
+            const maxFont = boxTextIndices.reduce((m, i) =>
+                Math.max(m, textMeta[i].vFont || 0), 0);
+            const isBanner = boxRole !== 'generic'
+                && bannerText.length <= 12
+                && maxFont >= scale.S * 1.5
+                && bbox.h <= scale.S * 5;
+
             for (const idx of boxTextIndices) assignedTextIndices.add(idx);
             boxRegions.push({
                 type: RegionType.BOX,
@@ -100,10 +116,54 @@ export function detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale,
                 columnIndex: -1,
                 boxRole,
                 fillColor: boxFillColor,
+                isBanner,
+                bannerText: isBanner ? bannerText : null,
             });
             break;
         }
     }
 
+    _mergeBannersIntoBodies(boxRegions, scale);
     return boxRegions;
+}
+
+// Merge each banner box ("! WARNING" bar) into the bordered body box directly
+// below it: same X extent, adjacent Y. The merged region keeps the banner's
+// role, records bannerText for the styled header, and spans both bboxes. This
+// reunites the safety-admonition header with its content so it renders as one
+// unit instead of an orphaned bar over a role-less body.
+function _mergeBannersIntoBodies(boxRegions, scale) {
+    const xTol = scale.S * 1.5;
+    const yGapMax = scale.S * 2.5;
+    for (let i = boxRegions.length - 1; i >= 0; i--) {
+        const banner = boxRegions[i];
+        if (!banner.isBanner) continue;
+        const bx = banner.bbox, bBottom = bx.y + bx.h;
+        // Find the nearest body box directly below, X-aligned.
+        let best = null, bestGap = Infinity;
+        for (const body of boxRegions) {
+            if (body === banner || body.isBanner) continue;
+            const cb = body.bbox;
+            if (Math.abs(cb.x - bx.x) > xTol) continue;
+            if (Math.abs((cb.x + cb.w) - (bx.x + bx.w)) > xTol) continue;
+            const gap = cb.y - bBottom;
+            if (gap < -scale.S || gap > yGapMax) continue;
+            if (gap < bestGap) { bestGap = gap; best = body; }
+        }
+        if (!best) continue;
+        // Merge: body absorbs the banner header.
+        best.bannerText = banner.bannerText;
+        best.boxRole = banner.boxRole;
+        best.isBanner = false;
+        best.bbox = {
+            x: Math.min(best.bbox.x, bx.x),
+            y: Math.min(best.bbox.y, bx.y),
+            w: Math.max(best.bbox.x + best.bbox.w, bx.x + bx.w) - Math.min(best.bbox.x, bx.x),
+            h: (best.bbox.y + best.bbox.h) - Math.min(best.bbox.y, bx.y),
+        };
+        best.yCenter = best.bbox.y + best.bbox.h / 2;
+        // Do NOT fold the banner's text items into the body: the banner label is
+        // rendered from bannerText, not the body flow. Drop the banner region.
+        boxRegions.splice(i, 1);
+    }
 }

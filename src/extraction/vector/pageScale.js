@@ -12,8 +12,9 @@ export class PageScale {
     /**
      * @param {Array<{vFont:number, str:string}>} textMeta  — viewport-enriched text items
      * @param {object} viewport  — PDF.js viewport ({ transform: [a,b,c,d,e,f] })
+     * @param {object} [docScale]  — optional DocScale instance for document-level overrides
      */
-    constructor(textMeta, viewport) {
+    constructor(textMeta, viewport, docScale) {
         const vpT = viewport.transform;
         this.vScale = Math.hypot(vpT[0], vpT[1]) || Math.hypot(vpT[2], vpT[3]) || 1;
 
@@ -54,6 +55,27 @@ export class PageScale {
         this.HEADING_SCALE         = 1.25; // font-size ratio above which a line is a heading
         this.MARGIN_FLOOR          = 0.10; // min X fraction to qualify as a real column split
 
+        // ── DocScale overrides (document-level calibration) ───────────────────
+        // Layer measured values on top of ratio-based priors. Callers read
+        // colGapMinPx / yBandTolPx / colTolPx through the same getters — the
+        // calibration source is transparent.
+        if (docScale && docScale.calibrated) {
+            if (docScale.colGapMinPx != null) this._docColGapMin = docScale.colGapMinPx;
+            if (docScale.leadingPx != null) {
+                // leadingPx is the measured line PITCH (baseline-to-baseline).
+                // For typical leading ≈ 1.2 × S these factors reproduce the
+                // ratio defaults exactly (S·0.45 and S·1.80) — the measured
+                // pitch only shifts them when the document's leading is
+                // genuinely unusual. Band tolerance must stay well under one
+                // pitch or adjacent lines merge; paragraph gap must stay well
+                // over one pitch or every line break becomes a paragraph.
+                this._docLeadingPx   = docScale.leadingPx;
+                this._docParaGapPx   = docScale.leadingPx * 1.50;
+                this._docYBandTolPx  = docScale.leadingPx * 0.375;
+            }
+            if (docScale.colTolPx != null) this._docColTolPx = docScale.colTolPx;
+        }
+
         // ── Stream structural-context gates ───────────────────────────────────
         // These three thresholds distinguish borderless data tables from
         // column-aligned flowing text (TOC pages, multi-column prose, etc.)
@@ -63,14 +85,14 @@ export class PageScale {
     }
 
     // ── Absolute helpers (viewport pixels) ───────────────────────────────────
-    get yBandTolPx()    { return this.S * this.R_Y_BAND; }
-    get paraGapPx()     { return this.S * this.R_PARA_GAP; }
+    get yBandTolPx()    { return this._docYBandTolPx ?? this.S * this.R_Y_BAND; }
+    get paraGapPx()     { return this._docParaGapPx ?? this.S * this.R_PARA_GAP; }
     get tablePadPx()    { return Math.max(2, this.S * this.R_TABLE_PAD); }
     get underlineTolPx(){ return this.S * this.R_UNDERLINE; }
     get proximityPx()   { return this.S * this.R_PROXIMITY; }
-    get colTolPx()      { return this.S * this.R_COL_TOL; }
+    get colTolPx()      { return this._docColTolPx ?? this.S * this.R_COL_TOL; }
     get streamGapPx()   { return this.S * this.R_STREAM_GAP; }
-    get colGapMinPx()   { return this.S * this.R_COL_GAP_MIN; }
+    get colGapMinPx()   { return this._docColGapMin ?? this.S * this.R_COL_GAP_MIN; }
 
     clusterYGap(yRange) { return Math.max(this.S * this.R_CLUSTER_Y_GAP, yRange * 0.10); }
     clusterXGap(xRange) { return Math.max(this.S * this.R_CLUSTER_X_GAP, xRange * 0.08); }

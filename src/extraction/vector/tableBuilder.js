@@ -65,6 +65,76 @@ function toViewportPoint(vpTransform, pdfX, pdfY) {
 }
 
 /**
+ * Split grid columns whose content shows a persistent empty x-channel.
+ *
+ * Mutates `cells` (inserting a column per split), `cols` (inserting the
+ * split x), and `vLines` (synthetic full-height line so the colspan scan
+ * treats the boundary as ruled). Returns the new column count.
+ *
+ * Guards: the channel must be interior, ≥ 16px wide, crossed by zero items
+ * in every row, and both sides must hold content in at least 25% of the
+ * rows that have any content (rejects splitting a lone "$" prefix or a
+ * one-off aside into its own column). Prose-filled cells defeat the scan
+ * naturally — their word gaps never align across rows.
+ */
+function _splitFusedColumns(cells, cols, vLines, rows) {
+    const MIN_CHANNEL = 16;
+    const STEP = 2;
+    const numRows = cells.length;
+    let c = 0, guard = 0;
+    while (c < cols.length - 1 && guard++ < 32) {
+        const lo = cols[c], hi = cols[c + 1];
+        if (hi - lo < MIN_CHANNEL * 3) { c++; continue; }
+        const iv = [];
+        let rowsWithItems = 0;
+        for (let r = 0; r < numRows; r++) {
+            const cell = cells[r][c];
+            if (cell.length) rowsWithItems++;
+            for (const it of cell) iv.push([it._x, it._e ?? it._x]);
+        }
+        if (iv.length < 6 || rowsWithItems < 4) { c++; continue; }
+
+        const n = Math.max(1, Math.floor((hi - lo) / STEP));
+        const counts = new Array(n).fill(0);
+        for (const [s, e] of iv) {
+            const i0 = Math.max(0, Math.floor((s - lo) / STEP));
+            const i1 = Math.min(n - 1, Math.ceil((e - lo) / STEP));
+            for (let i = i0; i <= i1; i++) counts[i]++;
+        }
+        let bestStart = -1, bestLen = 0, cs = -1, cl = 0;
+        for (let i = 0; i <= n; i++) {
+            if (i < n && counts[i] === 0) {
+                if (cs === -1) cs = i;
+                cl++;
+            } else {
+                if (cl > bestLen && cs > 0 && cs + cl < n) { bestLen = cl; bestStart = cs; }
+                cs = -1; cl = 0;
+            }
+        }
+        if (bestLen * STEP < MIN_CHANNEL) { c++; continue; }
+        const splitX = lo + (bestStart + bestLen / 2) * STEP;
+
+        let leftRows = 0, rightRows = 0;
+        for (let r = 0; r < numRows; r++) {
+            if (cells[r][c].some(it => (it._e ?? it._x) <= splitX)) leftRows++;
+            if (cells[r][c].some(it => it._x >= splitX)) rightRows++;
+        }
+        const minOcc = Math.max(3, Math.ceil(rowsWithItems * 0.25));
+        if (leftRows < minOcc || rightRows < minOcc) { c++; continue; }
+
+        for (let r = 0; r < numRows; r++) {
+            const cell = cells[r][c];
+            cells[r][c] = cell.filter(it => (it._e ?? it._x) <= splitX);
+            cells[r].splice(c + 1, 0, cell.filter(it => (it._e ?? it._x) > splitX));
+        }
+        cols.splice(c + 1, 0, splitX);
+        vLines.push({ x: splitX, yMin: rows[0] - 1, yMax: rows[rows.length - 1] + 1 });
+        // Re-examine the left half — a column can hide more than one channel.
+    }
+    return cols.length - 1;
+}
+
+/**
  * Build an HTML <table> from a lattice and PDF.js text content.
  *
  * @param {{ rows, cols, hLines, vLines }} lattice  — from LatticeReconstructor
@@ -130,7 +200,8 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
         // This acts as our "KD-tree" proximity lookup without the heavy data structure
         if (bestR !== -1 && bestC !== -1 && minDist < proximityPx && !assignedItems.has(idx)) {
             assignedItems.add(idx);
-            cells[bestR][bestC].push({ ...item, _x: sx });
+            const scaleX = Math.hypot(vpTransform[0], vpTransform[1]) || 1;
+            cells[bestR][bestC].push({ ...item, _x: sx, _e: sx + (item.width || 0) * scaleX });
         }
     }
 
@@ -150,9 +221,21 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
         }
     }
 
+    // ── 1.5. Split fused columns ─────────────────────────────────────────────
+    // The grid comes from ruled-line intersections, so a column that is only
+    // separated by whitespace (fill-styled financial tables: label column vs
+    // right-aligned value column) fuses into its neighbor. A persistent empty
+    // x-channel through every row of a column is column structure the lines
+    // never drew — split there and register a synthetic vLine so the colspan
+    // scan below respects the new boundary.
+    let numColsLive = numCols;
+    if (hLines.length > 0 || vLines.length > 0) {
+        numColsLive = _splitFusedColumns(cells, cols, vLines, rows);
+    }
+
     // ── 2. Build cell grid with colspan/rowspan ──────────────────────────────
     // visited[r][c] = true once that slot is consumed by a spanning cell origin
-    const visited = Array.from({ length: numRows }, () => new Uint8Array(numCols));
+    const visited = Array.from({ length: numRows }, () => new Uint8Array(numColsLive));
 
     // Borderless (stream-detected) tables carry no physical line data.
     // Without hLines or vLines, every colspan/rowspan expansion loop runs to
@@ -169,7 +252,7 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
     for (let r = 0; r < numRows; r++) {
         html += '<tr>';
 
-        for (let c = 0; c < numCols; c++) {
+        for (let c = 0; c < numColsLive; c++) {
             if (visited[r][c]) continue;
 
             let colspan = 1;
@@ -177,13 +260,13 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
             const hasHLines = hLines.length > 0;
 
             if (hasVLines) {
-                while (c + colspan < numCols) {
+                while (c + colspan < numColsLive) {
                     if (vLinePresent(vLines, cols[c + colspan], rows[r], rows[r + 1], eps)) break;
                     colspan++;
                 }
             } else {
                 // Borderless table or horizontal slat table: consume subsequent empty cells
-                while (c + colspan < numCols && cells[r][c + colspan].length === 0) {
+                while (c + colspan < numColsLive && cells[r][c + colspan].length === 0) {
                     colspan++;
                 }
             }

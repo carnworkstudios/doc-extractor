@@ -25,6 +25,7 @@ import { reconcile } from '../extraction/vector/pathReconciler.js';
 import { classifyPage } from '../extraction/vector/contextClassifier.js';
 import { assemblePage, createFontRegistry, generateDocumentStyles } from '../extraction/vector/pageAssembler.js';
 import { readStructTree } from '../extraction/vector/structTreeReader.js';
+import { DocScale } from '../extraction/vector/docScale.js';
 
 // pdfjs-dist v4 — point to the ESM worker bundle.
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -51,10 +52,11 @@ class OffscreenCanvasFactory {
     }
 }
 
-// Cached PDF bytes and font registry — kept after initial 'process' so
-// 'reprocess' can re-run a single page without re-parsing the whole document.
+// Cached PDF bytes, font registry, and docScale — kept after initial 'process'
+// so 'reprocess' can re-run a single page without re-parsing the whole document.
 let _cachedBytes       = null;
 let _cachedFontRegistry = null;
+let _cachedDocScale    = null;
 
 // Render the page once at 4× and crop every image-like area:
 //   - raster XObjects from imageMeta (keyed by meta.id)
@@ -141,6 +143,7 @@ self.onmessage = async (e) => {
     // Cache bytes for single-page re-extraction
     _cachedBytes        = bytes ? bytes.slice() : null;
     _cachedFontRegistry = null;  // reset; will be rebuilt during this run
+    _cachedDocScale     = null;  // reset; set after DocScale calibration
 
     try {
         const canvasFactoryOpt = typeof OffscreenCanvas !== 'undefined'
@@ -148,6 +151,42 @@ self.onmessage = async (e) => {
             : {};
         const pdf = await pdfjsLib.getDocument({ data: bytes, ...canvasFactoryOpt }).promise;
         const numPages = pdf.numPages;
+
+        // ── DocScale pre-scan: collect textMeta from all pages for document-level
+        // tolerance calibration. This pass only reads textContent (no operator
+        // list, no classification) so it is fast even on large documents.
+        const docScale = new DocScale();
+        for (let p = 1; p <= numPages; p++) {
+            const page = await pdf.getPage(p);
+            const viewport = page.getViewport({ scale: 2.0 });
+            const textContent = await page.getTextContent();
+            const textMeta = textContent.items
+                .filter(i => i.str?.trim())
+                .map((item, idx) => {
+                    const tm = item.transform;
+                    const vpT = viewport.transform;
+                    const scaleX = Math.hypot(vpT[0], vpT[1]) || 1;
+                    const scaleY = Math.hypot(vpT[2], vpT[3]) || 1;
+                    // pdf.js text items carry no fontSize field — derive it
+                    // from the text matrix like contextClassifier (transform[3]).
+                    const fontSizePt = Math.abs(tm?.[3] || 12);
+                    return {
+                        idx,
+                        str: item.str,
+                        vx: tm[4] * scaleX,
+                        vy: tm[5] * scaleY,
+                        vWidth: item.width * scaleX,
+                        vFont: fontSizePt * scaleY,
+                        fontSize: fontSizePt,
+                        fontName: item.fontName || '',
+                    };
+                });
+            docScale.accumulate(textMeta);
+            page.cleanup();
+        }
+        docScale.calibrate(12);
+        _cachedDocScale = docScale;
+
         let totalTables = 0;
         const fontRegistry = createFontRegistry();
         _cachedFontRegistry = fontRegistry;
@@ -195,7 +234,7 @@ self.onmessage = async (e) => {
                 viewport,
                 pageWidthPt,
                 imageMeta,
-                { filledRects, fontStyleMap, structTree: rawStructTree, OPS, _opList: opList }
+                { filledRects, fontStyleMap, structTree: rawStructTree, OPS, _opList: opList, docScale }
             );
 
             // ── Phase 2.5: Image + vector-figure extraction via 4× render ────
@@ -214,7 +253,8 @@ self.onmessage = async (e) => {
                 p,
                 fontRegistry,
                 rawSplits ?? columnSplits,
-                extractedImages
+                extractedImages,
+                docScale
             );
 
             totalTables += result.tableCount;
@@ -234,8 +274,15 @@ self.onmessage = async (e) => {
                     confidence: r.confidence ?? 1.0,
                     columnIndex: r.columnIndex ?? -1,
                     imageId: r.imageId ?? null,
+                    flowId: r.flowId ?? null,
+                    flowNext: r.flowNext ?? null,
+                    flowJoin: r.flowJoin ?? null,
                 })),
                 pageScale: scale.toJSON(),
+                docScale: docScale.toJSON(),
+                layoutTree: result.layoutTree ?? null,
+                fidelityScore: result.fidelityScore ?? 0,
+                layoutMethod: result.layoutMethod ?? 'flat-zones',
             });
 
             // Release page resources
@@ -316,6 +363,7 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
                 OPS,
                 _opList: opList,
                 pipeline: { skip: skipSet, scaleOverrides, customRegions, manualSplits },
+                docScale: _cachedDocScale,
             },
         );
 
@@ -333,6 +381,7 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
             fontRegistry,
             rawSplits ?? columnSplits,
             extractedImages,
+            _cachedDocScale,
         );
 
         page.cleanup();
@@ -352,8 +401,15 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
                 confidence: r.confidence ?? 1.0,
                 columnIndex: r.columnIndex ?? -1,
                 imageId: r.imageId ?? null,
+                flowId: r.flowId ?? null,
+                flowNext: r.flowNext ?? null,
+                flowJoin: r.flowJoin ?? null,
             })),
             pageScale: scale.toJSON(),
+            docScale: _cachedDocScale ? _cachedDocScale.toJSON() : null,
+            layoutTree: result.layoutTree ?? null,
+            fidelityScore: result.fidelityScore ?? 0,
+            layoutMethod: result.layoutMethod ?? 'flat-zones',
         });
     } catch (err) {
         self.postMessage({

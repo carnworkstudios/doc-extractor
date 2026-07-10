@@ -75,7 +75,14 @@ export function detectPageColumns(textMeta, viewport, scale, { dropGate3 = false
         }
     }
 
-    if (!rawCandidates.length && structItems.length >= 10) {
+    // Span projection found nothing: try the two fallbacks. They are ADDITIVE,
+    // not exclusive — the bimodal start-gap detector can fire on a gap inside a
+    // column (N19-1423 p2: 188px start-gap at x=912 deep in the right column),
+    // and when its wrong candidate later fails the gates, the true gutter must
+    // still be on the candidate list. The gates arbitrate.
+    const spanStageEmpty = rawCandidates.length === 0;
+
+    if (spanStageEmpty && structItems.length >= 10) {
         const binned = [...new Set(sortedItems.map(i => Math.round(i.vx / 2) * 2))].sort((a,b)=>a-b);
         const gaps = [];
         for (let i = 1; i < binned.length; i++) gaps.push({ g: binned[i]-binned[i-1], x: (binned[i-1]+binned[i])/2 });
@@ -90,7 +97,7 @@ export function detectPageColumns(textMeta, viewport, scale, { dropGate3 = false
         }
     }
 
-    if (!rawCandidates.length && structItems.length >= 6) {
+    if (spanStageEmpty && structItems.length >= 6) {
         const itemVxMin = Math.min(...structItems.map(i => i.vx));
         const itemVxMax = Math.max(...structItems.map(i => i.vx));
         const scanLo = Math.max(vpWidth * 0.15, itemVxMin + scale.colGapMinPx);
@@ -130,9 +137,21 @@ export function detectPageColumns(textMeta, viewport, scale, { dropGate3 = false
                     if (candidate >= vpWidth * 0.15 && candidate <= vpWidth * 0.85) {
                         rawCandidates.push(candidate);
                     }
+                    // The midpoint adjustment trusts leftEnd/rightStart as column
+                    // edges; a single outlier item (figure label) can drag the
+                    // candidate into a false micro-gutter. Offer the raw scan
+                    // position too — the gates arbitrate, dedup collapses.
+                    if (Math.abs(candidate - bestX) > tol &&
+                        bestX >= vpWidth * 0.15 && bestX <= vpWidth * 0.85) {
+                        rawCandidates.push(bestX);
+                    }
                 }
             }
         }
+    }
+
+    if (typeof process !== 'undefined' && process.env?.GX_DEBUG_COLS) {
+        console.log(`[cols] items=${textMeta.length} struct=${structItems.length} spans=${spans.length} candidates=[${rawCandidates.map(x => Math.round(x)).join(',')}]`);
     }
 
     if (!rawCandidates.length) return { splits: [], fullWidthIndices };
@@ -145,26 +164,102 @@ export function detectPageColumns(textMeta, viewport, scale, { dropGate3 = false
     const MIN_SIDE       = 3;
     const MIN_COMMITMENT = 0.40;
     const validSplits    = [];
+    const _dbg = (typeof process !== 'undefined' && process.env?.GX_DEBUG_COLS)
+        ? (m) => console.log(`[cols] ${m}`) : () => {};
 
     for (const X of rawCandidates) {
+        // ── Phase A: whole-band gates (original algorithm, unchanged) ────────
+        // A Phase A failure does NOT veto the candidate — it falls through to
+        // Phase B, which re-validates everything with per-band partitioning.
+        // Baseline-aligned templates dilute Phase A's denominators with shared
+        // bands (N19-1423 p10 commitment 0.39 vs the 0.40 threshold).
         const leftOnly  = bands.filter(b => b.items.every(i => (i.vx + (i.vWidth || 0)) <= X - tol));
         const rightOnly = bands.filter(b => b.items.every(i => i.vx >= X + tol));
 
-        if (leftOnly.length < MIN_SIDE || rightOnly.length < MIN_SIDE) continue;
+        const phaseAValid = (() => {
+            if (leftOnly.length < MIN_SIDE || rightOnly.length < MIN_SIDE) return false;
+            const coexistTop    = Math.max(Math.min(...leftOnly.map(b => b.y)), Math.min(...rightOnly.map(b => b.y)));
+            const coexistBottom = Math.min(Math.max(...leftOnly.map(b => b.y)), Math.max(...rightOnly.map(b => b.y)));
+            if (coexistBottom < coexistTop) { _dbg(`A@${Math.round(X)} coexist fail`); return false; }
+            const localBands = bands.filter(b => b.y >= coexistTop && b.y <= coexistBottom);
+            if (!localBands.length || (leftOnly.length + rightOnly.length) / localBands.length < MIN_COMMITMENT) { _dbg(`A@${Math.round(X)} commitment=${((leftOnly.length + rightOnly.length) / (localBands.length || 1)).toFixed(2)} fail`); return false; }
 
-        const coexistTop    = Math.max(Math.min(...leftOnly.map(b => b.y)), Math.min(...rightOnly.map(b => b.y)));
-        const coexistBottom = Math.min(Math.max(...leftOnly.map(b => b.y)), Math.max(...rightOnly.map(b => b.y)));
-        if (coexistBottom < coexistTop) continue;
-        const localBands = bands.filter(b => b.y >= coexistTop && b.y <= coexistBottom);
-        if (!localBands.length || (leftOnly.length + rightOnly.length) / localBands.length < MIN_COMMITMENT) continue;
+            if (!dropGate3 &&
+                leftOnly.every(b => b.y <= persistThresh) &&
+                rightOnly.every(b => b.y <= persistThresh)) { _dbg(`A@${Math.round(X)} persistence fail`); return false; }
+
+            const leftMarginX    = Math.min(...bands.flatMap(b => b.items.map(i => i.vx)));
+            const leftAnchorTol  = scale.colGapMinPx * 2;
+            const leftMinStart   = Math.min(...leftOnly.flatMap(b => b.items.map(i => i.vx)));
+            if (leftMinStart > leftMarginX + leftAnchorTol) { _dbg(`A@${Math.round(X)} leftAnchor fail`); return false; }
+            return true;
+        })();
+
+        if (phaseAValid) {
+            validSplits.push(X);
+            continue;
+        }
+
+        // ── Phase B: baseline-aligned rescue ─────────────────────────────────
+        // Templates with identical leading in both columns (ACL/NAACL) put the
+        // left and right lines of a row in the SAME Y-band, so the whole-band
+        // sets above collapse below MIN_SIDE and a geometrically perfect gutter
+        // gets vetoed (N19-1423 pages 2-13). Only when that specific failure
+        // occurs, re-evaluate with per-band partitioning under stricter gates.
+        const GUTTER_INTEGRITY = 0.80;
+        const RIGHT_FLUSH_FRAC = 0.60;
+        const MIN_SHARED_ROWS  = 8;
+
+        const leftLines = [], rightLines = [];
+        let bothTotal = 0, bothGapOk = 0;
+        for (const b of bands) {
+            const L = b.items.filter(i => (i.vx + (i.vWidth || 0)) <= X - tol);
+            const R = b.items.filter(i => i.vx >= X + tol);
+            if (L.length) leftLines.push({ y: b.y, minVx: Math.min(...L.map(i => i.vx)) });
+            if (R.length) rightLines.push({
+                y: b.y,
+                minVx: Math.min(...R.map(i => i.vx)),
+                text: R.map(i => i.str || '').join(' '),
+            });
+            if (L.length && R.length) {
+                bothTotal++;
+                const gap = Math.min(...R.map(i => i.vx))
+                          - Math.max(...L.map(i => i.vx + (i.vWidth || 0)));
+                if (gap >= scale.colGapMinPx) bothGapOk++;
+            }
+        }
+
+        // A real 2-col page shares many rows across the gutter; sparse pages
+        // (contact blocks, footers) never reach this count.
+        if (bothTotal < MIN_SHARED_ROWS) continue;
+        if (leftLines.length < MIN_SIDE || rightLines.length < MIN_SIDE) continue;
+
+        // Gutter integrity: rows with text on both sides must show a real
+        // channel at X. Word gaps in running text are far narrower.
+        if (bothGapOk / bothTotal < GUTTER_INTEGRITY) continue;
+
+        // The right side must be a flush-left text column, not a ragged
+        // right-aligned amount column.
+        const rStarts = rightLines.map(l => l.minVx).sort((a, b) => a - b);
+        const rMedian = rStarts[Math.floor(rStarts.length / 2)];
+        const rFlush  = rStarts.filter(v => Math.abs(v - rMedian) <= scale.colGapMinPx).length;
+        if (rFlush / rStarts.length < RIGHT_FLUSH_FRAC) continue;
+
+        // A right side that is mostly digits is a value column, never text.
+        const digitHeavyLines = rightLines.filter(l => {
+            const d = (l.text.match(/[0-9]/g) || []).length;
+            const a = (l.text.match(/[A-Za-zÀ-ÖØ-öø-ÿ]/g) || []).length;
+            return d > a;
+        }).length;
+        if (digitHeavyLines / rightLines.length > 0.5) continue;
 
         if (!dropGate3 &&
-            leftOnly.every(b => b.y <= persistThresh) &&
-            rightOnly.every(b => b.y <= persistThresh)) continue;
+            leftLines.every(l => l.y <= persistThresh) &&
+            rightLines.every(l => l.y <= persistThresh)) continue;
 
         const leftMarginX    = Math.min(...bands.flatMap(b => b.items.map(i => i.vx)));
         const leftAnchorTol  = scale.colGapMinPx * 2;
-        const leftMinStart   = Math.min(...leftOnly.flatMap(b => b.items.map(i => i.vx)));
+        const leftMinStart   = Math.min(...leftLines.map(l => l.minVx));
         if (leftMinStart > leftMarginX + leftAnchorTol) continue;
 
         validSplits.push(X);

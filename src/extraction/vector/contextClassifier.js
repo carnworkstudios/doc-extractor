@@ -75,7 +75,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         };
     });
 
-    const scale = new PageScale(textMeta, viewport);
+    const scale = new PageScale(textMeta, viewport, opts.docScale);
     if (opts.headingScale !== undefined) scale.HEADING_SCALE = opts.headingScale;
 
     // Apply per-page threshold overrides from the Analysis panel sliders.
@@ -348,7 +348,15 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         tm => !assignedTextIndices.has(tm.idx) && tm.str.trim(),
     );
     if (!skip.has('STREAM_TABLE')) {
-        const streamTables = detectStreamTableRegions(unclaimedMeta, scale, regions, tableSegs, pageGraph);
+        // Pre-detect column zones from unclaimed text so the stream detector
+        // can run per column zone rather than mixing items from separate columns.
+        // This fast pre-pass uses the same detector as step 10 but on unclaimedMeta only.
+        let streamColXs = [];
+        if (unclaimedMeta.length > 10) {
+            const { splits: preSplits } = detectPageColumns(unclaimedMeta, viewport, scale);
+            streamColXs = preSplits.map(s => s.x ?? s).filter(x => x > viewport.width * 0.1 && x < viewport.width * 0.9);
+        }
+        const streamTables = detectStreamTableRegions(unclaimedMeta, scale, regions, tableSegs, pageGraph, streamColXs);
         for (const lattice of streamTables) {
             if (!lattice?.bbox) continue;
             const bbox = lattice.bbox;
@@ -405,17 +413,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         }
         // Jump directly to column bucketing — skip geometry + bipartite detection
         const columnSplitsEarly = rawSplits.map(s => s.x);
-        const tol0 = scale.proximityPx ?? 5;
-        const boundaries0 = [-Infinity, ...columnSplitsEarly, Infinity];
-        for (const idx of [...fullWidthIndices]) {
-            const tm = textMeta[idx];
-            if (!tm) continue;
-            const itemEnd = tm.vx + (tm.vWidth || 0);
-            if (boundaries0.slice(0, -1).some((lo, ci) =>
-                tm.vx >= lo - tol0 && itemEnd <= boundaries0[ci + 1] + tol0)) {
-                fullWidthIndices.delete(idx);
-            }
-        }
+        _refineFullWidthByLine(remainingMeta, fullWidthIndices, columnSplitsEarly, scale);
         const narrowMeta0 = remainingMeta.filter(tm => !fullWidthIndices.has(tm.idx));
         const fullWidthMeta0 = remainingMeta.filter(tm => fullWidthIndices.has(tm.idx));
         const columnBuckets0 = splitByColumns(narrowMeta0, columnSplitsEarly);
@@ -550,24 +548,24 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         }
     }
 
-    const columnSplits = rawSplits.map(s => s.x);
-
-    if (columnSplits.length > 0) {
-        const tol = scale.proximityPx ?? 5;
-        const boundaries = [-Infinity, ...columnSplits, Infinity];
-        for (const idx of [...fullWidthIndices]) {
-            const tm = textMeta[idx];
-            if (!tm) continue;
-            const itemEnd = tm.vx + (tm.vWidth || 0);
-
-            const fitsInOneColumn = boundaries.slice(0, -1).some((lo, ci) => {
-                const hi = boundaries[ci + 1];
-                return tm.vx >= lo - tol && itemEnd <= hi + tol;
-            });
-
-            if (fitsInOneColumn) fullWidthIndices.delete(idx);
+    // Snap each detected split to the center of the actual coverage gap
+    // (the gutter) near it. Detection can land the split coordinate inside a
+    // column's ragged-right zone, which makes ordinary body lines "straddle"
+    // the split and fall out of their column (N19 p1: split 566 vs true
+    // gutter center 598 — every left-column line ending at 581 went
+    // full-width). Snapping is bounded to ±3S so it can only correct
+    // locally, never invent a different layout.
+    for (const sp of rawSplits) {
+        const snapped = _snapSplitToGutter(sp.x, remainingMeta, viewport, scale);
+        if (snapped !== sp.x) {
+            sp.x = snapped;
+            sp.leftFraction = snapped / viewport.width;
+            sp.rightFraction = 1 - sp.leftFraction;
         }
     }
+    const columnSplits = rawSplits.map(s => s.x);
+
+    _refineFullWidthByLine(remainingMeta, fullWidthIndices, columnSplits, scale);
 
     const narrowMeta = remainingMeta.filter(tm => !fullWidthIndices.has(tm.idx));
     const fullWidthMeta = remainingMeta.filter(tm => fullWidthIndices.has(tm.idx));
@@ -660,6 +658,122 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
+
+// Snap a column split X to the center of the widest uncovered interval
+// (the real gutter) within ±3S of the candidate. Items wider than 40% of
+// the viewport (titles, full-width lines) are excluded from coverage — they
+// legitimately span the gutter and would otherwise mask it. Returns the
+// original x when no plausible gap (≥ 0.75S wide) exists in the window.
+function _snapSplitToGutter(splitX, meta, viewport, scale) {
+    const win = scale.S * 3;
+    const lo = splitX - win, hi = splitX + win;
+    const wideCap = viewport.width * 0.40;
+    const iv = [];
+    for (const tm of meta) {
+        const w = tm.vWidth || 0;
+        if (w > wideCap) continue;
+        const s = tm.vx, e = tm.vx + w;
+        if (e <= lo || s >= hi) continue;
+        iv.push([Math.max(s, lo), Math.min(e, hi)]);
+    }
+    if (!iv.length) return splitX;
+    // Minimum-crossings scan. A pure empty-gap search fails whenever a
+    // header/footer/title line runs through the page center, so instead
+    // count how many items cover each x; full-window spanners add a
+    // constant everywhere and cancel out of the argmin. The widest run of
+    // minimal coverage is the gutter.
+    const STEP = 2;
+    const n = Math.floor((hi - lo) / STEP) + 1;
+    const counts = new Array(n).fill(0);
+    for (const [s, e] of iv) {
+        const i0 = Math.max(0, Math.ceil((s - lo) / STEP));
+        const i1 = Math.min(n - 1, Math.floor((e - lo) / STEP));
+        for (let i = i0; i <= i1; i++) counts[i]++;
+    }
+    const minC = Math.min(...counts);
+    // The gutter is a valley, not necessarily an empty channel — a title or
+    // footer line crossing the page center adds 1 everywhere near minC. Take
+    // the widest run within a small slack of the minimum; heavy flanks
+    // (column body text) sit far above it and bound the run.
+    const thr = minC + Math.max(2, Math.ceil(minC * 0.5));
+    let bestStart = -1, bestLen = 0, curStart = -1, curLen = 0;
+    for (let i = 0; i <= n; i++) {
+        if (i < n && counts[i] <= thr) {
+            if (curStart === -1) curStart = i;
+            curLen++;
+        } else {
+            if (curLen > bestLen) { bestLen = curLen; bestStart = curStart; }
+            curStart = -1; curLen = 0;
+        }
+    }
+    // The run must be a real channel (≥ 0.75S wide) and interior to the
+    // window — a run touching the edge is unbounded evidence.
+    if (bestLen * STEP < scale.S * 0.75) return splitX;
+    if (bestStart === 0 || bestStart + bestLen >= n) return splitX;
+    return lo + (bestStart + bestLen / 2) * STEP;
+}
+
+// Refine which items stay full-width once column splits are known.
+//
+// Two rules layered on the raw full-width set (wide bands / straddlers):
+//  (a) Heading-scale items straddling a split are full-width — centered
+//      titles cross the gutter but must never be bucketed into a column.
+//      Body-size straddlers are left alone: gutter-bridging equation items
+//      belong to their column's flow (raiko-aistats lesson).
+//  (b) The fits-in-one-column removal works line-wise, not item-wise: an
+//      item that fits a column but is x-contiguous with a kept full-width
+//      item on the same baseline is the same visual line ({email}@domain,
+//      centered author rows) and stays full-width with it. Clean column
+//      bands have no kept anchor, so every item is removed exactly as before.
+function _refineFullWidthByLine(remainingMeta, fullWidthIndices, columnSplits, scale) {
+    if (!columnSplits.length) return;
+    const tol = scale.proximityPx ?? 5;
+    const boundaries = [-Infinity, ...columnSplits, Infinity];
+
+    const headingFloor = scale.S * scale.HEADING_SCALE;
+    for (const tm of remainingMeta) {
+        if (fullWidthIndices.has(tm.idx)) continue;
+        const itemEnd = tm.vx + (tm.vWidth || 0);
+        if ((tm.vFont || 0) >= headingFloor &&
+            columnSplits.some(sx => tm.vx < sx - tol && itemEnd > sx + tol)) {
+            fullWidthIndices.add(tm.idx);
+        }
+    }
+
+    const fits = tm => {
+        const itemEnd = tm.vx + (tm.vWidth || 0);
+        return boundaries.slice(0, -1).some((lo, ci) =>
+            tm.vx >= lo - tol && itemEnd <= boundaries[ci + 1] + tol);
+    };
+
+    const fwMeta = remainingMeta.filter(tm => fullWidthIndices.has(tm.idx));
+    const bands = [];
+    for (const tm of [...fwMeta].sort((a, b) => a.vy - b.vy)) {
+        let band = bands.find(b => Math.abs(b.y - tm.vy) <= scale.yBandTolPx);
+        if (!band) { band = { y: tm.vy, items: [] }; bands.push(band); }
+        band.y = (band.y * band.items.length + tm.vy) / (band.items.length + 1);
+        band.items.push(tm);
+    }
+
+    const joinGap = scale.S * 2;
+    for (const band of bands) {
+        const items = band.items.sort((a, b) => a.vx - b.vx);
+        const keep = items.map(tm => !fits(tm));
+        for (let i = 1; i < items.length; i++) {
+            if (keep[i] || !keep[i - 1]) continue;
+            const gap = items[i].vx - (items[i - 1].vx + (items[i - 1].vWidth || 0));
+            if (gap <= joinGap) keep[i] = true;
+        }
+        for (let i = items.length - 2; i >= 0; i--) {
+            if (keep[i] || !keep[i + 1]) continue;
+            const gap = items[i + 1].vx - (items[i].vx + (items[i].vWidth || 0));
+            if (gap <= joinGap) keep[i] = true;
+        }
+        for (let i = 0; i < items.length; i++) {
+            if (!keep[i]) fullWidthIndices.delete(items[i].idx);
+        }
+    }
+}
 
 function _classifyBucket(regions, lines, bodyFontSizePt, scale, columnIndex, skip = new Set()) {
     let currentBlock = [];

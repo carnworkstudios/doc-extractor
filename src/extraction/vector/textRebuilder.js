@@ -237,22 +237,57 @@ function _buildOutput(lines, o, bodyFontSize) {
     }
 
     if (o.format === 'html') {
-        return paragraphs.map(p => {
+        // Sentence-aware paragraph emission: a gap-detected block that begins
+        // before the previous block finished a sentence is a visual break, not
+        // a semantic one. Keep it inside the same <p> joined with <br> so the
+        // <p> structure follows sentences while the line structure stays
+        // faithful to the page.
+        const blocks = paragraphs.map(p => {
             const inner = p.lines.map(l => l.html || _escHtml(l.str)).join(' ');
+            const plain = p.lines.map(l => l.str).join(' ').trim();
             const isHeading = p.lines.length === 1 &&
                 p.lines[0].fontSize > bodyFontSize * o.headingScale;
-            if (isHeading) {
-                const tag = p.lines[0].fontSize > bodyFontSize * 1.6 ? 'h3' : 'h4';
-                return `<${tag}>${inner}</${tag}>`;
+            const headingTag = isHeading
+                ? (p.lines[0].fontSize > bodyFontSize * 1.6 ? 'h3' : 'h4')
+                : null;
+            return { inner, plain, isHeading, headingTag };
+        }).filter(b => b.inner.trim());
+
+        const out = [];
+        for (const b of blocks) {
+            const prev = out[out.length - 1];
+            if (!b.isHeading && prev && !prev.isHeading && prev.open &&
+                !_LIST_MARKER_RE.test(b.plain)) {
+                prev.inner += '<br>' + b.inner;
+                prev.open = _sentenceOpen(b.plain);
+                continue;
             }
-            return `<p>${inner}</p>`;
-        }).join('\n');
+            out.push({ ...b, open: !b.isHeading && _sentenceOpen(b.plain) });
+        }
+
+        return out.map(b => b.isHeading
+            ? `<${b.headingTag}>${b.inner}</${b.headingTag}>`
+            : `<p>${b.inner}</p>`
+        ).join('\n');
     }
 
     // Default: 'text'
     return paragraphs
         .map(p => p.lines.map(l => l.str).join(' '))
         .join('\n\n');
+}
+
+// ── Sentence-boundary helpers (html format) ───────────────────────────────────
+
+// Mirrors flowLinker's seam test at region scope: a block whose text does not
+// end in terminal punctuation has not finished its sentence.
+const _SENTENCE_CLOSERS_RE = /["'”’»›)\]\}]+$/;
+const _SENTENCE_END_RE = /[.!?:…]$/;
+const _LIST_MARKER_RE = /^(?:[•‣◦▪▫–—―·○◉-]\s|\d{1,3}[.)](?!\d)\s|[a-zA-Z][.)]\s|[ivxIVX]+[.)]\s)/;
+
+function _sentenceOpen(plain) {
+    if (!plain) return false;
+    return !_SENTENCE_END_RE.test(plain.replace(_SENTENCE_CLOSERS_RE, ''));
 }
 
 // ── Inline style helpers ──────────────────────────────────────────────────────

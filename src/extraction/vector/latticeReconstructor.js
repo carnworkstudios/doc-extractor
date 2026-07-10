@@ -93,6 +93,24 @@ export class LatticeReconstructor {
                     continue;
                 }
             }
+
+            // Horizontal-continuity check: symmetric to the vertical one. A real
+            // table's every inter-column band is crossed by at least one
+            // horizontal line (the top/bottom border). A column band that no H
+            // line crosses is the empty page gutter between two side-by-side
+            // structures (e.g. two bordered admonition boxes in a two-column
+            // layout whose borders weave into a phantom grid). Split by X and
+            // redo each side so the gutter is never a table column.
+            const splitX = this._findColDiscontinuity(lattice);
+            if (splitX !== null) {
+                const left = cluster.filter(s => (s.x1 + s.x2) / 2 < splitX);
+                const right = cluster.filter(s => (s.x1 + s.x2) / 2 >= splitX);
+                if (left.length >= 6 && right.length >= 6 &&
+                    left.length < cluster.length && right.length < cluster.length) {
+                    queue.push(left, right);
+                    continue;
+                }
+            }
             results.push(lattice);
         }
         if (results.length) return results;
@@ -132,6 +150,41 @@ export class LatticeReconstructor {
             if (y1 - y0 <= minBreak) continue;
             const spanned = structural.some(v => v.yMin <= y0 + eps && v.yMax >= y1 - eps);
             if (!spanned) return (y0 + y1) / 2;
+        }
+        return null;
+    }
+
+    // Returns the X midpoint of the first inter-column band not spanned by any
+    // merged horizontal line, or null if the grid is horizontally continuous.
+    // Page-frame vertical rules and near-full-width H lines are excluded so a
+    // legitimate wide table (whose top/bottom border crosses every column) is
+    // never split. Only an OUTLIER column gap that no H line bridges — the empty
+    // page gutter between two side-by-side bordered structures — triggers a split.
+    _findColDiscontinuity(lattice) {
+        const { cols, hLines } = lattice;
+        if (!cols || cols.length < 3 || !hLines?.length) return null;
+        const eps = lattice.clusterEps ?? this.eps * 3;
+        // Keep only H lines wide enough to be a real table border, not tiny
+        // cell rules. A genuine table's top/bottom border crosses every interior
+        // column band; two side-by-side boxes have borders that each stop at the
+        // gutter, leaving the gutter band uncrossed. Unlike the row check, gutter
+        // width is NOT a reliable signal (the gutter is often the narrowest gap),
+        // so we test every interior band for an uncrossed span directly.
+        const structural = this._pageWidth > 0
+            ? hLines.filter(h => (h.xMax - h.xMin) < this._pageWidth * 0.95)
+            : hLines;
+        if (!structural.length) return null;
+
+        // Require at least one H line on EACH side of a candidate gutter, so we
+        // only split when there really are two bordered structures (not a single
+        // table with a wide unruled column).
+        for (let i = 0; i + 1 < cols.length; i++) {
+            const x0 = cols[i], x1 = cols[i + 1];
+            const spanned = structural.some(h => h.xMin <= x0 + eps && h.xMax >= x1 - eps);
+            if (spanned) continue;
+            const leftBounded  = structural.some(h => Math.abs(h.xMax - x0) <= eps * 2);
+            const rightBounded = structural.some(h => Math.abs(h.xMin - x1) <= eps * 2);
+            if (leftBounded && rightBounded) return (x0 + x1) / 2;
         }
         return null;
     }

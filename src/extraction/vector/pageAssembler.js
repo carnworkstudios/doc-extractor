@@ -18,8 +18,12 @@
 import { buildTable } from './tableBuilder.js';
 import { rebuildText } from './textRebuilder.js';
 import { RegionType } from './classifiers/regionTypes.js';
+import { linkFlows } from './classifiers/flowLinker.js';
 import { detectZoneColumns } from './contextClassifier.js';
 import { PageScale } from './pageScale.js';
+import { layoutTreeBuilder, compareBoxes } from './layoutTreeBuilder.js';
+import { resolveLayout } from '@canwork/boxwood';
+import { createPdfMeasure } from './pdfMeasure.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -28,6 +32,13 @@ function esc(s) {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
+}
+
+// Join two flow-linked text fragments at a column/page seam.
+function _joinFlowText(a, b, join) {
+    if (join === 'dehyphenate') return a.replace(/[-‐‑­]\s*$/, '') + b.replace(/^\s+/, '');
+    if (join === 'hyphen-keep') return a.replace(/\s+$/, '') + b.replace(/^\s+/, '');
+    return a.replace(/\s+$/, '') + ' ' + b.replace(/^\s+/, '');
 }
 
 // ── Font normalization ────────────────────────────────────────────────────────
@@ -122,10 +133,20 @@ export function generateDocumentStyles(fontRegistry) {
         '.pdf-doc .pdf-table--borderless td, .pdf-doc .pdf-table--borderless th { padding: 4px 12px 4px 0; }',
         // Semantic box containers
         '.pdf-doc .pdf-box { border: 1.5px solid #888; border-radius: 3px; padding: 8px 14px; margin: 10px 0; }',
-        '.pdf-doc .pdf-box--warning { border-color: #d9534f; background: #fff5f5; }',
-        '.pdf-doc .pdf-box--caution { border-color: #e6a000; background: #fffbe6; }',
-        '.pdf-doc .pdf-box--note    { border-color: #0078d4; background: #f0f8ff; }',
+        '.pdf-doc .pdf-box--warning { border-color: #111; background: #fff5f5; }',
+        '.pdf-doc .pdf-box--caution { border-color: #111; background: #fffbe6; }',
+        '.pdf-doc .pdf-box--note    { border-color: #111; background: #f0f8ff; }',
         '.pdf-doc .pdf-box--tip     { border-color: #107c10; background: #f4fff4; }',
+        // Admonition banner header: black bar with icon + big label, matching the
+        // source. The box loses its top padding so the banner spans edge-to-edge.
+        '.pdf-doc .pdf-box:has(.pdf-box-banner) { padding: 0; overflow: hidden; }',
+        '.pdf-doc .pdf-box:has(.pdf-box-banner) > :not(.pdf-box-banner) { margin-left: 14px; margin-right: 14px; }',
+        '.pdf-doc .pdf-box:has(.pdf-box-banner) > :first-of-type:not(.pdf-box-banner) { margin-top: 10px; }',
+        '.pdf-doc .pdf-box:has(.pdf-box-banner) > :last-child { margin-bottom: 10px; }',
+        '.pdf-doc .pdf-box-banner { background: #111; color: #fff; font-weight: 700; letter-spacing: .06em;',
+        '  font-size: 1.35em; text-align: center; padding: 8px 14px; display: flex; align-items: center;',
+        '  justify-content: center; gap: 10px; text-transform: uppercase; }',
+        '.pdf-doc .pdf-box-icon { font-size: 1.1em; line-height: 1; }',
         // Divider
         '.pdf-doc .pdf-divider { border: none; border-top: 1px solid #ccc; margin: 14px 0; }',
         // Standalone list wrapper (prevents adjacent lists from merging in contenteditable)
@@ -138,18 +159,100 @@ export function generateDocumentStyles(fontRegistry) {
         '.pdf-doc .layout-feature { align-items: start; }',
         '.pdf-doc .layout-card-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important; }',
         '.pdf-doc .pdf-zone--cols-1 { }',
-        '.pdf-doc .pdf-zone--cols-2 { display: grid; grid-template-columns: calc(var(--left-col, 0.5) * 100%) 1fr; column-gap: 20px; }',
-        '.pdf-doc .pdf-zone--cols-3 { display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 14px; }',
-        '.pdf-doc .pdf-zone--cols-4 { display: grid; grid-template-columns: repeat(4, 1fr); column-gap: 10px; }',
+        // Page-row model: one grid per page section, columns are persistent divs
+        '.pdf-doc .pdf-page-row { display: grid; grid-template-columns: calc(var(--left-col, 0.5) * 100%) 1fr; column-gap: 20px; }',
+        '.pdf-doc .pdf-page-row--cols-1 { display: block; }',
+        '.pdf-doc .pdf-page-row--cols-3 { grid-template-columns: repeat(3, 1fr); column-gap: 14px; }',
+        '.pdf-doc .pdf-page-row--cols-4 { grid-template-columns: repeat(4, 1fr); column-gap: 10px; }',
         '.pdf-doc .pdf-col { min-width: 0; }',
+        '.pdf-doc .pdf-col--full { grid-column: 1 / -1; }',
         '.pdf-doc .pdf-region { }',
-        '@media (max-width: 720px) { .pdf-doc .pdf-zone--cols-2, .pdf-doc .pdf-zone--cols-3, .pdf-doc .pdf-zone--cols-4 { grid-template-columns: 1fr; } }',
+        '@media (max-width: 720px) { .pdf-doc .pdf-page-row { grid-template-columns: 1fr; } }',
+        // Stacked columns restore reading order — visually fuse continuations
+        // with their predecessor (see flowLinker.js).
+        '@media (max-width: 720px) { .pdf-doc [data-continuation] > p:first-child { margin-top: 0; text-indent: 0; } }',
         // Running header / footer
         '.pdf-doc .pdf-header { font-size: 0.78em; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-bottom: 12px; }',
         '.pdf-doc .pdf-footer { font-size: 0.78em; color: #555; border-top: 1px solid #ddd; padding-top: 4px; margin-top: 12px; }',
+        // Tree-based layout classes (Phase 2)
+        '.pdf-doc .pdf-tree-cols { min-width: 0; container-type: inline-size; }',
+        '.pdf-doc .pdf-tree-cols > * { min-width: 0; }',
+        '.pdf-doc .pdf-tree-cols--cards { display: flex !important; flex-wrap: wrap; }',
+        '.pdf-doc .pdf-tree-cols--cards > * { flex: 1 1 200px; min-width: 0; }',
+        '.pdf-doc .pdf-tree-row > * + * { margin-top: 0; }',
     ];
 
     return [...fontLines, ...staticLines].join('\n');
+}
+
+// ── Content-derived breakpoints (§35) ────────────────────────────────────────
+// For each col-split node in the tree, find the narrowest width at which its
+// columns must collapse (switching from grid to block flow). Uses binary search
+// with resolveLayout to detect overflow signals.
+
+function _deriveBreakpoints(tree, pageBox, textItems, fontRegistry, pageScale) {
+    const breakpoints = [];
+    _walkTreeForBreakpoints(tree, pageBox, textItems, fontRegistry, pageScale, breakpoints, []);
+    return breakpoints;
+}
+
+function _walkTreeForBreakpoints(node, pageBox, textItems, fontRegistry, pageScale, breakpoints, path) {
+    if (!node) return;
+
+    if (node.split && 'cols' in node.split && node.children && node.children.length >= 2) {
+        // Compute min readable width: max(narrowest unbreakable token width, k_min * avgCharW)
+        const avgCharW = (pageScale ? pageScale.S * 0.5 : 7);
+        const kMin = 15; // minimum chars per column
+        const minReadable = avgCharW * kMin;
+
+        // Binary search for collapse width between minReadable and pageBox.w
+        let lo = minReadable;
+        let hi = pageBox.w;
+        const collapseWidth = _findCollapseWidth(node, pageBox, textItems, fontRegistry, lo, hi, pageBox.w);
+
+        if (collapseWidth > 0) {
+            breakpoints.push({
+                path: path.join('.'),
+                collapseWidth,
+                minReadable,
+                colCount: node.children.length,
+            });
+        }
+    }
+
+    // Recurse into children, tracking path
+    if (node.children) {
+        for (let i = 0; i < node.children.length; i++) {
+            const childPath = [...path, i];
+            _walkTreeForBreakpoints(node.children[i], pageBox, textItems, fontRegistry, pageScale, breakpoints, childPath);
+        }
+    }
+}
+
+function _findCollapseWidth(node, pageBox, textItems, fontRegistry, lo, hi, originalW) {
+    if (lo >= hi) return 0;
+    const measure = createPdfMeasure(textItems, fontRegistry);
+
+    // Binary search: find the boundary width where overflow just starts
+    let best = 0;
+    for (let iter = 0; iter < 8; iter++) {
+        const mid = (lo + hi) / 2;
+        const testBox = { x: 0, y: 0, w: mid, h: pageBox.h };
+        try {
+            const result = resolveLayout(node, testBox, { measure, collide: false });
+            if (result.overflow && result.overflow.length > 0) {
+                // Overflow — too narrow; widen
+                lo = mid;
+            } else {
+                // No overflow — still fits; try narrower
+                best = mid;
+                hi = mid;
+            }
+        } catch (_) {
+            lo = mid;
+        }
+    }
+    return best > 0 ? Math.max(best, originalW * 0.3) : 0;
 }
 
 // ── Region font helpers ───────────────────────────────────────────────────────
@@ -241,10 +344,13 @@ const ALIGN_CLASS = { left: 'ta-l', center: 'ta-c', right: 'ta-r', justify: 'ta-
  * @param {number[]}           columnSplits — array of X coordinates for column gutters
  * @returns {{ html: string, text: string, tableCount: number }}
  */
-export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt, pageNum, fontRegistry, columnSplits = [], extractedImages = {}) {
+export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt, pageNum, fontRegistry, columnSplits = [], extractedImages = {}, docScale = null) {
     const parts = [];
     const textParts = [];
     let tableCount = 0;
+    let layoutTree = null;
+    let fidelityScore = 0;
+    let layoutMethod = 'flat-zones';
 
     // Accept both plain X numbers and {x, leftFraction} objects. Plain numbers
     // previously made `splits[0]?.leftFraction` undefined, so every 2-col zone
@@ -324,13 +430,41 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
         }
     }
 
+    // Flow chains: link paragraph fragments across column/zone seams. Links
+    // are non-destructive — the spatial HTML keeps every fragment in its
+    // column; the plain-text pass below joins linked fragments.
+    if (pageScale && textMeta.length > 0) {
+        linkFlows(regions, textMeta, autoZones, columnSplits, pageScale, pageWidth, pageNum);
+    }
+
+    // ── Phase 2: Layout tree + fidelity score ───────────────────────────────
+    // Build a recursive XY-cut tree from region boxes, resolve it forward,
+    // and compare against measured bboxes. The score arbitrates which HTML
+    // renderer is used (tree vs flat zones).
+    const pageBox = { x: 0, y: 0, w: pageWidth, h: viewport.height || pageWidth * 1.4 };
+    const treeResult = layoutTreeBuilder(regions, pageBox, pageScale, { docScale });
+    layoutTree = treeResult.tree;
+    layoutMethod = treeResult.method;
+
+    if (treeResult.method === 'xycut' && treeResult.tree && textItems.length > 0) {
+        try {
+            const pdfMeasure = createPdfMeasure(textItems, fontRegistry);
+            const layoutResult = resolveLayout(treeResult.tree, pageBox, { measure: pdfMeasure, collide: false });
+            const compareResult = compareBoxes(layoutResult.boxes, regions);
+            fidelityScore = compareResult.score;
+        } catch (_) {
+            fidelityScore = 0;
+        }
+    }
+
     // Render each region wrapped in a .pdf-region sentinel that carries
     // its viewport-space Y/X so the zone toolbar can rearrange without
     // re-running the extractor.
+    const textEntries = [];
     const rendered = regions.map(region => {
         const { html, text, tables } = _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages, pageScaleOpts);
         tableCount += tables;
-        if (text) textParts.push(text);
+        if (text) textEntries.push({ region, text });
         const ry = Math.round(region.yCenter ?? 0);
         const rx = Math.round(region.bbox?.x ?? 0);
         return {
@@ -338,52 +472,134 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
             colIdx: region.columnIndex,
             ry,
             rx,
+            id: region.id,
         };
     }).filter(r => r.html);
 
-    const COL_NAMES = ['left', 'center', 'right'];
-
-    for (const zone of autoZones) {
-        const zoneRegions = rendered.filter(r => r.ry >= zone.y0 && r.ry < zone.y1);
-        if (!zoneRegions.length) continue;
-
-        if (zone.cols === 1) {
-            parts.push(`<div class="pdf-zone pdf-zone--cols-1">${zoneRegions.map(r => r.html).join('\n')}</div>`);
-        } else {
-            const cols = zone.cols;
-            const colGroups = Array.from({ length: cols }, () => []);
-            for (const r of zoneRegions) {
-                // Use classifier's column index if valid; X-based otherwise.
-                const ci = (r.colIdx >= 0 && r.colIdx < cols)
-                    ? r.colIdx
-                    : Math.min(Math.floor(r.rx / pageWidth * cols), cols - 1);
-                colGroups[ci].push(r);
-            }
-            const colDivs = colGroups.map((col, i) => {
-                const name = cols <= 3 ? COL_NAMES[i] : `col-${i}`;
-                return `<div class="pdf-col pdf-col--${name}">${col.map(r => r.html).join('\n')}</div>`;
-            });
-            
-            let styleAttr = '';
-            if (cols === 2 && zone.layoutClass !== 'layout-card-grid') {
-                const splits = zone._zoneSplits || columnSplits;
-                const leftFraction = splits[0]?.leftFraction || 0.5;
-                styleAttr = ` style="--left-col: ${leftFraction.toFixed(4)};"`;
-            }
-
-            parts.push(`<div class="pdf-zone pdf-zone--cols-${cols} ${zone.layoutClass}"${styleAttr}>${colDivs.join('\n')}</div>`);
+    // Walk flow chains head-first, absorbing continuation text into the head
+    // entry so the plain-text output reads as unbroken paragraphs.
+    const byFlowId = new Map();
+    for (const e of textEntries) {
+        if (e.region.flowId) byFlowId.set(e.region.flowId, e);
+    }
+    for (const e of textEntries) {
+        const r = e.region;
+        if (!r.flowNext) continue;
+        if (r.flowPrev && byFlowId.has(r.flowPrev)) continue; // not a chain head
+        let cur = r;
+        while (cur.flowNext && byFlowId.has(cur.flowNext)) {
+            const nx = byFlowId.get(cur.flowNext);
+            e.text = _joinFlowText(e.text, nx.text, nx.region.flowJoin);
+            nx.absorbed = true;
+            cur = nx.region;
         }
     }
+    for (const e of textEntries) {
+        if (!e.absorbed) textParts.push(e.text);
+    }
 
-    const hasContent = parts.length > 0;
+    const COL_NAMES = ['left', 'center', 'right'];
+
+    // ── Phase 2: Placement offsets (alignment within resolved cell frames) ───
+    // resolveLayout predicts a cell frame per region; comparing it to the actual
+    // bbox gives justify-self / align-self hints that survive into the row model.
+    const placementMap = new Map();
+    if (layoutTree && layoutMethod === 'xycut') {
+        try {
+            const pdfMeasure = createPdfMeasure(textItems, fontRegistry);
+            const layoutResult = resolveLayout(layoutTree, pageBox, { measure: pdfMeasure, collide: false });
+            for (const rb of layoutResult.boxes) {
+                if (!rb.node?.id || !rb.box) continue;
+                const region = regions.find(rr => rr.id === rb.node.id);
+                if (!region || !region.bbox) continue;
+                const cellFrame = rb.box;
+                const actualBbox = region.bbox;
+                const leftOffset = actualBbox.x - cellFrame.x;
+                const rightOffset = (cellFrame.x + cellFrame.w) - (actualBbox.x + actualBbox.w);
+                const topOffset = actualBbox.y - cellFrame.y;
+                const bottomOffset = (cellFrame.y + cellFrame.h) - (actualBbox.y + actualBbox.h);
+                const tol = pageScale ? pageScale.S * 2 : 10;
+                const styles = [];
+                if (Math.abs(leftOffset - rightOffset) < tol) {
+                    styles.push('justify-self: center');
+                } else if (rightOffset < tol) {
+                    styles.push('justify-self: end');
+                } else if (leftOffset < tol) {
+                    styles.push('justify-self: start');
+                }
+                if (Math.abs(topOffset - bottomOffset) < tol && cellFrame.h > actualBbox.h + tol) {
+                    styles.push('align-self: center');
+                }
+                if (styles.length > 0) placementMap.set(rb.node.id, styles.join('; '));
+            }
+        } catch (_) { /* no placement data */ }
+    }
+
+    // Apply placement styles to rendered html entries
+    const renderedWithPlacement = rendered.map(r => {
+        if (!r.id || !placementMap.has(r.id)) return r;
+        const pStyle = placementMap.get(r.id);
+        return {
+            ...r,
+            html: r.html.replace(/^(<div class="pdf-region)/, `$1 style="${pStyle};"`)
+        };
+    });
+
+    // ── Row model assembly ─────────────────────────────────────────────────
+    // One pdf-page-row per page section. All left-column regions go into
+    // pdf-col--left, right into pdf-col--right, full-width into pdf-col--full.
+    // pdf-zone wrappers are preserved inside each column so selectionMode.js
+    // and zoneToolbar.js continue to work without changes.
+    parts.push(_buildPageRow(renderedWithPlacement, autoZones, columnSplits, numCols, pageWidth, COL_NAMES));
+
+    // ── Phase 3: Content-derived breakpoints (§35) ──────────────────────────
+    // For each col-split node in the layout tree, compute the min width at
+    // which columns must collapse. Uses resolveLayout at decreasing widths
+    // watching OverflowSignal. Falls back to 720px when no tree or no text.
+    let breakpoints = null;
+    if (layoutTree && layoutMethod === 'xycut' && fidelityScore > 0 && textItems.length > 0) {
+        try {
+            breakpoints = _deriveBreakpoints(layoutTree, pageBox, textItems, fontRegistry, pageScale);
+        } catch (_) { /* keep null — 720px fallback applies */ }
+    }
+
+    const hasContent = parts.length > 0 && parts.some(Boolean);
     const zonesJson = JSON.stringify(autoZones).replace(/'/g, '&#39;');
+
+    let contentHtml = parts.filter(Boolean).join('\n');
+    let extraStyles = '';
+
+    // Emit content-derived breakpoints as container queries targeting pdf-page-row.
+    // 720px media query is the fallback for browsers without container query support.
+    if (breakpoints && breakpoints.length > 0) {
+        const bpLines = breakpoints.map(bp => {
+            const px = Math.round(bp.collapseWidth);
+            return [
+                `@container (max-width: ${px}px) {`,
+                `  .pdf-page-row { grid-template-columns: 1fr; }`,
+                `}`,
+                `@media (max-width: ${Math.max(720, px)}px) {`,
+                `  .pdf-page-row { grid-template-columns: 1fr !important; }`,
+                `}`,
+            ].join('\n');
+        }).join('\n');
+        extraStyles = `<style class="pdf-breakpoints">\n${bpLines}\n</style>`;
+    }
+
     const html = hasContent
         ? `<article class="pdf-doc">\n<section class="pdf-page-content" data-page="${pageNum}" data-page-width="${Math.round(pageWidth)}" data-zones='${zonesJson}'>\n` +
           `<h4 class="page-label">Page ${pageNum}</h4>\n` +
-          parts.join('\n') + '\n</section>\n</article>'
+          contentHtml + '\n' + extraStyles + '\n</section>\n</article>'
         : '';
 
-    return { html, text: textParts.join('\n\n'), tableCount };
+    return {
+        html,
+        text: textParts.join('\n\n'),
+        tableCount,
+        layoutTree,
+        fidelityScore,
+        layoutMethod,
+    };
 }
 
 // Group regions into contiguous zones of same column type (full-width vs N-col).
@@ -453,6 +669,107 @@ function _detectAutoZones(regions, numCols, pageWidth) {
         
         return { y0, y1, cols: zoneCols, layoutClass };
     });
+}
+
+// Assemble all rendered regions for a page into one pdf-page-row.
+// Column regions are bucketed by colIdx and sorted by Y within each bucket.
+// Full-width regions (colIdx === -1, or in a 1-col zone) land in pdf-col--full
+// and span the entire grid via grid-column: 1 / -1.
+// pdf-zone wrappers are preserved inside each column bucket so selectionMode
+// and zoneToolbar continue to work against .pdf-zone without changes.
+function _buildPageRow(rendered, autoZones, columnSplits, numCols, pageWidth, colNames) {
+    if (!rendered.length) return '';
+
+    // Single-column page: no grid, just flat block flow in one full-width col
+    if (numCols <= 1) {
+        const zoneHtml = _groupIntoZones(rendered, autoZones);
+        return `<div class="pdf-page-row pdf-page-row--cols-1"><div class="pdf-col pdf-col--full" data-col-id="full">${zoneHtml}</div></div>`;
+    }
+
+    // Multi-column: split the page into vertical bands (sub-rows) so that a
+    // full-width element (a spanning table, figure, or abstract) at the top of
+    // the page renders ABOVE the multi-column prose below it, preserving reading
+    // order. A single page-wide row would force all full-width content (via
+    // grid-column: 1 / -1) to render after both prose columns regardless of Y.
+    //
+    // autoZones already segments the page into contiguous full-width and
+    // multi-column runs in Y order. We emit one pdf-page-row per run: full-width
+    // runs become a single spanning column; multi-column runs become left/right
+    // (or N) column buckets. This keeps the vertical order the PDF actually has.
+    const fullWidthZoneRanges = autoZones
+        .filter(z => z.cols === 1)
+        .map(z => ({ y0: z.y0, y1: z.y1 }));
+
+    const isFullWidth = r => {
+        if (r.colIdx === -1) return true;
+        return fullWidthZoneRanges.some(z => r.ry >= z.y0 && r.ry < z.y1);
+    };
+
+    const leftFraction = columnSplits[0]?.leftFraction || 0.5;
+    const rowModifier = numCols === 3 ? ' pdf-page-row--cols-3'
+        : numCols === 4 ? ' pdf-page-row--cols-4'
+        : '';
+    const styleAttr = (numCols === 2)
+        ? ` style="--left-col: ${leftFraction.toFixed(4)};"`
+        : '';
+
+    // Tag each rendered entry with its band type, then group consecutive entries
+    // (in Y order) of the same band type into runs. Each run emits one row.
+    // X tiebreak: regions sharing a baseline (one visual line split into
+    // several regions) must read left→right, not in detection order.
+    const ordered = [...rendered].sort((a, b) => (a.ry - b.ry) || (a.rx - b.rx));
+    const runs = [];
+    for (const r of ordered) {
+        const fw = isFullWidth(r);
+        const last = runs[runs.length - 1];
+        if (last && last.fw === fw) last.items.push(r);
+        else runs.push({ fw, items: [r] });
+    }
+
+    const emitFullRow = items => {
+        const inner = `<div class="pdf-zone pdf-zone--cols-1">${items.map(r => r.html).join('\n')}</div>`;
+        return `<div class="pdf-page-row pdf-page-row--cols-1">` +
+               `<div class="pdf-col pdf-col--full" data-col-id="full">${inner}</div></div>`;
+    };
+
+    const emitColRow = items => {
+        const colBuckets = Array.from({ length: numCols }, () => []);
+        for (const r of items) {
+            const ci = (r.colIdx >= 0 && r.colIdx < numCols)
+                ? r.colIdx
+                : Math.min(Math.floor(r.rx / pageWidth * numCols), numCols - 1);
+            colBuckets[ci].push(r);
+        }
+        for (const bucket of colBuckets) bucket.sort((a, b) => (a.ry - b.ry) || (a.rx - b.rx));
+        const colDivs = colBuckets.map((bucket, i) => {
+            if (!bucket.length) return '';
+            const name = numCols <= 3 ? (colNames[i] || `col-${i}`) : `col-${i}`;
+            const inner = `<div class="pdf-zone pdf-zone--cols-1">${bucket.map(r => r.html).join('\n')}</div>`;
+            return `<div class="pdf-col pdf-col--${name}" data-col-id="col-${i}">${inner}</div>`;
+        }).filter(Boolean);
+        return `<div class="pdf-page-row${rowModifier}"${styleAttr}>\n${colDivs.join('\n')}\n</div>`;
+    };
+
+    const rowsHtml = runs
+        .map(run => (run.fw ? emitFullRow(run.items) : emitColRow(run.items)))
+        .filter(Boolean);
+
+    return rowsHtml.join('\n');
+}
+
+// Wrap a flat list of rendered entries in pdf-zone divs matching autoZones boundaries.
+// Used for the single-column path where there is no column partitioning.
+function _groupIntoZones(rendered, autoZones) {
+    const parts = [];
+    for (const zone of autoZones) {
+        const zoneItems = rendered.filter(r => r.ry >= zone.y0 && r.ry < zone.y1);
+        if (!zoneItems.length) continue;
+        const cls = zone.cols > 1
+            ? `pdf-zone pdf-zone--cols-${zone.cols} ${zone.layoutClass}`
+            : 'pdf-zone pdf-zone--cols-1';
+        parts.push(`<div class="${cls}">${zoneItems.map(r => r.html).join('\n')}</div>`);
+    }
+    return parts.join('\n');
 }
 
 // Pre-pass: Merge adjacent image and paragraph regions if they look like a figure + caption
@@ -614,17 +931,60 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             const fontClass  = _registerFont(fontRegistry, family, sizePt, bold, italic);
             const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox)] || 'ta-l';
 
+            // Flow-chain attrs: id + links let semantic surfaces rejoin
+            // column-broken paragraphs without touching spatial placement.
+            let flowAttrs = '';
+            if (region.flowId) {
+                flowAttrs = ` id="${region.flowId}"`;
+                if (region.flowNext) flowAttrs += ` data-flow-next="${region.flowNext}"`;
+                if (region.flowPrev) {
+                    flowAttrs += ` data-flow-prev="${region.flowPrev}" data-continuation=""`;
+                    if (region.flowJoin && region.flowJoin !== 'space') {
+                        flowAttrs += ` data-flow-join="${region.flowJoin}"`;
+                    }
+                }
+            }
+
             // CSS inheritance propagates font-family/size/text-align down to <p> children
-            html = `<div class="${fontClass} ${alignClass}">${paraHtml}</div>`;
+            html = `<div class="${fontClass} ${alignClass}"${flowAttrs}>${paraHtml}</div>`;
             text = rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
             break;
         }
 
         case RegionType.BOX: {
-            const scopedItems = _scopeItems(region, textItems, textMeta);
-            const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
+            let scopedItems = _scopeItems(region, textItems, textMeta);
+            let scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
+
+            // In-box banner: when the black "! WARNING" bar shares the same
+            // bordered rectangle as the body (right-column admonitions), the
+            // banner label lives in the box's top items at a much larger font.
+            // Split those items into bannerText and drop them from the body flow
+            // so the header renders once, styled, not as oversized inline text.
+            let bannerText = region.bannerText || null;
+            if (!bannerText && region.boxRole && region.boxRole !== 'generic' && scopedMeta.length) {
+                const bodyFonts = scopedMeta.map(m => m.vFont || 0).filter(Boolean).sort((a, b) => a - b);
+                const medFont = bodyFonts[Math.floor(bodyFonts.length / 2)] || 0;
+                const topY = Math.min(...scopedMeta.map(m => m.vy));
+                const bandTol = medFont * 0.8;
+                const bannerIdx = new Set();
+                let labelParts = [];
+                for (let k = 0; k < scopedMeta.length; k++) {
+                    const m = scopedMeta[k];
+                    if (m.vy <= topY + bandTol && (m.vFont || 0) >= medFont * 1.5) {
+                        bannerIdx.add(k);
+                        if (/[A-Za-z]/.test(m.str)) labelParts.push(m.str.trim());
+                    }
+                }
+                const label = labelParts.join(' ').toUpperCase();
+                if (bannerIdx.size && /\b(WARNING|CAUTION|DANGER|NOTICE|NOTE|IMPORTANT)\b/.test(label)) {
+                    bannerText = label;
+                    scopedItems = scopedItems.filter((_, k) => !bannerIdx.has(k));
+                    scopedMeta = scopedMeta.filter((_, k) => !bannerIdx.has(k));
+                }
+            }
+
             const innerHtml = rebuildText(scopedItems, pageWidthPt, { format: 'html', ..._pageScaleOpts });
-            if (!innerHtml.trim()) break;
+            if (!innerHtml.trim() && !bannerText) break;
 
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
             const fontClass  = _registerFont(fontRegistry, family, sizePt, bold, italic);
@@ -644,8 +1004,19 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                 : ` style="background:rgb(${fc.map(c => Math.round(c * 255)).join(',')})"`;
 
 
-            html = `<aside class="pdf-box${roleClass} ${fontClass} ${alignClass}"${bgStyle}>${innerHtml}</aside>`;
-            text = rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
+            // Safety admonitions (WARNING/CAUTION/NOTICE) carry a banner header
+            // that the source draws as a black bar with an icon. Render it as a
+            // styled header so the box reads like the PDF, not as inline text.
+            const roleIcon = { warning: '⚠', caution: '⚠', note: 'ℹ', tip: '💡' };
+            let bannerHtml = '';
+            if (bannerText) {
+                const icon = roleIcon[region.boxRole] || '';
+                bannerHtml = `<div class="pdf-box-banner">${icon ? `<span class="pdf-box-icon">${icon}</span>` : ''}${esc(bannerText)}</div>`;
+            }
+
+            html = `<aside class="pdf-box${roleClass} ${fontClass} ${alignClass}"${bgStyle}>${bannerHtml}${innerHtml}</aside>`;
+            text = (bannerText ? bannerText + '\n' : '') +
+                rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
             break;
         }
 

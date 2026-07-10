@@ -4,7 +4,7 @@
 
 import { detectStreamTables } from '../streamDetector.js';
 
-export function detectStreamTableRegions(unclaimedMeta, scale, regions, segments, pageGraph) {
-    const streamTables = detectStreamTables(unclaimedMeta, scale, regions, segments);
+export function detectStreamTableRegions(unclaimedMeta, scale, regions, segments, pageGraph, columnXs = []) {
+    const streamTables = detectStreamTables(unclaimedMeta, scale, regions, segments, columnXs);
     return streamTables;
 }

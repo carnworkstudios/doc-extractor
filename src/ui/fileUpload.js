@@ -348,7 +348,7 @@ async function handleFile(file, pdfIndex) {
             }
         } else {
             // ── Local geometry worker fallback ────────────────────────────────
-            showStatus('Backend offline — running local vector extraction…');
+            // showStatus('Backend offline — running local vector extraction…');
             const result = await extractViaGeometryWorker(bytesForWorker, (msg) => showStatus(msg));
             data = { html: result.html, text: result.text || '', source: 'local', tableCount: result.tableCount };
         }

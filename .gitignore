@@ -20,4 +20,4 @@ test-*
 *.pptx
 *.xls
 test2.js
-
+.playwright-cli
