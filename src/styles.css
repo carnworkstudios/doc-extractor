@@ -262,14 +262,10 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
+  width: 28px;
   height: 20px;
-  background: var(--bg);
-  border: 1px solid var(--border-dark);
-  border-radius: 4px;
-  font-size: 9px;
-  font-weight: 700;
   color: var(--text-muted);
+  font-size: 16px;
   flex-shrink: 0;
 }
 
@@ -474,17 +470,18 @@ body {
   border-color: var(--accent-dark);
 }
 
-/* ── TOOLBAR ────────────────────────────────────────────────────────────── */
+/* ── TOOLBAR / RIBBON ──────────────────────────────────────────────────── */
 .toolbar-bar {
-  height: var(--toolbar-h);
+  min-height: var(--toolbar-h);
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 0;
-  padding: 0 12px;
+  padding: 4px 12px 2px;
   background: var(--surface);
   border-bottom: 1px solid var(--border-dark);
   flex-shrink: 0;
   overflow-x: auto;
+  overflow-y: hidden;
   transition:
     height 0.15s,
     padding 0.15s,
@@ -496,6 +493,7 @@ body {
 /* Entire bar hidden (editor / analyze / diff tabs) */
 .toolbar-bar--hidden {
   height: 0 !important;
+  min-height: 0 !important;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
   border-bottom-color: transparent !important;
@@ -507,17 +505,50 @@ body {
   display: none !important;
 }
 
+/* Ribbon group: icon row on top, small caption underneath (Word-style) */
+.ribbon-group,
 .toolbar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  flex-shrink: 0;
+  padding-bottom: 1px;
+}
+
+.ribbon-group-buttons {
   display: flex;
   align-items: center;
   gap: 2px;
 }
 
+.ribbon-group-buttons--wrap {
+  flex-wrap: wrap;
+  /* max-width: 220px; */
+  justify-content: center;
+}
+
+.ribbon-btn-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border-dark);
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+
+.ribbon-group-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .toolbar-sep {
   width: 1px;
-  height: 18px;
+  align-self: stretch;
+  margin: 3px 8px;
   background: var(--border-dark);
-  margin: 0 8px;
   flex-shrink: 0;
 }
 
@@ -551,7 +582,7 @@ body {
   justify-content: center;
   min-width: 28px;
   height: 26px;
-  padding: 0 8px;
+  padding: 0 6px;
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
@@ -565,6 +596,10 @@ body {
   white-space: nowrap;
 }
 
+.tool-btn iconify-icon {
+  font-size: 16px;
+}
+
 .tool-btn:hover {
   background: var(--accent-dim);
   border-color: rgba(79, 172, 254, 0.3);
@@ -575,6 +610,50 @@ body {
   background: var(--accent-dim);
   border-color: rgba(79, 172, 254, 0.4);
   color: var(--accent-dark);
+}
+
+#btn-format-painter.painting {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
+body.format-painter-active .prose-area,
+body.format-painter-active #html-preview,
+body.format-painter-active #visual-diff-html,
+body.format-painter-active .editable-text-layer {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%230066cc' stroke-width='2'><path d='M12 3v3M3 7h18M5 7v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7'/></svg>") 4 4, copy;
+}
+
+.split-btn {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  gap: 0;
+}
+
+.split-btn-caret {
+  min-width: 16px;
+  padding: 0 1px;
+}
+
+.split-btn-caret iconify-icon {
+  font-size: 18px;
+}
+
+/* Positioned fixed + JS-computed top/left on open (see pageNav.js
+   initSplitDropdown) so the menu escapes the ribbon's horizontal scroll
+   clipping, matching #export-dropdown's approach. */
+.split-menu.dropdown-menu {
+  min-width: 160px;
+}
+
+.tool-select--font {
+  max-width: 92px;
+}
+
+.tool-select--size {
+  max-width: 56px;
 }
 
 .tool-select {
@@ -828,6 +907,25 @@ body {
 
 .prose-area li {
   margin: 0.25em 0;
+}
+
+.prose-area dl {
+  margin: 0.7em 0;
+}
+
+.prose-area dt {
+  font-weight: 600;
+}
+
+.prose-area dd {
+  margin: 0 0 0.6em 1.6em;
+}
+
+/* Literal tab character inserted by the indent button (pageNav.js
+   increaseIndent) — needs white-space: pre or the browser collapses \t
+   to a single space like any other whitespace. */
+.tab-char {
+  white-space: pre;
 }
 
 .prose-area img {
