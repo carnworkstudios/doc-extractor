@@ -325,6 +325,56 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         }
     }
 
+    // Claim text inside INSET raster images the same way. The 4x page-render
+    // crop bakes overlapping text into the image pixels, so extracting it
+    // again as paragraphs duplicates content at positions where nothing
+    // belongs in the flow (chart axis labels, annotated screenshots).
+    //
+    // Background rasters must NOT claim: design PDFs draw real body text over
+    // full-page images, and claiming it would delete the page's content. Two
+    // guards, both required:
+    //   - geometry: the image is an inset (≤ 35% of page area, not a
+    //     near-full-width band)
+    //   - content: the image swallows < 40% of the page's unclaimed text
+    if (!skip.has('IMAGE') && keptImageRegions.length) {
+        const pageArea = viewport.width * viewport.height;
+        const totalUnclaimed = textMeta.filter(
+            tm => tm.str.trim() && !assignedTextIndices.has(tm.idx)).length;
+        // Poster page: text-sparse page dominated by imagery (covers, hero
+        // slides). The whole page is one designed unit; its text belongs in
+        // the crop. Article pages (real body text over a decorative
+        // background) have hundreds of items and must keep their text.
+        const POSTER_MAX_ITEMS = 60;
+        for (const ir of keptImageRegions) {
+            const b = ir.bbox;
+            const isInset = (b.w * b.h) / pageArea <= 0.35 &&
+                !(b.w >= viewport.width * 0.85 && b.h >= viewport.height * 0.5);
+            const inside = [];
+            for (const tm of textMeta) {
+                if (!tm.str.trim() || assignedTextIndices.has(tm.idx)) continue;
+                const cx = tm.vx + (tm.vWidth || 0) / 2;
+                if (cx >= b.x && cx <= b.x + b.w && tm.vy >= b.y && tm.vy <= b.y + b.h) {
+                    inside.push(tm.idx);
+                }
+            }
+            if (!inside.length) continue;
+            const posterMode = !isInset &&
+                totalUnclaimed <= POSTER_MAX_ITEMS &&
+                inside.length >= totalUnclaimed * 0.9;
+            if (isInset) {
+                // Inset figure: claim its labels unless it would swallow a
+                // large share of the page's text (mis-sized bbox safety).
+                if (totalUnclaimed > 0 && inside.length / totalUnclaimed >= 0.40) continue;
+            } else if (!posterMode) {
+                continue;
+            }
+            for (const idx of inside) {
+                ir.textItemIndices.push(idx);
+                assignedTextIndices.add(idx);
+            }
+        }
+    }
+
     // ── 5. Lattice table regions ─────────────────────────────────────────────
     if (!skip.has('LATTICE_TABLE')) {
         const latticeRegions = detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts);
