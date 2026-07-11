@@ -157,6 +157,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
     <link rel="stylesheet" href="src/styles.css">
     <!-- ginexys-modals.css references portfolio.css's :root CSS custom properties.
          pdf-processor uses its own design tokens in src/styles.css, so loading the
@@ -269,27 +270,27 @@
                 </button>
                 <div class="dropdown-menu">
                     <button class="dropdown-item" data-format="html">
-                        <span class="item-icon">HTML</span> Standalone Webpage (.html)
+                        <span class="item-icon"><iconify-icon icon="material-symbols:html-outline"></iconify-icon></span> Standalone Webpage (.html)
                     </button>
                     <button class="dropdown-item" data-format="markdown">
-                        <span class="item-icon">MD</span> Markdown (.md)
+                        <span class="item-icon"><iconify-icon icon="material-symbols:markdown-outline"></iconify-icon></span> Markdown (.md)
                     </button>
                     <button class="dropdown-item" data-format="pdf">
-                        <span class="item-icon">PDF</span> Print to PDF (.pdf)
+                        <span class="item-icon"><iconify-icon icon="material-symbols:picture-as-pdf-outline"></iconify-icon></span> Print to PDF (.pdf)
                     </button>
                     <button class="dropdown-item" data-format="xml">
-                        <span class="item-icon">XML</span> Structural Tree (.xml)
+                        <span class="item-icon"><iconify-icon icon="material-symbols:code-blocks-outline"></iconify-icon></span> Structural Tree (.xml)
                     </button>
                     <button class="dropdown-item" data-format="doc">
-                        <span class="item-icon">DOC</span> Word Document (.doc)
+                        <span class="item-icon"><iconify-icon icon="material-symbols:description-outline"></iconify-icon></span> Word Document (.doc)
                     </button>
                     <div class="dropdown-divider"></div>
                     <div class="dropdown-item gx-pro-locked" style="position:relative">
-                        <span class="item-icon">📝</span> Export to Notion <span class="gx-pro-badge">PRO</span>
+                        <span class="item-icon"><iconify-icon icon="material-symbols:note-stack-outline"></iconify-icon></span> Export to Notion <span class="gx-pro-badge">PRO</span>
                         <div class="gx-pro-interceptor" data-pro-feature="pdf-export-notion"></div>
                     </div>
                     <div class="dropdown-item gx-pro-locked" style="position:relative">
-                        <span class="item-icon">📊</span> Export to Google Sheets <span class="gx-pro-badge">PRO</span>
+                        <span class="item-icon"><iconify-icon icon="material-symbols:table-outline"></iconify-icon></span> Export to Google Sheets <span class="gx-pro-badge">PRO</span>
                         <div class="gx-pro-interceptor" data-pro-feature="pdf-export-sheets"></div>
                     </div>
                 </div>
@@ -297,78 +298,163 @@
         </div>
     </header>
 
-    <!-- ── TOOLBAR ───────────────────────────────────────────────────────── -->
+    <!-- ── TOOLBAR / RIBBON ─────────────────────────────────────────────── -->
     <div class="toolbar-bar" id="format-toolbar">
-        <!-- Text format: pdf, html, visual-diff -->
-        <div class="toolbar-group" data-toolbar-ctx="pdf html visual-diff">
-            <button class="tool-btn" id="btn-bold" title="Bold (Ctrl+B)"><b>B</b></button>
-            <button class="tool-btn" id="btn-italic" title="Italic (Ctrl+I)"><i>I</i></button>
-            <button class="tool-btn" id="btn-underline" title="Underline (Ctrl+U)"><u>U</u></button>
-        </div>
-        <div class="toolbar-sep" data-toolbar-ctx="html visual-diff"></div>
-        <!-- Block/list: html, visual-diff only -->
-        <div class="toolbar-group" data-toolbar-ctx="html visual-diff">
-            <select class="tool-select" id="sel-block">
-                <option value="">Body</option>
-                <option value="h1">H1</option>
-                <option value="h2">H2</option>
-                <option value="h3">H3</option>
-                <option value="h4">H4</option>
-            </select>
-            <button class="tool-btn" id="btn-ul" title="Bullet list">• List</button>
-            <button class="tool-btn" id="btn-ol" title="Numbered list">1. List</button>
+
+        <!-- Clipboard: pdf, html, visual-diff -->
+        <div class="ribbon-group" data-toolbar-ctx="pdf html visual-diff">
+            <div class="ribbon-group-buttons">
+                <button class="tool-btn" id="btn-format-painter" title="Format Painter — copy formatting, click target to apply">
+                    <iconify-icon icon="material-symbols:format-paint-outline"></iconify-icon>
+                </button>
+            </div>
+            <span class="ribbon-group-label">Clipboard</span>
         </div>
         <div class="toolbar-sep" data-toolbar-ctx="pdf html visual-diff"></div>
-        <!-- Alignment: pdf, html, visual-diff -->
-        <div class="toolbar-group" aria-label="Alignment" data-toolbar-ctx="pdf html visual-diff">
-            <button class="tool-btn" id="btn-align-left" title="Align left">⇤</button>
-            <button class="tool-btn" id="btn-align-center" title="Align center">≡</button>
-            <button class="tool-btn" id="btn-align-right" title="Align right">⇥</button>
-            <button class="tool-btn" id="btn-align-justify" title="Justify">⇔</button>
+
+        <!-- Font: pdf, html, visual-diff -->
+        <div class="ribbon-group" data-toolbar-ctx="pdf html visual-diff">
+            <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+                <select class="tool-select tool-select--font" id="sel-font-family" title="Font family">
+                    <option value="">Font</option>
+                    <option value="Inter, sans-serif">Inter</option>
+                    <option value="Georgia, serif">Georgia</option>
+                    <option value="'Times New Roman', serif">Times New Roman</option>
+                    <option value="Arial, sans-serif">Arial</option>
+                    <option value="'Courier New', monospace">Courier New</option>
+                </select>
+                <select class="tool-select tool-select--size" id="sel-font-size" title="Font size">
+                    <option value="">Size</option>
+                    <option value="1">8</option>
+                    <option value="2">10</option>
+                    <option value="3">12</option>
+                    <option value="4">14</option>
+                    <option value="5">18</option>
+                    <option value="6">24</option>
+                    <option value="7">36</option>
+                </select>
+                <button class="tool-btn" id="btn-bold" title="Bold (Ctrl+B)"><iconify-icon icon="material-symbols:format-bold"></iconify-icon></button>
+                <button class="tool-btn" id="btn-italic" title="Italic (Ctrl+I)"><iconify-icon icon="material-symbols:format-italic"></iconify-icon></button>
+                <button class="tool-btn" id="btn-underline" title="Underline (Ctrl+U)"><iconify-icon icon="material-symbols:format-underlined"></iconify-icon></button>
+            </div>
+            <span class="ribbon-group-label">Font</span>
         </div>
         <div class="toolbar-sep" data-toolbar-ctx="html visual-diff"></div>
-        <!-- Distribute: html, visual-diff only -->
-        <div class="toolbar-group" aria-label="Distribute children of current block" data-toolbar-ctx="html visual-diff">
-            <button class="tool-btn" id="btn-dist-h" title="Distribute horizontally (row, space-between)">⇆</button>
-            <button class="tool-btn" id="btn-dist-v" title="Distribute vertically (column, even gap)">⇅</button>
+
+        <!-- Paragraph: html, visual-diff only -->
+        <div class="ribbon-group" data-toolbar-ctx="html visual-diff">
+            <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+                <div class="split-btn dropdown" id="dd-bullets">
+                    <button class="tool-btn" id="btn-ul" title="Bullet list"><iconify-icon icon="material-symbols:format-list-bulleted"></iconify-icon></button>
+                    <button class="tool-btn split-btn-caret" title="Bullet styles"><iconify-icon icon="material-symbols:arrow-drop-down"></iconify-icon></button>
+                    <div class="dropdown-menu split-menu">
+                        <button class="dropdown-item" data-list-style="disc"><span class="item-icon">&bull;</span> Disc</button>
+                        <button class="dropdown-item" data-list-style="circle"><span class="item-icon">&#9675;</span> Circle</button>
+                        <button class="dropdown-item" data-list-style="square"><span class="item-icon">&#9642;</span> Square</button>
+                        <button class="dropdown-item" data-list-style="none"><span class="item-icon">&mdash;</span> None</button>
+                    </div>
+                </div>
+                <div class="split-btn dropdown" id="dd-numbering">
+                    <button class="tool-btn" id="btn-ol" title="Numbered list"><iconify-icon icon="material-symbols:format-list-numbered"></iconify-icon></button>
+                    <button class="tool-btn split-btn-caret" title="Numbering styles"><iconify-icon icon="material-symbols:arrow-drop-down"></iconify-icon></button>
+                    <div class="dropdown-menu split-menu">
+                        <button class="dropdown-item" data-list-style="decimal"><span class="item-icon">1.</span> 1, 2, 3&hellip;</button>
+                        <button class="dropdown-item" data-list-style="lower-alpha"><span class="item-icon">a.</span> a, b, c&hellip;</button>
+                        <button class="dropdown-item" data-list-style="upper-alpha"><span class="item-icon">A.</span> A, B, C&hellip;</button>
+                        <button class="dropdown-item" data-list-style="lower-roman"><span class="item-icon">i.</span> i, ii, iii&hellip;</button>
+                        <button class="dropdown-item" data-list-style="upper-roman"><span class="item-icon">I.</span> I, II, III&hellip;</button>
+                    </div>
+                </div>
+                <button class="tool-btn" id="btn-dl" title="Definition list (term / description)"><iconify-icon icon="material-symbols:list-alt-outline"></iconify-icon></button>
+                <span class="ribbon-btn-sep"></span>
+                <button class="tool-btn" id="btn-outdent" title="Decrease indent"><iconify-icon icon="material-symbols:format-indent-decrease"></iconify-icon></button>
+                <button class="tool-btn" id="btn-indent" title="Increase indent"><iconify-icon icon="material-symbols:format-indent-increase"></iconify-icon></button>
+                <span class="ribbon-btn-sep"></span>
+                <button class="tool-btn" id="btn-align-left" title="Align left"><iconify-icon icon="material-symbols:format-align-left"></iconify-icon></button>
+                <button class="tool-btn" id="btn-align-center" title="Align center"><iconify-icon icon="material-symbols:format-align-center"></iconify-icon></button>
+                <button class="tool-btn" id="btn-align-right" title="Align right"><iconify-icon icon="material-symbols:format-align-right"></iconify-icon></button>
+                <button class="tool-btn" id="btn-align-justify" title="Justify"><iconify-icon icon="material-symbols:format-align-justify"></iconify-icon></button>
+                <span class="ribbon-btn-sep"></span>
+                <button class="tool-btn" id="btn-dist-h" title="Distribute horizontally (row, space-between)"><iconify-icon icon="material-symbols:align-space-between"></iconify-icon></button>
+                <button class="tool-btn" id="btn-dist-v" title="Distribute vertically (column, even gap)"><iconify-icon icon="material-symbols:align-space-between" style="transform:rotate(90deg)"></iconify-icon></button>
+                <span class="ribbon-btn-sep"></span>
+                <div class="split-btn dropdown" id="dd-columns">
+                    <button class="tool-btn" id="btn-columns" title="Split selection into columns"><iconify-icon icon="material-symbols:view-column-outline"></iconify-icon></button>
+                    <button class="tool-btn split-btn-caret" title="Column count"><iconify-icon icon="material-symbols:arrow-drop-down"></iconify-icon></button>
+                    <div class="dropdown-menu split-menu">
+                        <button class="dropdown-item" data-cols="2"><span class="item-icon"><iconify-icon icon="material-symbols:view-column-outline"></iconify-icon></span> 2 Columns</button>
+                        <button class="dropdown-item" data-cols="3"><span class="item-icon"><iconify-icon icon="material-symbols:view-week-outline"></iconify-icon></span> 3 Columns</button>
+                        <button class="dropdown-item" data-cols="4"><span class="item-icon"><iconify-icon icon="material-symbols:view-week-outline"></iconify-icon></span> 4 Columns</button>
+                        <div class="dropdown-divider"></div>
+                        <button class="dropdown-item" data-cols="1"><span class="item-icon"><iconify-icon icon="material-symbols:view-agenda-outline"></iconify-icon></span> Remove Columns</button>
+                    </div>
+                </div>
+            </div>
+            <span class="ribbon-group-label">Paragraph</span>
         </div>
         <div class="toolbar-sep" data-toolbar-ctx="html"></div>
-        <!-- +Page, 2-col, +Box: html only -->
-        <div class="toolbar-group" data-toolbar-ctx="html">
-            <button class="tool-btn" id="btn-add-page" title="Add blank page">+ Page</button>
-            <button class="tool-btn" id="btn-2col" title="Toggle 2-column layout">⊟ 2-col</button>
-            <button class="tool-btn" id="btn-insert-box" title="Insert callout / text box">⊞ Box</button>
+
+        <!-- Styles: html only -->
+        <div class="ribbon-group" data-toolbar-ctx="html">
+            <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+                <select class="tool-select" id="sel-block" title="Paragraph style">
+                    <option value="">Body</option>
+                    <option value="h1">Heading 1</option>
+                    <option value="h2">Heading 2</option>
+                    <option value="h3">Heading 3</option>
+                    <option value="h4">Heading 4</option>
+                </select>
+                <button class="tool-btn" id="btn-add-page" title="Add blank page"><iconify-icon icon="material-symbols:note-add-outline"></iconify-icon></button>
+                <button class="tool-btn" id="btn-insert-box" title="Insert callout / text box"><iconify-icon icon="material-symbols:add-notes-outline"></iconify-icon></button>
+            </div>
+            <span class="ribbon-group-label">Styles</span>
         </div>
         <div class="toolbar-sep" data-toolbar-ctx="html visual-diff"></div>
-        <!-- Undo / Redo: html + visual-diff -->
-        <div class="toolbar-group" id="undo-redo-group" data-toolbar-ctx="html visual-diff">
-            <button class="tool-btn" id="btn-undo" title="Undo structural edit" disabled>↩ Undo</button>
-            <button class="tool-btn" id="btn-redo" title="Redo" disabled>↪ Redo</button>
+
+        <!-- Editing (Undo/Redo): html + visual-diff -->
+        <div class="ribbon-group" id="undo-redo-group" data-toolbar-ctx="html visual-diff">
+            <div class="ribbon-group-buttons">
+                <button class="tool-btn" id="btn-undo" title="Undo structural edit" disabled><iconify-icon icon="material-symbols:undo"></iconify-icon></button>
+                <button class="tool-btn" id="btn-redo" title="Redo" disabled><iconify-icon icon="material-symbols:redo"></iconify-icon></button>
+            </div>
+            <span class="ribbon-group-label">Editing</span>
         </div>
 
         <div class="toolbar-sep" data-toolbar-ctx="pdf visual-diff"></div>
         <!-- PDF zoom: pdf, visual-diff -->
-        <div class="toolbar-group" id="pdf-zoom-group" aria-label="PDF zoom" data-toolbar-ctx="pdf visual-diff">
-            <button class="tool-btn" id="btn-zoom-out" title="Zoom out">−</button>
-            <span class="page-counter" id="zoom-pct">100%</span>
-            <button class="tool-btn" id="btn-zoom-in" title="Zoom in">+</button>
-            <button class="tool-btn" id="btn-zoom-fit" title="Fit width">↔</button>
+        <div class="ribbon-group" id="pdf-zoom-group" aria-label="PDF zoom" data-toolbar-ctx="pdf visual-diff">
+            <div class="ribbon-group-buttons">
+                <button class="tool-btn" id="btn-zoom-out" title="Zoom out"><iconify-icon icon="material-symbols:zoom-out"></iconify-icon></button>
+                <span class="page-counter" id="zoom-pct">100%</span>
+                <button class="tool-btn" id="btn-zoom-in" title="Zoom in"><iconify-icon icon="material-symbols:zoom-in"></iconify-icon></button>
+                <button class="tool-btn" id="btn-zoom-fit" title="Fit width"><iconify-icon icon="material-symbols:fit-screen-outline"></iconify-icon></button>
+            </div>
+            <span class="ribbon-group-label">Zoom</span>
         </div>
         <div class="toolbar-sep" data-toolbar-ctx="pdf html visual-diff"></div>
+
         <!-- Selection Mode: pdf, html, visual-diff -->
-        <div class="toolbar-group" data-toolbar-ctx="pdf html visual-diff">
-            <button class="tool-btn" id="btn-select-mode" title="Toggle Selection / Edit mode">Select</button>
-            <button class="tool-btn" id="btn-group-selected" title="Group selected regions into a zone" style="display:none">Group</button>
+        <div class="ribbon-group" data-toolbar-ctx="pdf html visual-diff">
+            <div class="ribbon-group-buttons">
+                <button class="tool-btn" id="btn-select-mode" title="Toggle Selection / Edit mode"><iconify-icon icon="material-symbols:arrow-selector-tool-outline"></iconify-icon></button>
+                <button class="tool-btn" id="btn-group-selected" title="Group selected regions into a zone" style="display:none"><iconify-icon icon="material-symbols:group-work-outline"></iconify-icon></button>
+            </div>
+            <span class="ribbon-group-label">Select</span>
         </div>
         <div class="toolbar-sep" data-toolbar-ctx="pdf visual-diff"></div>
+
         <!-- Page navigation: pdf, visual-diff -->
-        <div class="toolbar-group page-nav" id="page-nav" data-toolbar-ctx="pdf visual-diff">
-            <button class="tool-btn" id="btn-prev-page" title="Previous page">⟨</button>
-            <span class="page-counter" id="page-counter">Page 1 of 1</span>
-            <button class="tool-btn" id="btn-next-page" title="Next page">⟩</button>
-            <select class="tool-select" id="page-jump" title="Jump to page"></select>
+        <div class="ribbon-group" id="page-nav-group" data-toolbar-ctx="pdf visual-diff">
+            <div class="ribbon-group-buttons page-nav" id="page-nav">
+                <button class="tool-btn" id="btn-prev-page" title="Previous page"><iconify-icon icon="material-symbols:chevron-left"></iconify-icon></button>
+                <span class="page-counter" id="page-counter">Page 1 of 1</span>
+                <button class="tool-btn" id="btn-next-page" title="Next page"><iconify-icon icon="material-symbols:chevron-right"></iconify-icon></button>
+                <select class="tool-select" id="page-jump" title="Jump to page"></select>
+            </div>
+            <span class="ribbon-group-label">Navigate</span>
         </div>
     </div>
+
 
     <!-- ── STATUS BAR ──────────────────────────────────────────────────── -->
     <div id="status-bar" class="status-bar" hidden>
