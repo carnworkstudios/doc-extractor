@@ -167,10 +167,19 @@ export function generateDocumentStyles(fontRegistry) {
         '.pdf-doc .pdf-col { min-width: 0; }',
         '.pdf-doc .pdf-col--full { grid-column: 1 / -1; }',
         '.pdf-doc .pdf-region { }',
+        // Semantic class for paragraph blocks — clean hook for CSS frameworks.
+        // The .fN class still carries precise font sizing from the PDF; the
+        // pdf-paragraph class is a stable semantic anchor that Tailwind,
+        // Bootstrap, or custom CSS can target without depending on numbered
+        // font classes.
+        '.pdf-doc .pdf-paragraph { margin: 0.5em 0; }',
+        '.pdf-doc .pdf-text-body { }',  /* alias for framework hooks */
         '@media (max-width: 720px) { .pdf-doc .pdf-page-row { grid-template-columns: 1fr; } }',
         // Stacked columns restore reading order — visually fuse continuations
         // with their predecessor (see flowLinker.js).
-        '@media (max-width: 720px) { .pdf-doc [data-continuation] > p:first-child { margin-top: 0; text-indent: 0; } }',
+        // data-continuation now lives on the <p> element itself (flattened
+        // paragraph markup), so the selector targets the <p> directly.
+        '@media (max-width: 720px) { .pdf-doc [data-continuation] { margin-top: 0; text-indent: 0; } }',
         // Running header / footer
         '.pdf-doc .pdf-header { font-size: 0.78em; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-bottom: 12px; }',
         '.pdf-doc .pdf-footer { font-size: 0.78em; color: #555; border-top: 1px solid #ddd; padding-top: 4px; margin-top: 12px; }',
@@ -931,22 +940,51 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             const fontClass  = _registerFont(fontRegistry, family, sizePt, bold, italic);
             const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox)] || 'ta-l';
 
-            // Flow-chain attrs: id + links let semantic surfaces rejoin
-            // column-broken paragraphs without touching spatial placement.
-            let flowAttrs = '';
+            // Flow-chain attrs: semantic surfaces rejoin column-broken
+            // paragraphs via these attributes. Only the first <p> in a
+            // region carries them (subsequent blocks are continuations).
+            let firstFlowAttrs = '';
             if (region.flowId) {
-                flowAttrs = ` id="${region.flowId}"`;
-                if (region.flowNext) flowAttrs += ` data-flow-next="${region.flowNext}"`;
+                firstFlowAttrs = ` id="${region.flowId}"`;
+                if (region.flowNext) firstFlowAttrs += ` data-flow-next="${region.flowNext}"`;
                 if (region.flowPrev) {
-                    flowAttrs += ` data-flow-prev="${region.flowPrev}" data-continuation=""`;
+                    firstFlowAttrs += ` data-flow-prev="${region.flowPrev}" data-continuation=""`;
                     if (region.flowJoin && region.flowJoin !== 'space') {
-                        flowAttrs += ` data-flow-join="${region.flowJoin}"`;
+                        firstFlowAttrs += ` data-flow-join="${region.flowJoin}"`;
                     }
                 }
             }
 
-            // CSS inheritance propagates font-family/size/text-align down to <p> children
-            html = `<div class="${fontClass} ${alignClass}"${flowAttrs}>${paraHtml}</div>`;
+            // Flatten: extract <p> contents from rebuildText's html output
+            // and re-wrap in proper <p> tags with font/alignment classes.
+            // This eliminates the intermediate <div class="f0 ta-l"> wrapper:
+            //
+            //   Before: .pdf-region > div.f0.ta-l > p   (3 levels)
+            //   After:  .pdf-region > p.f0.ta-l.pdf-paragraph  (2 levels)
+            //
+            // The result is valid HTML that editors and CSS frameworks
+            // can work with directly. Multiple <p> blocks per region
+            // (from sentence-aware paragraph breaks in rebuildText) are
+            // emitted as separate <p> siblings — only the first carries
+            // flow-chain metadata.
+            const pBlocks = [];
+            const pRe = /<p>([\s\S]*?)<\/p>/g;
+            let pm;
+            while ((pm = pRe.exec(paraHtml)) !== null) {
+                pBlocks.push(pm[1]);
+            }
+
+            if (pBlocks.length) {
+                html = pBlocks.map((content, fi) => {
+                    const attrs = fi === 0 ? firstFlowAttrs : '';
+                    return `<p class="${fontClass} ${alignClass} pdf-paragraph"${attrs}>${content}</p>`;
+                }).join('\n');
+            } else {
+                // Fallback: if rebuildText produced no <p> blocks (e.g. all
+                // headings from textRebuilder's heuristic inside a paragraph-
+                // classified region), keep the original wrapper structure.
+                html = `<div class="${fontClass} ${alignClass}"${firstFlowAttrs}>${paraHtml}</div>`;
+            }
             text = rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
             break;
         }

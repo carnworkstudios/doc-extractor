@@ -18,7 +18,6 @@
 import { applyHtmlEverywhere } from './htmlSync.js';
 import { applyZones } from './zoneToolbar.js';
 import { state } from '../state.js';
-import { pushSnapshot, syncUndoRedoUI } from './historyController.js';
 
 let _active              = false;
 let _selected            = new Set();
@@ -719,16 +718,11 @@ function _updateGroupBtn() {
 }
 
 function _syncState() {
-    // Snapshot the state BEFORE applying the DOM mutation to state + other surfaces.
-    // pushSnapshot reads #html-preview which still has the pre-mutation DOM at this point
-    // because applyHtmlEverywhere hasn't run yet.
-    pushSnapshot();
     _removeGhostCol();
     _removeAllDividers();
     _hidePropsPanel();
     _preview.querySelectorAll('.sel-drag-handle').forEach(h => h.remove());
     applyHtmlEverywhere(_preview.innerHTML, _preview);
-    syncUndoRedoUI();
     if (_active) {
         _attachHandles();
         _injectAllResizeDividers();

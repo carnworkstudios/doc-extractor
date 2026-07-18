@@ -442,12 +442,31 @@ export async function downloadExtractedHTML() {
         }
     }
 
+    // Preserve font CSS that was in the extracted HTML's <style> block.
+    // DOMParser moves it into <head>; doc.body.innerHTML drops it, so
+    // we extract it explicitly before discarding the parsed document.
+    const styleTags = doc.head?.querySelectorAll('style') || [];
+    const fontCss = Array.from(styleTags)
+        .map(s => s.outerHTML)
+        .join('\n');
+
     // Restore body innerHTML as the document string
     html = doc.body.innerHTML;
 
     const title = state.pdf1.file?.name || 'Extracted PDF';
+    const exportedHead = [
+        '<meta charset="utf-8"/>',
+        `<title>${title}</title>`,
+        fontCss,
+        '<style>body{font-family:sans-serif;max-width:1000px;margin:0 auto;padding:2rem;}img{max-width:100%;}',
+        '.pdf-doc .f0,.pdf-doc .f1,.pdf-doc .f2,.pdf-doc .f3,.pdf-doc .f4,.pdf-doc .f5,.pdf-doc .f6,.pdf-doc .f7,.pdf-doc .f8,.pdf-doc .f9 { margin: 0; }',
+        '.pdf-doc .pdf-paragraph { margin: 0.5em 0; }',
+        '.pdf-doc { max-width: 1000px; margin: 0 auto; }',
+        '.pdf-page-content { padding: 40px 48px; }',
+        '</style>',
+    ].filter(Boolean).join('\n');
     const blob = new Blob(
-        [`<!doctype html><html><head><meta charset="utf-8"/><title>${title}</title><style>body{font-family:sans-serif;max-width:1000px;margin:0 auto;padding:2rem;}img{max-width:100%;}</style></head><body>\n${html}\n</body></html>`],
+        [`<!doctype html><html><head>\n${exportedHead}\n</head><body>\n${html}\n</body></html>`],
         { type: 'text/html' },
     );
     const a = document.createElement('a');

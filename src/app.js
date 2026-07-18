@@ -10,6 +10,7 @@ import { initExportSystem } from './ui/exportController.js';
 import { initToolbar } from './ui/pageNav.js';
 import { initContextMenu } from './ui/contextMenu.js';
 import { initDividerResize } from './ui/visualDiff.js';
+import { initTableEditing } from './ui/tableEditorInit.js';
 import { initMonacoEditor } from './editor/monacoSetup.js';
 import { initHTMLSync, patchPageHtml } from './ui/htmlSync.js';
 import { initZoneToolbar } from './ui/zoneToolbar.js';
@@ -150,6 +151,7 @@ $(() => {
     initZoneToolbar();
     initExportSystem();
     initSelectionMode();
+    initTableEditing();
     initViewCode();
     initPDFEditMode();
     initHistoryController();

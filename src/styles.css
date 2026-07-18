@@ -954,6 +954,314 @@ body.format-painter-active .editable-text-layer {
   font-weight: 600;
 }
 
+/* ── TABLE EDITOR RULER ───────────────────────────────────────────────────────
+   Ruler wrap around tables for inline editing (add/delete/reorder rows/cols).
+   Activated by TableEditor with { ruler: true }. */
+
+.tafne-ruler-wrap {
+  display: flex;
+  flex-direction: column;
+  margin: 1.2em 0;
+  position: relative;
+}
+
+.tafne-ruler-header {
+  display: flex;
+  align-items: stretch;
+  height: 28px;
+}
+
+.tafne-corner {
+  width: 32px;
+  min-width: 32px;
+  background: #f0f1f3;
+  border: 1px solid #d1d5db;
+  border-right: none;
+  border-bottom: none;
+  border-radius: 4px 0 0 0;
+}
+
+.tafne-col-ruler {
+  display: flex;
+  flex: 1;
+  background: #f0f1f3;
+  border: 1px solid #d1d5db;
+  border-bottom: none;
+  border-radius: 0 4px 0 0;
+  overflow: hidden;
+}
+
+.tafne-col-ruler .ruler-seg {
+  flex: 1;
+  min-width: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  position: relative;
+  border-right: 1px solid #d1d5db;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.tafne-col-ruler .ruler-seg:hover {
+  background: #e5e7eb;
+}
+
+.tafne-col-ruler .ruler-seg .ruler-del {
+  display: none;
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  font-size: 10px;
+  line-height: 1;
+  color: #ef4444;
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  text-align: center;
+  background: rgba(255,255,255,0.8);
+}
+
+.tafne-col-ruler .ruler-seg:hover .ruler-del {
+  display: block;
+}
+
+.tafne-col-ruler .ruler-add {
+  width: 24px;
+  min-width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: #22c55e;
+  cursor: pointer;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.tafne-col-ruler .ruler-add:hover {
+  background: #dcfce7;
+}
+
+.tafne-ruler-body {
+  display: flex;
+  align-items: stretch;
+}
+
+.tafne-row-ruler {
+  width: 32px;
+  min-width: 32px;
+  background: #f0f1f3;
+  border: 1px solid #d1d5db;
+  border-right: none;
+  border-top: none;
+  border-radius: 0 0 0 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.tafne-row-ruler .ruler-seg {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  position: relative;
+  border-bottom: 1px solid #d1d5db;
+  transition: background 0.15s;
+  user-select: none;
+  min-height: 24px;
+}
+
+.tafne-row-ruler .ruler-seg:hover {
+  background: #e5e7eb;
+}
+
+.tafne-row-ruler .ruler-seg .ruler-del {
+  display: none;
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  font-size: 10px;
+  line-height: 1;
+  color: #ef4444;
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  text-align: center;
+  background: rgba(255,255,255,0.8);
+}
+
+.tafne-row-ruler .ruler-seg:hover .ruler-del {
+  display: block;
+}
+
+.tafne-row-ruler .ruler-add {
+  height: 28px;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: #22c55e;
+  cursor: pointer;
+  transition: background 0.15s;
+  user-select: none;
+  border-bottom: none;
+}
+
+.tafne-row-ruler .ruler-add:hover {
+  background: #dcfce7;
+}
+
+.tafne-ruler-wrap table {
+  margin: 0 !important;
+  border-radius: 0 4px 4px 0;
+}
+
+.tafne-ruler-wrap td.selected-cell,
+.tafne-ruler-wrap th.selected-cell {
+  outline: 2px solid #4facfe;
+  outline-offset: -1px;
+  background: rgba(79, 172, 254, 0.08);
+}
+
+.tafne-ruler-wrap td.dragging,
+.tafne-ruler-wrap th.dragging {
+  opacity: 0.4;
+}
+
+.tafne-ruler-wrap td.drag-over,
+.tafne-ruler-wrap th.drag-over {
+  outline: 2px dashed #22c55e;
+  outline-offset: -2px;
+}
+
+/* ── TABLE TOOLBAR BUTTON STATES ────────────────────────────────────────────── */
+
+.badge-plus,
+.badge-minus {
+  font-size: 9px;
+  font-weight: 700;
+  position: relative;
+  top: -6px;
+  left: -2px;
+  line-height: 0;
+}
+.badge-plus { color: #22c55e; }
+.badge-minus { color: #ef4444; }
+
+.tool-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* ── TABLE FAB + EDIT MODE ──────────────────────────────────────────────────── */
+
+.tbl-fab {
+  position: fixed;
+  z-index: 1000;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #4facfe;
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  transition: transform 0.15s, background 0.15s;
+  user-select: none;
+}
+.tbl-fab:hover { transform: scale(1.1); background: #3b9be0; }
+.tbl-fab--active { background: #22c55e; transform: scale(1.1); }
+.tbl-fab--active:hover { background: #16a34a; }
+
+.tbl-fab-popover {
+  position: fixed;
+  z-index: 1001;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 160px;
+}
+
+.tbl-fab-popover .tbl-pop-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  border-bottom: 1px solid #f3f4f6;
+  margin-bottom: 2px;
+}
+
+.tbl-fab-popover .tbl-pop-header .tbl-pop-toggle {
+  font-size: 10px;
+  color: #4facfe;
+  cursor: pointer;
+  background: none;
+  border: 1px solid #4facfe;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+.tbl-fab-popover .tbl-pop-header .tbl-pop-toggle:hover {
+  background: #4facfe;
+  color: #fff;
+}
+.tbl-fab-popover .tbl-pop-header .tbl-pop-toggle.active {
+  background: #22c55e;
+  border-color: #22c55e;
+  color: #fff;
+}
+
+.tbl-fab-popover .tbl-pop-row {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+}
+
+.tbl-fab-popover .tbl-pop-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #374151;
+  transition: background 0.12s;
+}
+.tbl-fab-popover .tbl-pop-btn:hover { background: #f3f4f6; }
+.tbl-fab-popover .tbl-pop-btn:disabled { opacity: 0.3; cursor: default; background: transparent; }
+
 /* ── PAGED HTML OUTPUT ──────────────────────────────────────────────────────
    When the extracted HTML contains <section class="pdf-page-content">,
    render the prose area as a stack of page-cards (gray frame + white cards

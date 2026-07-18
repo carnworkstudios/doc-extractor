@@ -441,7 +441,22 @@
             </div>
             <span class="ribbon-group-label">Select</span>
         </div>
-        <div class="toolbar-sep" data-toolbar-ctx="pdf visual-diff"></div>
+        <div class="toolbar-sep" data-toolbar-ctx="html visual-diff"></div>
+
+        <!-- Table editing: html, visual-diff -->
+        <div class="ribbon-group" data-toolbar-ctx="html visual-diff">
+            <div class="ribbon-group-buttons">
+                <button class="tool-btn" id="btn-table-add-row" title="Add row below" disabled><iconify-icon icon="material-symbols:table-rows-outline"></iconify-icon><span class="badge-plus">+</span></button>
+                <button class="tool-btn" id="btn-table-add-col" title="Add column right" disabled><iconify-icon icon="material-symbols:table-columns-outline"></iconify-icon><span class="badge-plus">+</span></button>
+                <button class="tool-btn" id="btn-table-del-row" title="Delete row" disabled><iconify-icon icon="material-symbols:table-rows-outline"></iconify-icon><span class="badge-minus">&minus;</span></button>
+                <button class="tool-btn" id="btn-table-del-col" title="Delete column" disabled><iconify-icon icon="material-symbols:table-columns-outline"></iconify-icon><span class="badge-minus">&minus;</span></button>
+                <button class="tool-btn" id="btn-table-merge" title="Merge cells" disabled><iconify-icon icon="material-symbols:table-merge-cells-outline"></iconify-icon></button>
+                <button class="tool-btn" id="btn-table-undo" title="Undo table edit" disabled><iconify-icon icon="material-symbols:undo"></iconify-icon></button>
+                <button class="tool-btn" id="btn-table-redo" title="Redo table edit" disabled><iconify-icon icon="material-symbols:redo"></iconify-icon></button>
+            </div>
+            <span class="ribbon-group-label">Table</span>
+        </div>
+        <div class="toolbar-sep" data-toolbar-ctx="html visual-diff"></div>
 
         <!-- Page navigation: pdf, visual-diff -->
         <div class="ribbon-group" id="page-nav-group" data-toolbar-ctx="pdf visual-diff">
@@ -728,7 +743,7 @@
                         <button class="legend-toggle active" data-layer="hSegs"    style="--lc:#3b82f6">H segs</button>
                         <button class="legend-toggle active" data-layer="vSegs"    style="--lc:#10b981">V segs</button>
                         <button class="legend-toggle active" data-layer="diagSegs" style="--lc:#9ca3af">Diag</button>
-                        <button class="legend-toggle active" data-layer="rects"    style="--lc:#f97316">Rects</button>
+                        <button class="legend-toggle" data-layer="rects"    style="--lc:#f97316">Rects</button>
                         <button class="legend-toggle active" data-layer="images"   style="--lc:#ef4444">Images</button>
                         <button class="legend-toggle active" data-layer="text"     style="--lc:#e879f9">Text</button>
                     </div>

@@ -239,9 +239,10 @@ function _buildOutput(lines, o, bodyFontSize) {
     if (o.format === 'html') {
         // Sentence-aware paragraph emission: a gap-detected block that begins
         // before the previous block finished a sentence is a visual break, not
-        // a semantic one. Keep it inside the same <p> joined with <br> so the
-        // <p> structure follows sentences while the line structure stays
-        // faithful to the page.
+        // a semantic one. Keep it inside the same <p> joined with a space so
+        // the <p> structure follows sentences rather than preserving PDF line
+        // breaks. Editors and downstream consumers get clean reflowable text
+        // instead of hard-wrapped <br> fragments.
         const blocks = paragraphs.map(p => {
             const inner = p.lines.map(l => l.html || _escHtml(l.str)).join(' ');
             const plain = p.lines.map(l => l.str).join(' ').trim();
@@ -258,7 +259,7 @@ function _buildOutput(lines, o, bodyFontSize) {
             const prev = out[out.length - 1];
             if (!b.isHeading && prev && !prev.isHeading && prev.open &&
                 !_LIST_MARKER_RE.test(b.plain)) {
-                prev.inner += '<br>' + b.inner;
+                prev.inner += ' ' + b.inner;
                 prev.open = _sentenceOpen(b.plain);
                 continue;
             }
