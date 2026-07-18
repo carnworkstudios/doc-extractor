@@ -155,11 +155,78 @@ export function initAnalyzePanel(geoWorkerRef) {
     // Re-extract page button
     document.getElementById('analyze-reextract')?.addEventListener('click', _doReextract);
 
+    // Send current page's vectors to Schema Editor (svg-vector envelope)
+    document.getElementById('analyze-send-schema')?.addEventListener('click', _sendVectorsToSchema);
+
     // Bulk extract — pro gate
     document.getElementById('analyze-bulk-extract')?.addEventListener('click', () => {
         if (typeof window.openProWaitlist === 'function') {
             window.openProWaitlist('pdf-analyze-bulk', 'Re-extract all pages with custom pipeline settings.');
         }
+    });
+}
+
+// ── Send page vectors to Schema Editor ───────────────────────────────────────
+// Serializes the current page's CTM-resolved geometry (reconciled segments +
+// closed rects from ctmAdapter → pathReconciler) into an SVG tagged with
+// data-geo-class so schema-editor's geometry pipeline classifies it directly.
+// This is the deterministic replacement for the old SVGGraphics import idea.
+async function _sendVectorsToSchema() {
+    const page = _analysis?.pages?.[_currentPage];
+    if (!page) { showToast('Analyze a PDF first', 'error'); return; }
+    if (!window.CwsBridge?.isEmbedded) {
+        showToast('Open inside the GINEXYS OS shell to send to Schema Editor', 'error');
+        return;
+    }
+
+    const segLine = (s) =>
+        `<line x1="${s.x1}" y1="${s.y1}" x2="${s.x2}" y2="${s.y2}" ` +
+        `stroke="#666" stroke-width="${s.width || 1}" fill="none" data-geo-class="wire"/>`;
+    const rectEl = (r) =>
+        `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" ` +
+        `stroke="#666" fill="none" data-geo-class="component"/>`;
+
+    const body =
+        [...page.hSegs, ...page.vSegs, ...page.diagSegs].map(segLine).join('') +
+        page.closedRects.map(rectEl).join('');
+    const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${page.widthPx} ${page.heightPx}">${body}</svg>`;
+
+    try {
+        // Ensure schema-editor is running before the kernel routes the offer
+        window.CwsBridge.send('cws:tool:launch', { toolId: 'svg_wiring', focusAfterLaunch: true }, 'os');
+        await _waitForToolReady('svg_wiring', 8000);
+
+        const pointerId = await window.CwsBridge.requestStore(svg, 'svg-vector');
+        window.CwsBridge.offerData(window.CwsContracts.createEnvelope({
+            pointer:     pointerId,
+            contentType: 'svg-vector',
+            metadata: {
+                source: 'pdf-processor',
+                name:   `Page ${page.pageNum} vectors`,
+                segCount: page.totalSegCount,
+                rectCount: page.closedRectCount,
+            },
+            hints: { suggestedTarget: 'svg_wiring', action: 'vector-import' },
+        }));
+        showToast(`Sent page ${page.pageNum} vectors to Schema Editor`, 'success');
+    } catch (e) {
+        showToast(`Send failed: ${e.message || e}`, 'error');
+    }
+}
+
+// Resolves when the tool acks launch/registration, or after timeout (continue anyway).
+function _waitForToolReady(toolId, timeout) {
+    return new Promise((resolve) => {
+        let done = false;
+        const finish = () => { if (!done) { done = true; window.removeEventListener('message', handler); resolve(); } };
+        const handler = (e) => {
+            const t = e.data?.type;
+            if ((t === 'cws:tool:launch-ack' || t === 'cws:lifecycle:registered') &&
+                (e.data?.payload?.toolId === toolId || !e.data?.payload?.toolId)) finish();
+        };
+        window.addEventListener('message', handler);
+        setTimeout(finish, timeout);
     });
 }
 

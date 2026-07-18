@@ -207,8 +207,8 @@
             </label>
 
             <!-- AI Open Core Premium Features UI -->
-            <div
-                style="display: flex; gap: 8px; align-items: center; margin-left: 16px; border-left: 1px solid #e5e7eb; padding-left: 16px;">
+            <!-- <div -->
+                <!-- style="display: flex; gap: 8px; align-items: center; margin-left: 16px; border-left: 1px solid #e5e7eb; padding-left: 16px;"> -->
                 <label class="gx-pro-locked"
                     style="cursor: default; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: #4B5563; position: relative;"
                     title="AI inference (Docling + OpenRouter) — Pro feature">
@@ -217,7 +217,7 @@
                     <div class="gx-pro-interceptor" data-pro-feature="pdf-ai-extract"></div>
                 </label>
                 <!-- <input type="password" id="ai-api-key" placeholder="OpenRouter Key (or .env)" style="border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 12px; width: 160px; outline: none;"> -->
-            </div>
+            <!-- </div> -->
         </div>
 
         <nav class="tab-bar" role="tablist">
@@ -617,6 +617,11 @@
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                     <span class="atb-label-full">Re-extract page</span>
                     <span class="atb-label-short">Re-extract</span>
+                </button>
+                <button class="atb-btn atb-btn--label" id="analyze-send-schema" title="Send this page's vector geometry (lines + boxes) to the Schema Editor">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="19" cy="18" r="2"/><line x1="7" y1="11" x2="17" y2="7"/><line x1="7" y1="13" x2="17" y2="17"/></svg>
+                    <span class="atb-label-full">To Schema Editor</span>
+                    <span class="atb-label-short">To Schema</span>
                 </button>
                 <button class="atb-btn atb-btn--label atb-btn--pro atb-desktop-only" id="analyze-bulk-extract" title="Re-extract all pages (Pro)">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
