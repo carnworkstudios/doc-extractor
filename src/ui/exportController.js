@@ -17,7 +17,8 @@
 import $ from 'jquery';
 import { state } from '../state.js';
 import { showToast } from './toast.js';
-import { downloadExtractedHTML, exportExtractedPDF } from './fileUpload.js';
+import { downloadExtractedHTML, exportExtractedPDF, isProUser, integrationBackendUrl } from './fileUpload.js';
+import { _waitForToolReady } from './analyzePanel.js';
 
 export function initExportSystem() {
     $('#btn-export-main').on('click', (e) => {
@@ -48,6 +49,17 @@ export function initExportSystem() {
         handleExport($(this).data('format'));
         $('#export-dropdown').removeClass('open');
     });
+
+    // Pro/dev: ungate the integration rows so clicks reach the dropdown-item
+    // handler instead of the waitlist interceptor.
+    if (isProUser()) {
+        for (const slug of ['pdf-export-notion', 'pdf-export-sheets']) {
+            const overlay = document.querySelector(`#export-dropdown .gx-pro-interceptor[data-pro-feature="${slug}"]`);
+            if (!overlay) continue;
+            overlay.closest('.dropdown-item')?.classList.remove('gx-pro-locked');
+            overlay.remove();
+        }
+    }
 }
 
 async function handleExport(format) {
@@ -73,6 +85,141 @@ async function handleExport(format) {
         case 'doc':
             exportToDoc(html);
             break;
+        case 'notion':
+        case 'sheets':
+            await exportToIntegration(format, html);
+            break;
+    }
+}
+
+// ── Integration export (Pro) — extracted tables → /api/v1/io/* adapters ───────
+
+
+function tableToGrid(tableEl) {
+    return [...tableEl.querySelectorAll('tr')].map(tr =>
+        [...tr.querySelectorAll('td, th')].map(cell => cell.textContent.trim())
+    );
+}
+
+async function exportToIntegration(provider, html) {
+    const tables = [...parseDoc(html).querySelectorAll('table')];
+    if (!tables.length) {
+        showToast('No tables found in the extracted document.', 'error');
+        return;
+    }
+
+    const label = provider === 'notion' ? 'Notion' : 'Google Sheets';
+    showToast(`Exporting ${tables.length} table${tables.length > 1 ? 's' : ''} to ${label}…`);
+
+    const base = integrationBackendUrl();
+    let lastUrl = '';
+    // Sheets: first table creates the spreadsheet, the rest land as extra
+    // sheets in it. Notion: each table becomes a database under the parent page.
+    let target = {};
+    try {
+        for (let i = 0; i < tables.length; i++) {
+            const name = tables.length > 1 ? `${baseName()} — table ${i + 1}` : baseName();
+            const res = await fetch(`${base}/api/v1/io/${provider}/export`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, grid: tableToGrid(tables[i]), target }),
+            });
+            const data = await res.json();
+            if (data.status !== 'success') throw new Error(data.error || 'Export failed');
+            lastUrl = data.url || lastUrl;
+            if (provider === 'sheets' && data.spreadsheet_id) {
+                target = { spreadsheet_id: data.spreadsheet_id };
+            }
+        }
+    } catch (err) {
+        showToast(`${label} export failed: ${err.message}`, 'error', 5000);
+        return;
+    }
+
+    if (lastUrl) {
+        try { await navigator.clipboard.writeText(lastUrl); } catch (_) { /* clipboard optional */ }
+        showToast(`Exported to ${label} — link copied to clipboard.`, 'success', 5000);
+        console.log(`[export] ${label}: ${lastUrl}`);
+    } else {
+        showToast(`Exported to ${label}.`, 'success');
+    }
+}
+
+// ── Cross-tool send (Pro) — OS shell Send card → gx-tables-v1 envelope ────────
+
+// The shell's IPC panel relays a Send-card click as gx:ipc-send. TAFNE consumes
+// gx-tables-v1 envelopes via loadTablesAsSheets; the vector→Schema route lives
+// in the Analyze tab, so that card just points there.
+window.addEventListener('message', (e) => {
+    if (e.origin !== window.location.origin || e.data?.type !== 'gx:ipc-send') return;
+    if (e.data.target === 'tifany') {
+        sendTablesToTafne();
+    } else if (e.data.target === 'svg_wiring') {
+        showToast('Use the Analyze tab to send vector regions to Schema Editor.', 'info', 4000);
+    }
+});
+
+async function sendTablesToTafne() {
+    const html = state.pdf1.extractedHTML;
+    if (!html) {
+        showToast('No content to send. Load a file first.', 'error');
+        return;
+    }
+    const domTables = [...parseDoc(html).querySelectorAll('table')];
+    if (!domTables.length) {
+        showToast('No tables found in the extracted document.', 'error');
+        return;
+    }
+    if (!window.CwsBridge?.isEmbedded) {
+        showToast('Not embedded in the OS shell.', 'error');
+        return;
+    }
+
+    // gx-tables-v1 rows are objects keyed by header — headers must be unique
+    const tables = domTables.map((t, i) => {
+        const grid = tableToGrid(t);
+        const seen = {};
+        const headers = (grid[0] || []).map((h, j) => {
+            let name = (h || '').trim() || `Column ${j + 1}`;
+            if (seen[name]) name = `${name} (${++seen[name]})`;
+            seen[name] = seen[name] || 1;
+            return name;
+        });
+        const rows = grid.slice(1).map(r =>
+            Object.fromEntries(headers.map((h, j) => [h, r[j] ?? ''])));
+        return { name: domTables.length > 1 ? `${baseName()} — table ${i + 1}` : baseName(), rows };
+    }).filter(t => t.rows.length);
+    if (!tables.length) {
+        showToast('Tables have no data rows to send.', 'error');
+        return;
+    }
+
+    try {
+        window.CwsBridge.send('cws:tool:launch', { toolId: 'tifany', focusAfterLaunch: true }, 'os');
+        await _waitForToolReady('tifany', 8000);
+        const payload = { schema: 'gx-tables-v1', tables, meta: { source: 'pdf-processor', title: baseName() } };
+        // Provenance assembly is intelligence-layer POLICY (shell-provided
+        // GxProvenance module, assets/os/provenance.js) — NOT in this forkable
+        // tool. Standalone/forked builds have no GxProvenance → no lineage sent,
+        // tool still works. PDF is the pipeline SOURCE, so there is nothing
+        // incoming to inherit; build() just returns this tool's extraction record.
+        const provenance = window.GxProvenance
+            ? window.GxProvenance.build('pdf-processor', window.CwsContracts.PROVENANCE_STAGES.EXTRACTION, {
+                source: baseName(),
+                score: null,  // overall extraction confidence TBD per-table
+            })
+            : [];
+        const pointerId = await window.CwsBridge.requestStore(JSON.stringify(payload), 'json-data');
+        window.CwsBridge.offerData(window.CwsContracts.createEnvelope({
+            pointer: pointerId,
+            contentType: 'json-data',
+            metadata: { source: 'pdf-processor', title: baseName(), tableCount: tables.length },
+            hints: { suggestedTarget: 'tifany', action: 'load-tables' },
+            provenance,
+        }));
+        showToast(`Sent ${tables.length} table${tables.length > 1 ? 's' : ''} to TAFNE`, 'success');
+    } catch (err) {
+        showToast(`Send failed: ${err.message || err}`, 'error');
     }
 }
 

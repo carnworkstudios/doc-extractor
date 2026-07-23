@@ -26,6 +26,8 @@ import { classifyPage } from '../extraction/vector/contextClassifier.js';
 import { assemblePage, createFontRegistry, generateDocumentStyles } from '../extraction/vector/pageAssembler.js';
 import { readStructTree } from '../extraction/vector/structTreeReader.js';
 import { DocScale } from '../extraction/vector/docScale.js';
+import { scoreExtraction } from '../extraction/vector/extractionScorer.js';
+import { ChromeDetector } from '../extraction/vector/chromeDetector.js';
 
 // pdfjs-dist v4 — point to the ESM worker bundle.
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -57,6 +59,7 @@ class OffscreenCanvasFactory {
 let _cachedBytes       = null;
 let _cachedFontRegistry = null;
 let _cachedDocScale    = null;
+let _cachedChromeSigs  = null;   // cross-page running header/footer signatures
 
 // Render the page once at 4× and crop every image-like area:
 //   - raster XObjects from imageMeta (keyed by meta.id)
@@ -156,6 +159,7 @@ self.onmessage = async (e) => {
         // tolerance calibration. This pass only reads textContent (no operator
         // list, no classification) so it is fast even on large documents.
         const docScale = new DocScale();
+        const chrome = new ChromeDetector();
         for (let p = 1; p <= numPages; p++) {
             const page = await pdf.getPage(p);
             const viewport = page.getViewport({ scale: 2.0 });
@@ -182,10 +186,12 @@ self.onmessage = async (e) => {
                     };
                 });
             docScale.accumulate(textMeta);
+            chrome.accumulatePage(textMeta, viewport.height);
             page.cleanup();
         }
         docScale.calibrate(12);
         _cachedDocScale = docScale;
+        _cachedChromeSigs = chrome.repeatedSigs();
 
         let totalTables = 0;
         const fontRegistry = createFontRegistry();
@@ -234,7 +240,7 @@ self.onmessage = async (e) => {
                 viewport,
                 pageWidthPt,
                 imageMeta,
-                { filledRects, fontStyleMap, structTree: rawStructTree, OPS, _opList: opList, docScale }
+                { filledRects, fontStyleMap, structTree: rawStructTree, OPS, _opList: opList, docScale, chromeSigs: _cachedChromeSigs }
             );
 
             // ── Phase 2.5: Image + vector-figure extraction via 4× render ────
@@ -283,6 +289,7 @@ self.onmessage = async (e) => {
                 layoutTree: result.layoutTree ?? null,
                 fidelityScore: result.fidelityScore ?? 0,
                 layoutMethod: result.layoutMethod ?? 'flat-zones',
+                verification: scoreExtraction(regions, textMeta, viewport),
             });
 
             // Release page resources
@@ -364,6 +371,7 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
                 _opList: opList,
                 pipeline: { skip: skipSet, scaleOverrides, customRegions, manualSplits },
                 docScale: _cachedDocScale,
+                chromeSigs: _cachedChromeSigs,
             },
         );
 
@@ -410,6 +418,7 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
             layoutTree: result.layoutTree ?? null,
             fidelityScore: result.fidelityScore ?? 0,
             layoutMethod: result.layoutMethod ?? 'flat-zones',
+            verification: scoreExtraction(regions, textMeta, viewport),
         });
     } catch (err) {
         self.postMessage({

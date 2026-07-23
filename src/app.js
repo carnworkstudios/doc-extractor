@@ -67,7 +67,7 @@ window.__GX_PDF_CORE__ = {
     onRegionPage(cb) {
         _regionPageCallbacks.push(cb);
         // Replay all pages that arrived before analyzePanel.js registered.
-        _cachedRegions.forEach(([regions, pageScale], pageNum) => cb(pageNum, regions, pageScale));
+        _cachedRegions.forEach(([regions, pageScale, verification], pageNum) => cb(pageNum, regions, pageScale, verification));
     },
     onResetAnalysis:     (cb) => _resetCallbacks.push(cb),
     onReprocessResult:   (cb) => _reprocessResultCallbacks.push(cb),
@@ -82,9 +82,9 @@ window.__GX_PDF_CORE__ = {
         _cachedWorker = w;
         _workerReadyCallbacks.forEach(cb => cb(w));
     },
-    _dispatchRegionPage(n, r, s) {
-        _cachedRegions.set(n, [r, s]);
-        _regionPageCallbacks.forEach(cb => cb(n, r, s));
+    _dispatchRegionPage(n, r, s, v) {
+        _cachedRegions.set(n, [r, s, v]);
+        _regionPageCallbacks.forEach(cb => cb(n, r, s, v));
     },
     _dispatchReset() {
         // Clear replay cache so the next file starts fresh.
@@ -92,7 +92,7 @@ window.__GX_PDF_CORE__ = {
         _cachedRegions  = new Map();
         _resetCallbacks.forEach(cb => cb());
     },
-    _dispatchReprocessResult: (n, h, r, s)  => _reprocessResultCallbacks.forEach(cb => cb(n, h, r, s)),
+    _dispatchReprocessResult: (n, h, r, s, v)  => _reprocessResultCallbacks.forEach(cb => cb(n, h, r, s, v)),
     _dispatchReprocessError:  (n, e)        => _reprocessErrorCallbacks.forEach(cb => cb(n, e)),
 };
 

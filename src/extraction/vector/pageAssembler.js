@@ -120,6 +120,7 @@ export function generateDocumentStyles(fontRegistry) {
         '.pdf-doc .ta-c  { text-align: center; }',
         '.pdf-doc .ta-r  { text-align: right; }',
         '.pdf-doc .ta-j  { text-align: justify; }',
+        '.pdf-doc p[data-indent] { text-indent: 1.5em; }',
         '.pdf-doc .bold  { font-weight: bold; }',
         '.pdf-doc .ital  { font-style: italic; }',
         '.pdf-doc .uline { text-decoration: underline; }',
@@ -312,31 +313,86 @@ function _groupMetaByY(items, yTol) {
     return lines.map(l => l.items);
 }
 
-function _inferAlignment(items, bbox) {
-    if (!items || items.length < 2) return 'left';
+// Classify a block whose own shape is uninformative (a single line, or a
+// uniform rectangle of flush lines) by its margins inside the containing
+// column/page frame. A single centered line is geometrically identical to a
+// left-aligned one until it is compared against something wider than itself.
+export function _edgeAlignment(bbox, container, canJustify) {
+    if (!bbox || !container || !(container.w > bbox.w * 1.02)) {
+        return canJustify ? 'justify' : 'left';
+    }
+    const left  = bbox.x - container.x;
+    const right = (container.x + container.w) - (bbox.x + bbox.w);
+    const tol = Math.max(container.w * 0.03, 4);
+    if (left <= tol && right <= tol) return canJustify ? 'justify' : 'left';
+    if (left > tol && right > tol &&
+        Math.abs(left - right) <= Math.max(container.w * 0.06, 8)) return 'center';
+    if (right <= tol && left > 2 * tol) return 'right';
+    return 'left';
+}
+
+export function _inferAlignment(items, bbox, container) {
+    if (!items || !items.length || !bbox) return 'left';
 
     // Use the median vFont as a local yTol for line grouping
     const fonts = items.map(i => i.vFont || 12).sort((a, b) => a - b);
     const medFont = fonts[Math.floor(fonts.length / 2)];
     const lines = _groupMetaByY(items, medFont * 0.45);
-    if (lines.length < 2) return 'left';
+    if (lines.length < 2) return _edgeAlignment(bbox, container, false);
 
     const leftEdges = lines.map(l => Math.min(...l.map(i => i.vx)));
     const rightEdges = lines.map(l => Math.max(...l.map(i => i.vx + (i.vWidth || 0))));
     const midPoints = lines.map((l, idx) => (leftEdges[idx] + rightEdges[idx]) / 2);
 
+    // The last line of a justified/centered block is typically short — it
+    // carries no alignment signal, so drop it from the edge statistics.
+    const rightUse = lines.length >= 3 ? rightEdges.slice(0, -1) : rightEdges;
+    const midUse   = lines.length >= 3 ? midPoints.slice(0, -1)  : midPoints;
+
     const bw = bbox.w || 1;
     const normLeft = _stdDev(leftEdges) / bw;
-    const normRight = _stdDev(rightEdges) / bw;
-    const normMid = _stdDev(midPoints) / bw;
+    const normRight = _stdDev(rightUse) / bw;
+    const normMid = _stdDev(midUse) / bw;
 
-    if (normLeft < 0.01 && normRight < 0.03) return 'justify';
+    // Uniform rectangle: every full line flush on both sides — the block's own
+    // shape cannot distinguish justify/center/left, so read container margins.
+    if (normLeft < 0.01 && normRight < 0.03) return _edgeAlignment(bbox, container, true);
     if (normMid < 0.02) return 'center';
     if (normRight < 0.01 && normLeft > 0.02) return 'right';
     return 'left';
 }
 
 const ALIGN_CLASS = { left: 'ta-l', center: 'ta-c', right: 'ta-r', justify: 'ta-j' };
+
+// Alignment reference frames, derived from the regions themselves: each
+// column's frame is the union x-extent of its sibling regions; full-width
+// regions (columnIndex -1) measure against the page content frame (union of
+// ALL regions — i.e. the text area inside the margins). A column with a single
+// region falls back to the page frame rather than comparing a box to itself.
+export function _buildContainers(regions, viewportWidth) {
+    const all = { x0: Infinity, x1: -Infinity };
+    const cols = new Map();
+    for (const r of regions) {
+        if (!r.bbox) continue;
+        all.x0 = Math.min(all.x0, r.bbox.x);
+        all.x1 = Math.max(all.x1, r.bbox.x + r.bbox.w);
+        const ci = r.columnIndex ?? -1;
+        if (ci < 0) continue;
+        const s = cols.get(ci) || { x0: Infinity, x1: -Infinity, n: 0 };
+        s.x0 = Math.min(s.x0, r.bbox.x);
+        s.x1 = Math.max(s.x1, r.bbox.x + r.bbox.w);
+        s.n++;
+        cols.set(ci, s);
+    }
+    const page = all.x1 > all.x0
+        ? { x: all.x0, w: all.x1 - all.x0 }
+        : { x: 0, w: viewportWidth || 1 };
+    const byCol = new Map();
+    for (const [ci, s] of cols) {
+        byCol.set(ci, s.n >= 2 && s.x1 > s.x0 ? { x: s.x0, w: s.x1 - s.x0 } : page);
+    }
+    return { page, byCol };
+}
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -370,7 +426,22 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
 
     // Create PageScale early for adaptive thresholds throughout assembly
     const pageScale = textMeta.length > 0 ? new PageScale(textMeta, viewport) : null;
-    const pageScaleOpts = pageScale ? { pageScale: pageScale.toJSON() } : {};
+
+    // OCR text layer detection: a page whose image regions cover most of the
+    // canvas but that still carries real text is a scanned page with an OCR
+    // overlay. The text is readable, its geometry is scanner-made — word gaps
+    // are packed to the scan, so textRebuilder runs with the OCR-relaxed
+    // bimodal gates (ported from pdf_md repair_ocr_text_layer semantics).
+    const pageArea = (viewport.width || 1) * (viewport.height || 1);
+    const imageArea = regions
+        .filter(r => r.type === 'IMAGE' && r.bbox)
+        .reduce((sum, r) => sum + r.bbox.w * r.bbox.h, 0);
+    const ocrLayer = imageArea >= 0.5 * pageArea && textMeta.length > 20;
+
+    const pageScaleOpts = {
+        ...(pageScale ? { pageScale: pageScale.toJSON() } : {}),
+        ...(ocrLayer ? { ocr: true } : {}),
+    };
 
     // Step 4: Figure+caption detection pre-pass
     _mergeFigureCaptions(regions, textMeta);
@@ -470,8 +541,9 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
     // its viewport-space Y/X so the zone toolbar can rearrange without
     // re-running the extractor.
     const textEntries = [];
+    const containers = _buildContainers(regions, viewport.width);
     const rendered = regions.map(region => {
-        const { html, text, tables } = _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages, pageScaleOpts);
+        const { html, text, tables } = _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages, pageScaleOpts, containers);
         tableCount += tables;
         if (text) textEntries.push({ region, text });
         const ry = Math.round(region.yCenter ?? 0);
@@ -825,7 +897,10 @@ function _scopeItems(region, textItems, textMeta) {
     });
 }
 
-function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages = {}, _pageScaleOpts = {}) {
+function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages = {}, _pageScaleOpts = {}, containers = null) {
+    const container = containers
+        ? (containers.byCol.get(region.columnIndex ?? -1) || containers.page)
+        : null;
     let html = '';
     let text = '';
     let tables = 0;
@@ -889,7 +964,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             }
             
             if (region.captionRegion) {
-                const capData = _renderRegion(region.captionRegion, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages, _pageScaleOpts);
+                const capData = _renderRegion(region.captionRegion, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages, _pageScaleOpts, containers);
                 html = `<figure class="pdf-figure" style="margin: 16px 0;">${imgHtml}<figcaption class="pdf-figcaption" style="text-align: center; font-size: 0.9em; color: #666; margin-top: 8px;">${capData.html}</figcaption></figure>`;
                 text = capData.text;
             } else {
@@ -907,7 +982,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
             const fontClass  = _registerFont(fontRegistry, family, sizePt, bold, italic);
-            const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox)] || 'ta-l';
+            const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox, container)] || 'ta-l';
             const tag = region.isH1 ? 'h1' : ((region.fontSize || 14) > 18 ? 'h2' : 'h3');
 
             html = `<${tag} class="${fontClass} ${alignClass}">${headingHtml}</${tag}>`;
@@ -938,7 +1013,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
             const fontClass  = _registerFont(fontRegistry, family, sizePt, bold, italic);
-            const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox)] || 'ta-l';
+            const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox, container)] || 'ta-l';
 
             // Flow-chain attrs: semantic surfaces rejoin column-broken
             // paragraphs via these attributes. Only the first <p> in a
@@ -968,16 +1043,16 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             // emitted as separate <p> siblings — only the first carries
             // flow-chain metadata.
             const pBlocks = [];
-            const pRe = /<p>([\s\S]*?)<\/p>/g;
+            const pRe = /<p([^>]*)>([\s\S]*?)<\/p>/g;
             let pm;
             while ((pm = pRe.exec(paraHtml)) !== null) {
-                pBlocks.push(pm[1]);
+                pBlocks.push({ attrs: pm[1] || '', content: pm[2] });
             }
 
             if (pBlocks.length) {
-                html = pBlocks.map((content, fi) => {
-                    const attrs = fi === 0 ? firstFlowAttrs : '';
-                    return `<p class="${fontClass} ${alignClass} pdf-paragraph"${attrs}>${content}</p>`;
+                html = pBlocks.map((b, fi) => {
+                    const attrs = (fi === 0 ? firstFlowAttrs : '') + b.attrs;
+                    return `<p class="${fontClass} ${alignClass} pdf-paragraph"${attrs}>${b.content}</p>`;
                 }).join('\n');
             } else {
                 // Fallback: if rebuildText produced no <p> blocks (e.g. all
@@ -1026,7 +1101,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
             const fontClass  = _registerFont(fontRegistry, family, sizePt, bold, italic);
-            const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox)] || 'ta-l';
+            const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox, container)] || 'ta-l';
             const roleClass  = region.boxRole && region.boxRole !== 'generic'
                 ? ` pdf-box--${region.boxRole}` : '';
 
@@ -1067,9 +1142,10 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
             const fontClass = _registerFont(fontRegistry, family, sizePt, bold, italic);
+            const alignClass = ALIGN_CLASS[_inferAlignment(scopedMeta, region.bbox, container)] || 'ta-l';
             const tag = region.type === RegionType.HEADER ? 'header' : 'footer';
 
-            html = `<${tag} class="pdf-${tag} ${fontClass}">${innerHtml}</${tag}>`;
+            html = `<${tag} class="pdf-${tag} ${fontClass} ${alignClass}">${innerHtml}</${tag}>`;
             text = rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
             break;
         }

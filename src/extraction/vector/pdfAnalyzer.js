@@ -210,7 +210,24 @@ export async function analyzePDF(bytes, onPageDone) {
         const ptW = page.view[2] - page.view[0];
         const ptH = page.view[3] - page.view[1];
 
+        // Scanned-page detection: near-zero extractable text plus image
+        // coverage over most of the page means the vector pipeline has nothing
+        // to work with — this page needs an OCR tier (out of scope for the
+        // vector architecture, pdf-extraction-v2.md §09) and must be flagged,
+        // not silently extracted as empty.
+        const realTextCount = tc.items.filter(i => i.str?.trim()).length;
+        const pageArea = vp.width * vp.height;
+        const imageArea = imageRegions.reduce((sum, r) => sum + r.w * r.h, 0);
+        const scanBackdrop = segments.length < 20 && imageArea >= pageArea * 0.5;
+        const scanned  = scanBackdrop && realTextCount < 5;
+        // Scan with an OCR text layer: the text IS readable — it stays in the
+        // local pipeline (with OCR-relaxed word-gap gates), unlike `scanned`
+        // pages which have nothing for the vector engine to read.
+        const ocrLayer = scanBackdrop && realTextCount >= 5;
+
         pages.push({
+            scanned,
+            ocrLayer,
             pageNum:       p,
             widthPx:       vp.width,
             heightPx:      vp.height,

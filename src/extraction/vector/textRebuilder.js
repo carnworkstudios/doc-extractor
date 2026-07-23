@@ -2,9 +2,17 @@
 // Reconstructs reading-order plain text from a PDF.js getTextContent() item array.
 //
 // Three-stage pipeline (mirrors what diffchecker-class tools do):
-//   1. Y-band grouping     — cluster items that share a visual line (adaptive tolerance)
+//   1. Line clustering     — items join the nearest open line whose running-mean
+//                            baseline is within 0.5 × max(line size, item size);
+//                            the tolerance derives itself per line, per font size
 //   2. Column detection    — XY-cut projection finds multi-column layouts
-//   3. Text construction   — gap-based space insertion + paragraph break detection
+//   3. Text construction   — per-line bimodal word-gap thresholds + paragraph
+//                            break detection; sub/superscripts detected from
+//                            size + baseline offset (html formats)
+//
+// The clustering, word-gap and script heuristics are ported from pdf_md
+// (github.com/MasakatsuFunaki/pdf_md, MIT) — layout_lines.cpp / layout_math.cpp —
+// adapted from per-glyph to pdfjs per-run granularity.
 //
 // Works entirely in PDF user-space coordinates (points). No viewport / DOM required.
 // Safe to run inside a Web Worker.
@@ -15,11 +23,9 @@
 //   const html = rebuildText(textContent.items, pageWidthPt, { format: 'html' });
 
 const DEFAULTS = {
-    // Y tolerance as a fraction of avg font size — adaptive to the document
-    yTolFraction:        0.45,
-
-    // Min X gap (relative to estimated char width) to insert a space between tokens
-    spaceGapFraction:    0.25,
+    // Items from a repaired OCR text layer: relaxes the word-gap gates, since
+    // OCR geometry packs words tighter than typeset text.
+    ocr:                 false,
 
     // Vertical gap multiplier over average line spacing → paragraph break
     paragraphGapMult:    1.5,
@@ -63,14 +69,12 @@ export function rebuildText(items, pageWidthPt, opts = {}) {
     const valid = (items || []).filter(i => i.str?.trim());
     if (!valid.length) return '';
 
-    // ── Adaptive Y tolerance ─────────────────────────────────────────────────
-    const fontSizes = valid.map(i => Math.abs(i.transform?.[3] || i.height || 12));
-    const avgFontSize = fontSizes.reduce((a, b) => a + b, 0) / fontSizes.length;
-    const yTol = avgFontSize * o.yTolFraction;
-    const bodyFontSize = avgFontSize;
+    // Body size: median of item font sizes — robust against a page of
+    // subscripts or one display heading skewing the mean.
+    const bodyFontSize = _median(valid.map(i => Math.abs(i.transform?.[3] || i.height || 12))) || 12;
 
-    // ── 1. Y-band grouping ───────────────────────────────────────────────────
-    const lines = _groupByYBand(valid, yTol);
+    // ── 1. Line clustering ───────────────────────────────────────────────────
+    const lines = _clusterLines(valid);
     if (!lines.length) return '';
 
     // ── 2. Column detection ──────────────────────────────────────────────────
@@ -92,36 +96,120 @@ export function rebuildText(items, pageWidthPt, opts = {}) {
         : colTexts.join('\n\n');
 }
 
-// ── Y-band grouping ───────────────────────────────────────────────────────────
+// ── Line clustering ───────────────────────────────────────────────────────────
 
-function _groupByYBand(items, yTol) {
-    // PDF Y origin is bottom-left (Y increases upward).
-    // Sort descending → top of page first.
-    const sorted = [...items].sort((a, b) => b.transform[5] - a.transform[5]);
+function _median(values) {
+    if (!values.length) return 0;
+    const v = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(v.length / 2);
+    return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
+function _itemSize(item) {
+    return Math.abs(item.transform?.[3] || item.height || 12);
+}
+
+// Open-line clustering: each item joins the NEAREST open line whose running-
+// mean baseline is within 0.5 × max(line size, item size). The tolerance
+// derives itself per line and per font size — a footnote line and a display
+// heading on the same page each get their own correct band, and a subscript
+// (smaller, slightly off-baseline) still lands on its parent line.
+function _clusterLines(items) {
+    // PDF Y origin is bottom-left (Y increases upward): top of page first.
+    const sorted = [...items].sort((a, b) =>
+        (b.transform[5] - a.transform[5]) || (a.transform[4] - b.transform[4]));
 
     const lines = [];
     for (const item of sorted) {
         const y = item.transform[5];
-        // Find existing band within tolerance
-        let band = null;
+        const size = _itemSize(item);
+        let best = null, bestDist = Infinity;
         for (const l of lines) {
-            if (Math.abs(l.y - y) <= yTol) { band = l; break; }
+            const tol = 0.5 * Math.max(l.sizeMax, size);
+            const dist = Math.abs(l.y - y);
+            if (dist <= tol && dist < bestDist) { best = l; bestDist = dist; }
         }
-        if (band) {
-            const n = band.items.length;
-            band.y = (band.y * n + y) / (n + 1); // running average Y
-            band.items.push(item);
-        } else {
-            lines.push({ y, items: [item] });
+        if (!best) {
+            best = { y, sizeMax: 0, items: [] };
+            lines.push(best);
         }
+        const n = best.items.length;
+        best.y = (best.y * n + y) / (n + 1); // running mean baseline
+        best.sizeMax = Math.max(best.sizeMax, size);
+        best.items.push(item);
     }
 
-    // Sort items within each band left-to-right
     for (const l of lines) {
         l.items.sort((a, b) => a.transform[4] - b.transform[4]);
+        _finalizeLine(l);
     }
-
+    // Reading order: top of page first, then left to right.
+    lines.sort((a, b) => (b.y - a.y) || (a.items[0].transform[4] - b.items[0].transform[4]));
     return lines;
+}
+
+// Derives the line's typographic facts once the membership is final:
+//   size    — median item size (the line's body size)
+//   sizeRef — script reference: the max size, unless a single oversized glyph
+//             (a drop cap, > 1.8 × median) would make ordinary text look like
+//             subscripts — then the median
+//   y       — true baseline: median y of BASE-level items only (≥ 0.83 ×
+//             sizeRef), so a line that is half subscript still reports the
+//             baseline of its main text
+function _finalizeLine(l) {
+    const sizes = l.items.map(_itemSize);
+    l.size = Math.max(_median(sizes), 1);
+    const sizeMax = Math.max(...sizes);
+    l.sizeRef = sizeMax <= 1.8 * l.size ? sizeMax : l.size;
+    const baseYs = l.items.filter(i => _itemSize(i) >= 0.83 * l.sizeRef)
+        .map(i => i.transform[5]);
+    l.y = _median(baseYs.length ? baseYs : l.items.map(i => i.transform[5]));
+    l.wordGap = 0; // computed lazily per output pass (needs opts.ocr)
+}
+
+// Per-line adaptive word-gap threshold. The inter-item gaps on a line are
+// bimodal: run-continuation gaps (≈0, style changes mid-word) vs real word
+// gaps. When the two clusters separate cleanly, the threshold sits in the
+// largest jump between them; otherwise a fixed fraction of the line size.
+// OCR text layers pack words to the scan's geometry, so their gates and
+// floors are lower (with an absolute 1.2pt floor so a kerning outlier inside
+// a word cannot split it).
+function _wordGapThreshold(l, ocr) {
+    const gaps = [];
+    for (let i = 1; i < l.items.length; i++) {
+        const prevEnd = l.items[i - 1].transform[4] + (l.items[i - 1].width || 0);
+        gaps.push(Math.max(0, l.items[i].transform[4] - prevEnd));
+    }
+    const base = 0.28 * l.size;
+    if (gaps.length < 3) return base;
+
+    gaps.sort((a, b) => a - b);
+    let bestJump = 0, threshold = base;
+    for (let i = 1; i < gaps.length; i++) {
+        const jump = gaps[i] - gaps[i - 1];
+        if (jump > bestJump && gaps[i - 1] <= 0.6 * l.size) {
+            bestJump = jump;
+            threshold = (gaps[i - 1] + gaps[i]) / 2;
+        }
+    }
+    const jumpGate = (ocr ? 0.06 : 0.11) * l.size;
+    const clampHi = 0.9 * l.size;
+    const clampLo = Math.min(ocr ? Math.max(0.10 * l.size, 1.2) : 0.18 * l.size, clampHi);
+    if (bestJump < jumpGate) return base; // not bimodal enough
+    return Math.min(Math.max(threshold, clampLo), clampHi);
+}
+
+// 0 = normal, 1 = superscript, 2 = subscript. An item is a script only when it
+// is clearly smaller than the line's reference size AND sits off the baseline —
+// the size test keeps uniformly-small lines (footnotes, captions) from tripping.
+function _scriptRole(l, item) {
+    const size = _itemSize(item);
+    const ref = l.sizeRef || l.size;
+    if (!ref || size >= 0.82 * ref) return 0;
+    const off = item.transform[5] - l.y;
+    if (off > 0.10 * ref) return 1;
+    if (off < -0.06 * ref) return 2;
+    return 0;
 }
 
 // ── Column split detection (XY-cut) ──────────────────────────────────────────
@@ -174,7 +262,9 @@ function _splitIntoColumns(lines, splits) {
             const xMin = boundaries[ci];
             const xMax = boundaries[ci + 1];
             const colItems = line.items.filter(i => i.transform[4] >= xMin - 1 && i.transform[4] < xMax);
-            if (colItems.length) cols[ci].push({ y: line.y, items: colItems });
+            // Keep the line's typographic facts (size/sizeRef/baseline) — the
+            // column subset inherits them; only membership changed.
+            if (colItems.length) cols[ci].push({ ...line, items: colItems });
         }
     }
 
@@ -202,7 +292,7 @@ function _buildOutput(lines, o, bodyFontSize) {
     let current = [];
 
     for (let li = 0; li < lines.length; li++) {
-        const lineStr = _buildLine(lines[li].items, o.spaceGapFraction);
+        const lineStr = _buildLine(lines[li], o);
         if (!lineStr.trim()) continue;
 
         if (li > 0 && current.length > 0) {
@@ -217,8 +307,9 @@ function _buildOutput(lines, o, bodyFontSize) {
 
         current.push({
             str:      lineStr.trim(),
-            html:     useHtml ? _buildLineHtml(lines[li].items, o.spaceGapFraction) : null,
-            fontSize: _lineFontSize(lines[li].items),
+            html:     useHtml ? _buildLineHtml(lines[li], o) : null,
+            fontSize: lines[li].size,
+            x0:       lines[li].items[0].transform[4],
         });
     }
     if (current.length) paragraphs.push({ lines: current });
@@ -243,7 +334,9 @@ function _buildOutput(lines, o, bodyFontSize) {
         // the <p> structure follows sentences rather than preserving PDF line
         // breaks. Editors and downstream consumers get clean reflowable text
         // instead of hard-wrapped <br> fragments.
-        const blocks = paragraphs.map(p => {
+        const indents = _detectFirstLineIndents(paragraphs, bodyFontSize);
+
+        const blocks = paragraphs.map((p, pi) => {
             const inner = p.lines.map(l => l.html || _escHtml(l.str)).join(' ');
             const plain = p.lines.map(l => l.str).join(' ').trim();
             const isHeading = p.lines.length === 1 &&
@@ -251,7 +344,7 @@ function _buildOutput(lines, o, bodyFontSize) {
             const headingTag = isHeading
                 ? (p.lines[0].fontSize > bodyFontSize * 1.6 ? 'h3' : 'h4')
                 : null;
-            return { inner, plain, isHeading, headingTag };
+            return { inner, plain, isHeading, headingTag, indent: indents[pi] };
         }).filter(b => b.inner.trim());
 
         const out = [];
@@ -268,7 +361,7 @@ function _buildOutput(lines, o, bodyFontSize) {
 
         return out.map(b => b.isHeading
             ? `<${b.headingTag}>${b.inner}</${b.headingTag}>`
-            : `<p>${b.inner}</p>`
+            : `<p${b.indent ? ' data-indent=""' : ''}>${b.inner}</p>`
         ).join('\n');
     }
 
@@ -276,6 +369,31 @@ function _buildOutput(lines, o, bodyFontSize) {
     return paragraphs
         .map(p => p.lines.map(l => l.str).join(' '))
         .join('\n\n');
+}
+
+// ── First-line indent detection (html format) ─────────────────────────────────
+
+// A paragraph carries a typographic first-line indent when its opening line
+// steps in from the column's dominant left edge by roughly an em (0.8–3.5 ×
+// body size) while the rest of the paragraph returns to that edge. Single-line
+// paragraphs qualify only when the column edge is well-attested by other
+// lines — otherwise a short centered line would read as an indent.
+function _detectFirstLineIndents(paragraphs, bodyFontSize) {
+    const x0s = paragraphs.flatMap(p => p.lines.map(l => l.x0));
+    if (x0s.length < 2) return paragraphs.map(() => false);
+    const colLeft = Math.min(...x0s);
+    const edgeTol = 0.3 * bodyFontSize;
+    const atEdge = x0s.filter(x => x - colLeft <= edgeTol).length;
+    const edgeAttested = atEdge / x0s.length >= 0.3;
+
+    return paragraphs.map(p => {
+        const d = p.lines[0].x0 - colLeft;
+        if (d < 0.8 * bodyFontSize || d > 3.5 * bodyFontSize) return false;
+        if (p.lines.length > 1) {
+            return p.lines.slice(1).every(l => l.x0 - colLeft <= edgeTol);
+        }
+        return edgeAttested;
+    });
 }
 
 // ── Sentence-boundary helpers (html format) ───────────────────────────────────
@@ -316,88 +434,70 @@ function _wrapInlineStyle(text, style) {
     return html;
 }
 
-// ── Line builder with gap-based space insertion ───────────────────────────────
+// ── Line builder with adaptive space insertion ────────────────────────────────
 
-function _buildLine(items, spaceGapFraction) {
-    if (!items.length) return '';
-
-    let result = items[0].str;
-
-    for (let i = 1; i < items.length; i++) {
-        const prev    = items[i - 1];
-        const curr    = items[i];
-        const prevEnd = prev.transform[4] + (prev.width || 0);
-        const gap     = curr.transform[4] - prevEnd;
-
-        // Estimate char width: item width / char count, fallback to font size * 0.5
-        const charW = prev.str.length > 0
-            ? (prev.width || 0) / prev.str.length
-            : Math.abs(prev.transform[3] || 6) * 0.5;
-
-        // If there's already trailing/leading whitespace in the strings, don't double-add
-        const prevEndsSpace = /\s$/.test(prev.str);
-        const currStartsSpace = /^\s/.test(curr.str);
-
-        if (!prevEndsSpace && !currStartsSpace && gap > charW * spaceGapFraction) {
-            result += ' ';
-        }
-
-        result += curr.str;
+// True when a space belongs between items i-1 and i of the line, judged
+// against the line's bimodal word-gap threshold. Scripts (sub/superscripts)
+// attach to their base without a space regardless of gap — `d_k` is one token.
+function _needsSpace(l, i, threshold, roles) {
+    const prev = l.items[i - 1];
+    const curr = l.items[i];
+    if (/\s$/.test(prev.str) || /^\s/.test(curr.str)) return false;
+    if (roles && (roles[i] !== 0 || roles[i - 1] !== 0) &&
+        curr.transform[4] - (prev.transform[4] + (prev.width || 0)) < 0.6 * l.size) {
+        return false;
     }
+    const gap = curr.transform[4] - (prev.transform[4] + (prev.width || 0));
+    return gap > threshold;
+}
 
+function _buildLine(l, o) {
+    if (!l.items.length) return '';
+    const threshold = _wordGapThreshold(l, o.ocr);
+
+    let result = l.items[0].str;
+    for (let i = 1; i < l.items.length; i++) {
+        if (_needsSpace(l, i, threshold)) result += ' ';
+        result += l.items[i].str;
+    }
     return result;
 }
 
-// Style-aware version — groups items into same-style runs and wraps each in
-// appropriate HTML tags (<strong>, <em>, <u>). Returns an HTML fragment string.
-function _buildLineHtml(items, spaceGapFraction) {
-    if (!items.length) return '';
+// Style-aware version — groups items into same-style/same-script runs and wraps
+// each in the right HTML (<strong>, <em>, <u>, <sub>, <sup>).
+function _buildLineHtml(l, o) {
+    if (!l.items.length) return '';
+    const threshold = _wordGapThreshold(l, o.ocr);
+    const roles = l.items.map(item => _scriptRole(l, item));
 
-    // Build tokens: { text, style } with gap-based space insertion
     const tokens = [];
-    for (let i = 0; i < items.length; i++) {
-        if (i > 0) {
-            const prev    = items[i - 1];
-            const curr    = items[i];
-            const prevEnd = prev.transform[4] + (prev.width || 0);
-            const gap     = curr.transform[4] - prevEnd;
-            const charW   = prev.str.length > 0
-                ? (prev.width || 0) / prev.str.length
-                : Math.abs(prev.transform[3] || 6) * 0.5;
-            const prevEndsSpace  = /\s$/.test(prev.str);
-            const currStartsSpace = /^\s/.test(curr.str);
-            if (!prevEndsSpace && !currStartsSpace && gap > charW * spaceGapFraction) {
-                tokens.push({ text: ' ', style: _getItemStyle(items[i]) });
-            }
+    for (let i = 0; i < l.items.length; i++) {
+        if (i > 0 && _needsSpace(l, i, threshold, roles)) {
+            tokens.push({ text: ' ', style: _getItemStyle(l.items[i]), role: roles[i] });
         }
-        tokens.push({ text: items[i].str, style: _getItemStyle(items[i]) });
+        tokens.push({ text: l.items[i].str, style: _getItemStyle(l.items[i]), role: roles[i] });
     }
-
     if (!tokens.length) return '';
 
-    // Group consecutive same-style tokens into runs
+    // Group consecutive same-style same-role tokens into runs
     const runs = [];
-    let runStyle = tokens[0].style;
-    let runText  = tokens[0].text;
+    let run = { text: tokens[0].text, style: tokens[0].style, role: tokens[0].role };
     for (let i = 1; i < tokens.length; i++) {
-        if (_styleKey(tokens[i].style) === _styleKey(runStyle)) {
-            runText += tokens[i].text;
+        if (_styleKey(tokens[i].style) === _styleKey(run.style) && tokens[i].role === run.role) {
+            run.text += tokens[i].text;
         } else {
-            runs.push({ text: runText, style: runStyle });
-            runStyle = tokens[i].style;
-            runText  = tokens[i].text;
+            runs.push(run);
+            run = { text: tokens[i].text, style: tokens[i].style, role: tokens[i].role };
         }
     }
-    runs.push({ text: runText, style: runStyle });
+    runs.push(run);
 
-    return runs.map(r => _wrapInlineStyle(r.text, r.style)).join('');
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function _lineFontSize(items) {
-    if (!items.length) return 12;
-    return items.reduce((s, i) => s + Math.abs(i.transform?.[3] || 12), 0) / items.length;
+    return runs.map(r => {
+        let html = _wrapInlineStyle(r.text, r.style);
+        if (r.role === 1) html = `<sup>${html}</sup>`;
+        else if (r.role === 2) html = `<sub>${html}</sub>`;
+        return html;
+    }).join('');
 }
 
 function _escHtml(s) {

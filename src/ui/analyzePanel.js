@@ -216,7 +216,7 @@ async function _sendVectorsToSchema() {
 }
 
 // Resolves when the tool acks launch/registration, or after timeout (continue anyway).
-function _waitForToolReady(toolId, timeout) {
+export function _waitForToolReady(toolId, timeout) {
     return new Promise((resolve) => {
         let done = false;
         const finish = () => { if (!done) { done = true; window.removeEventListener('message', handler); resolve(); } };

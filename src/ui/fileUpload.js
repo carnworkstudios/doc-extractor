@@ -15,27 +15,226 @@ import { initTableFeatures } from '../utils/tableLogic.js';
 import { applyHtmlEverywhere, hydrateImages } from './htmlSync.js';
 import { showToast } from './toast.js';
 import { cwsBroker } from '@os/worker-broker.js';
+import { checkDoclingAgreement } from '../extraction/doclingCheck.js';
 // analyzePanel.js is injected by os-shell.js into this iframe at runtime.
 // All calls are proxied through window.__GX_PDF_CORE__ dispatchers set up in app.js.
 const _core = () => window.__GX_PDF_CORE__;
 
 async function runAnalysis(bytes, filename) {
     const core = _core();
-    if (!core) return;
+    if (!core) return null;
     // Status updates go through the shared setStatus in viewController
     // (analyzePanel's own _setStatus will handle in-panel messaging once injected).
     try {
         const analysis = await core.getAnalyzePDF()(bytes, () => {});
         core._dispatchAnalysisReady(analysis);
+        return analysis;
     } catch (e) {
         console.warn('[Analyze] Analysis failed:', e.message);
+        return null;
     }
 }
 
-const pushRegionPage    = (n, r, s)    => _core()?._dispatchRegionPage(n, r, s);
-const resetAnalysisData = ()           => _core()?._dispatchReset();
-const setAnalyzeWorker  = (w)          => { window.__GX_PDF_GEO_WORKER__ = w; _core()?._dispatchWorkerReady(w); };
-const onReprocessResult = (n, h, r, s) => _core()?._dispatchReprocessResult(n, h, r, s);
+// Resolves to the pre-flight analysis of the current pdf1, or null.
+// Kept so the docling cross-check and OCR suggestion can await it.
+let _analysisPromise = null;
+
+// Same resolution order as worker-broker.js. Shared with exportController.
+export function integrationBackendUrl() {
+    const meta = document.querySelector('meta[name="cws-backend"]');
+    if (meta?.content) return meta.content.replace(/\/$/, '');
+    const stored = localStorage.getItem('cws-backend-url');
+    if (stored) return stored.replace(/\/$/, '');
+    return 'http://localhost:8000';
+}
+
+// Cross-check the Docling result against the deterministic analyzer and
+// surface + record disagreements. Best-effort: never blocks or fails the
+// extraction it verifies.
+async function _crossCheckDocling(assets) {
+    try {
+        const analysis = await _analysisPromise;
+        if (!analysis?.pages?.length) return;
+        const report = checkDoclingAgreement(analysis.pages, assets);
+        if (report.flags.length) {
+            console.warn('[Verifier] Docling vs geometry disagreements:', report.flags);
+            showToast(
+                `Verifier: ${report.flags.length} disagreement(s) between semantic and geometric views ` +
+                `(agreement ${Math.round(report.agreementScore * 100)}%). Check the Analyze tab.`,
+                'info',
+            );
+        }
+        fetch(`${integrationBackendUrl()}/api/v1/ai/pdf/check/report`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ report }),
+        }).catch(() => { /* corpus reporting is best-effort */ });
+    } catch (e) {
+        console.warn('[Verifier] Docling cross-check failed:', e.message);
+    }
+}
+
+// ── AI auto-tune (Advance Extraction, vector docs) ───────────────────────────
+// Document-level drive-and-verify: after Pass 1, the AI reviews pages the
+// verifier scored poorly, proposes parameter/classification ops (validated
+// server-side against the closed vocabulary), the deterministic engine
+// re-runs those pages, and the verifier decides which result survives.
+// A page is never left worse than Pass 1 left it.
+
+const TUNE_MAX_PAGES = 5;   // cost circuit-breaker, not a quality gate
+const DEFAULT_SCALE_OVERRIDES = {
+    R_Y_BAND: 0.45, R_PARA_GAP: 1.80, R_COL_GAP_MIN: 1.50, STREAM_CONFIDENCE: 0.60,
+};
+
+async function _autoTunePages(pageResults) {
+    const scored = pageResults.filter(p => p.verification);
+    if (!scored.length) return;
+    // Relative gate: pages differ (a diagram page legitimately scores lower
+    // than a dense text page), so an absolute threshold misjudges both
+    // directions. A page is a tune candidate when it falls clearly below its
+    // OWN document's typical quality (median − 0.12); the absolute floor
+    // catches uniformly bad documents where nothing is below the median by
+    // much because everything is bad.
+    const scores = scored.map(p => p.verification.score).sort((a, b) => a - b);
+    const median = scores[Math.floor(scores.length / 2)];
+    const gate = Math.max(0.60, median - 0.12);
+    const candidates = scored
+        .filter(p => p.verification.score < gate)
+        .sort((a, b) => a.verification.score - b.verification.score)
+        .slice(0, TUNE_MAX_PAGES);
+    if (!candidates.length) {
+        showToast('AI review: no page falls below this document\'s own quality baseline.', 'success');
+        return;
+    }
+    showToast(`AI reviewing ${candidates.length} low-scoring page(s)…`, 'info');
+    let improved = 0;
+    for (const p of candidates) {
+        try {
+            if (await _autoTunePage(p)) improved++;
+        } catch (e) {
+            console.warn(`[AI tune] page ${p.page} failed:`, e.message);
+        }
+    }
+    showToast(`AI tune: improved ${improved} of ${candidates.length} page(s)`, improved ? 'success' : 'info');
+}
+
+async function _autoTunePage(pageResult) {
+    const analysis = await _analysisPromise;
+    const pg = analysis?.pages?.[pageResult.page - 1];
+
+    // Coordinate-free page summary — same AI boundary contract as the panel.
+    const signals = {
+        page: pageResult.page,
+        textItemCount:   pg?.textItemCount ?? 0,
+        hSegCount:       pg?.hSegCount ?? 0,
+        vSegCount:       pg?.vSegCount ?? 0,
+        diagSegCount:    pg?.diagSegCount ?? 0,
+        closedRectCount: pg?.closedRectCount ?? 0,
+        imageCount:      pg?.imageCount ?? 0,
+        regions: (pageResult.regions || []).map(r => ({
+            id: r.id, type: r.type, algorithm: r.algorithm,
+            confidence: Math.round((r.confidence ?? 1) * 100) / 100,
+        })),
+        params: { ...DEFAULT_SCALE_OVERRIDES },
+        skippedTypes: [],
+        verification: pageResult.verification,
+    };
+
+    const res = await fetch(`${integrationBackendUrl()}/api/v1/ai/pdf/tune`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            signals,
+            context: { region_ids: signals.regions.map(r => r.id), params: signals.params },
+        }),
+    });
+    const tune = await res.json();
+    if (tune.status !== 'success' || !tune.ops?.length) return false;
+
+    // Translate validated ops into a stateless reprocess pipeline.
+    const scaleOverrides = { ...DEFAULT_SCALE_OVERRIDES };
+    const skip = [];
+    const customRegions = [];
+    for (const op of tune.ops) {
+        if (op.op === 'set_param' && op.param in scaleOverrides) {
+            scaleOverrides[op.param] = op.value;
+        } else if (op.op === 'skip_region_type') {
+            skip.push(op.region_type);
+        } else if (op.op === 'set_region_type') {
+            const r = (pageResult.regions || []).find(x => x.id === op.region_id);
+            if (r?.bbox) customRegions.push({ ...r, type: op.new_type, algorithm: 'custom-override' });
+        }
+    }
+
+    const before = pageResult.verification.score;
+    const after = await _reprocessAndWait(pageResult.page, {
+        skip, scaleOverrides, customRegions, manualSplits: [],
+    });
+    const afterScore = after.verification?.score ?? 0;
+
+    fetch(`${integrationBackendUrl()}/api/v1/ai/pdf/tune/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            trace_id: tune.trace_id,
+            score_before: before,
+            score_after: afterScore,
+            verification_after: after.verification || {},
+        }),
+    }).catch(() => { /* corpus reporting is best-effort */ });
+
+    if (afterScore <= before) {
+        // The verifier rejected the proposal — restore the Pass 1 result.
+        await _reprocessAndWait(pageResult.page, {
+            skip: [], scaleOverrides: { ...DEFAULT_SCALE_OVERRIDES }, customRegions: [], manualSplits: [],
+        });
+        return false;
+    }
+    return true;
+}
+
+// Post a reprocess and resolve with that page's result message. The permanent
+// listener still dispatches the same message to the analyze panel, which is
+// what patches the visible HTML — this waiter only observes.
+function _reprocessAndWait(pageNum, pipeline) {
+    const worker = ensureGeometryWorker();
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            worker.removeEventListener('message', handler);
+            reject(new Error('tune reprocess timed out'));
+        }, 120_000);
+        const handler = (e) => {
+            const msg = e.data;
+            if (!msg.reprocess || msg.page !== pageNum) return;
+            clearTimeout(timer);
+            worker.removeEventListener('message', handler);
+            if (msg.type === 'page') resolve(msg);
+            else reject(new Error(msg.error || 'reprocess failed'));
+        };
+        worker.addEventListener('message', handler);
+        worker.postMessage({ type: 'reprocess', page: pageNum, pipeline });
+    });
+}
+
+// Local vector pipeline cannot read scanned pages — point the user at the
+// Advance Extraction (Docling/OCR) path instead of silently returning nothing.
+async function _maybeSuggestOcr() {
+    try {
+        const analysis = await _analysisPromise;
+        const scanned = analysis?.pages?.filter(p => p.scanned).length || 0;
+        if (!scanned) return;
+        showToast(
+            `${scanned} page(s) look scanned — the local vector pipeline can't read them. ` +
+            `Use Advance Extraction (OCR) for this document.`,
+            'info',
+        );
+    } catch (_) { /* analysis failed — nothing to suggest */ }
+}
+
+const pushRegionPage    = (n, r, s, v)    => _core()?._dispatchRegionPage(n, r, s, v);
+const resetAnalysisData = ()              => _core()?._dispatchReset();
+const setAnalyzeWorker  = (w)             => { window.__GX_PDF_GEO_WORKER__ = w; _core()?._dispatchWorkerReady(w); };
+const onReprocessResult = (n, h, r, s, v) => _core()?._dispatchReprocessResult(n, h, r, s, v);
 const onReprocessError  = (n, e)       => _core()?._dispatchReprocessError(n, e);
 import { clearImages, saveImages, getImageBlob } from '../utils/imageStore.js';
 import { refreshZoneToolbar } from './zoneToolbar.js';
@@ -49,7 +248,12 @@ let _geoWorker = null;
 // the Analyze tab pipeline. Mirrors the architecture in pro-gate-system.md §7C.
 // Embedded: ask the OS shell for the current user's tier. Standalone: default to free.
 // Until auth Phase 7 wires real tier detection, this always returns false.
+export function isProUser() { return _isProUser(); }
+
 function _isProUser() {
+    // Dev bypass — localhost always gets Pro so the AI layer can be exercised
+    // against the local backend. Production hostnames use the real tier.
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return true;
     try {
         if (window.parent !== window && window.parent.OsShell && typeof window.parent.OsShell.getUser === 'function') {
             const user = window.parent.OsShell.getUser();
@@ -59,6 +263,22 @@ function _isProUser() {
         // Cross-origin access can throw — treat as free.
     }
     return false;
+}
+
+// Unlock the Advance Extraction checkbox for Pro/dev users: enable the input,
+// drop the locked styling, and remove the waitlist interceptor so checking it
+// routes extraction through the backend AI path (Docling / OCR / all PDF types).
+function _ungateAdvanceExtraction() {
+    const toggle = document.getElementById('ai-layout-toggle');
+    if (!toggle) return;
+    toggle.disabled = false;
+    toggle.style.cursor = 'pointer';
+    const label = toggle.closest('label');
+    if (label) {
+        label.classList.remove('gx-pro-locked');
+        label.style.cursor = 'pointer';
+        label.querySelector('.gx-pro-interceptor')?.remove();
+    }
 }
 
 function ensureGeometryWorker() {
@@ -73,7 +293,7 @@ function ensureGeometryWorker() {
             const msg = e.data;
             if (msg.reprocess) {
                 if (msg.type === 'page') {
-                    onReprocessResult(msg.page, msg.html, msg.regions, msg.pageScale);
+                    onReprocessResult(msg.page, msg.html, msg.regions, msg.pageScale, msg.verification);
                 } else if (msg.type === 'error') {
                     onReprocessError(msg.page, msg.error);
                 }
@@ -98,6 +318,7 @@ function extractViaGeometryWorker(bytes, onProgress) {
         // to avoid structured clone stack overflow on large PDFs
         const htmlParts = [];
         const textParts = [];
+        const pageResults = [];   // {page, regions, verification} — feeds the AI auto-tune pass
         let totalTables = 0;
 
         const timeout = setTimeout(() => {
@@ -114,7 +335,10 @@ function extractViaGeometryWorker(bytes, onProgress) {
                 if (msg.html) htmlParts.push(msg.html);
                 if (msg.text) textParts.push(msg.text);
                 totalTables += msg.tables || 0;
-                if (msg.regions) pushRegionPage(msg.page, msg.regions, msg.pageScale);
+                if (msg.regions) {
+                    pushRegionPage(msg.page, msg.regions, msg.pageScale, msg.verification);
+                    pageResults.push({ page: msg.page, regions: msg.regions, verification: msg.verification || null });
+                }
             } else if (msg.type === 'complete') {
                 clearTimeout(timeout);
                 const styleBlock = msg.styles ? `<style>\n${msg.styles}\n</style>\n` : '';
@@ -122,7 +346,7 @@ function extractViaGeometryWorker(bytes, onProgress) {
                     ? styleBlock + htmlParts.join('\n')
                     : '<p class="no-tables-msg">No table structures detected. This PDF may use text-only layout.</p>';
                 const text = textParts.join('\n\n--- page break ---\n\n');
-                resolve({ html, text, tableCount: msg.tableCount ?? totalTables });
+                resolve({ html, text, tableCount: msg.tableCount ?? totalTables, pages: pageResults });
             } else if (msg.type === 'error') {
                 clearTimeout(timeout);
                 reject(new Error(msg.error));
@@ -143,6 +367,18 @@ function extractViaGeometryWorker(bytes, onProgress) {
 }
 
 export function initFileInputs() {
+    if (_isProUser()) _ungateAdvanceExtraction();
+
+    // AI panel (OS shell) content requests — reply with the extracted document text
+    window.addEventListener('message', e => {
+        if (e.origin !== window.location.origin || e.data?.type !== 'gx:ai-get-context') return;
+        e.source.postMessage({
+            type: 'gx:ai-context',
+            requestId: e.data.requestId,
+            payload: { text: state.pdf1.extractedText || '' },
+        }, e.origin);
+    });
+
     cwsBroker.init().then(() => {
         brokerReady = true;
         const mode = cwsBroker.getBackendStatus() ? 'Cloud Backend' : 'Offline (local geometry worker)';
@@ -296,9 +532,10 @@ async function handleFile(file, pdfIndex) {
                 bytes: bytesForAnalysis.slice()
             });
 
-            runAnalysis(bytesForAnalysis, file.name).catch(err =>
-                console.warn('[Analyze] Analysis failed:', err.message),
-            );
+            _analysisPromise = runAnalysis(bytesForAnalysis, file.name).catch(err => {
+                console.warn('[Analyze] Analysis failed:', err.message);
+                return null;
+            });
         }
 
         const formData = new FormData();
@@ -310,22 +547,41 @@ async function handleFile(file, pdfIndex) {
         // is defense in depth against DOM manipulation.
         const toggle = document.getElementById('ai-layout-toggle');
         const useAiLayout = toggle && !toggle.disabled && toggle.checked;
-        const apiKey = document.getElementById('ai-api-key')?.value;
-        if (useAiLayout) {
-            formData.append('use_ai_layout', 'true');
-            if (apiKey) formData.append('api_key', apiKey);
-        }
-
-        if (!brokerReady) {
-            showStatus('Connecting to extraction service…');
-            await cwsBroker.init();
-            brokerReady = true;
-        }
 
         let data;
+        let runAutoTune = false;
 
-        if (cwsBroker.getBackendStatus()) {
-            // ── Backend path (orchestrator or legacy) ────────────────────────
+        // Routing (pdf-extraction-v2.md §01): pdfjs-visible vector content is
+        // ALWAYS extracted by the deterministic geometry engine — Advance
+        // Extraction does not swap extractors, it adds the AI drive-and-verify
+        // pass on top (auto-tune of low-scoring pages, Pass 2). Docling runs
+        // only for scanned documents where there is no vector substrate, and
+        // returns its NATIVE html — the LLM semantic-HTML stage is skipped
+        // because orchestration degrades both engines' output.
+        let useBackend = false;
+        if (useAiLayout && pdfIndex === 1) {
+            showStatus('Pre-flight: classifying document…');
+            const analysis = await _analysisPromise;
+            const pages = analysis?.pages || [];
+            const scannedCount = pages.filter(p => p.scanned).length;
+            if (pages.length && scannedCount > pages.length / 2) {
+                // Scanned document — Docling's OCR path is the right engine.
+                if (!brokerReady) {
+                    showStatus('Connecting to extraction service…');
+                    await cwsBroker.init();
+                    brokerReady = true;
+                }
+                useBackend = cwsBroker.getBackendStatus();
+                if (!useBackend) {
+                    showToast('Backend unreachable — scanned pages cannot be extracted locally.', 'error');
+                }
+            } else {
+                runAutoTune = true;
+            }
+        }
+
+        if (useBackend) {
+            // ── Advance Extraction, scanned doc: plain Docling (no LLM stage) ─
             data = await cwsBroker.extractPdf(formData, (msg) => showStatus(
                 typeof msg === 'string' ? msg : (msg.message || 'Processing…'),
             ));
@@ -346,11 +602,18 @@ async function handleFile(file, pdfIndex) {
                 await clearImages();
                 await saveImages(blobsToSave);
             }
+
+            // Verifier link: cross-check Docling's semantic view against the
+            // deterministic pre-flight analyzer. Disagreements are flagged to
+            // the user and recorded to the corpus (fuel-quality.md capture point).
+            if (pdfIndex === 1 && data.assets) {
+                _crossCheckDocling(data.assets);
+            }
         } else {
-            // ── Local geometry worker fallback ────────────────────────────────
-            // showStatus('Backend offline — running local vector extraction…');
+            // ── Primary: deterministic geometry pipeline (Pass 1 + verifier) ──
             const result = await extractViaGeometryWorker(bytesForWorker, (msg) => showStatus(msg));
-            data = { html: result.html, text: result.text || '', source: 'local', tableCount: result.tableCount };
+            data = { html: result.html, text: result.text || '', source: 'local', tableCount: result.tableCount, pages: result.pages };
+            if (pdfIndex === 1) _maybeSuggestOcr();
         }
 
         pdfState.extractedHTML = data.html;
@@ -364,12 +627,19 @@ async function handleFile(file, pdfIndex) {
             refreshZoneToolbar();
             markDiffDirty();
             if (state.pdf2.bytes) refreshCodeDiff();
+            // Advance Extraction, vector doc: AI reviews the verifier's scores
+            // and re-tolerances weak pages. Runs async — pages patch in place
+            // through the same path as a manual analyze-tab re-extract.
+            if (runAutoTune && data.pages?.length) {
+                _autoTunePages(data.pages).catch(e =>
+                    console.warn('[AI tune] auto pass failed:', e.message));
+            }
         } else {
             refreshCodeDiff();
             enableDiffTab();
         }
 
-        const source = data.source === 'local' ? 'Local (vector tables only)' : 'Cloud Backend';
+        const source = data.source === 'local' ? 'deterministic vector pipeline' : 'Advance Extraction (Docling)';
         const warnSuffix = data.warning ? ` (${data.warning})` : '';
         const tableSuffix = data.source === 'local' && data.tableCount != null
             ? ` — ${data.tableCount} table${data.tableCount !== 1 ? 's' : ''} detected`

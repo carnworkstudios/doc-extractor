@@ -4,10 +4,11 @@
 // Extracted from contextClassifier.js lines 689-747.
 
 import { RegionType } from './regionTypes.js';
+import { chromeSignature } from '../chromeDetector.js';
 
 const HDR_FOOTER_RE = /^\d+$|page\s*\d+|\bof\s+\d+\b|©|\bCopyright\b|\bConfidential\b|\bAll Rights Reserved\b/i;
 
-export function detectHeadersFooters(regions, textMeta, viewport, scale, filledRects) {
+export function detectHeadersFooters(regions, textMeta, viewport, scale, filledRects, chromeSigs) {
     const topThreshold    = viewport.height * 0.12;
     const bottomThreshold = viewport.height * 0.88;
 
@@ -37,6 +38,11 @@ export function detectHeadersFooters(regions, textMeta, viewport, scale, filledR
         const regionText = regionMeta.map(tm => tm.str).join(' ');
         const patternMatch = HDR_FOOTER_RE.test(regionText);
 
+        // Cross-page repetition (chromeDetector): a margin region whose
+        // digit-collapsed signature recurs across the document is running
+        // chrome regardless of font size or wording.
+        const sigMatch = !!chromeSigs?.size && chromeSigs.has(chromeSignature(regionText));
+
         const nonSpaceLen = regionText.replace(/\s/g, '').length;
         if (nonSpaceLen < 2 && !patternMatch) continue;
 
@@ -49,7 +55,7 @@ export function detectHeadersFooters(regions, textMeta, viewport, scale, filledR
             ? headerBands.some(fr => r.bbox && r.bbox.y >= fr.y && r.bbox.y <= fr.y + fr.h)
             : footerBands.some(fr => r.bbox && (r.bbox.y + r.bbox.h) <= fr.y + fr.h && r.bbox.y >= fr.y);
 
-        if (smallFont || patternMatch || inColoredBand) {
+        if (smallFont || patternMatch || inColoredBand || sigMatch) {
             r.type = inTop ? RegionType.HEADER : RegionType.FOOTER;
             r.columnIndex = -1;
         }

@@ -511,7 +511,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
             }
         }
         regions.sort((a, b) => a.yCenter - b.yCenter);
-        detectHeadersFooters(regions, textMeta, viewport, scale, filledRects);
+        detectHeadersFooters(regions, textMeta, viewport, scale, filledRects, opts.chromeSigs);
         let finalRegions2 = regions;
         const customRegions2 = opts.pipeline?.customRegions || [];
         if (customRegions2.length > 0) {
@@ -699,7 +699,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     finalRegions.sort((a, b) => a.yCenter - b.yCenter);
 
     // ── 14. Header / Footer detection ───────────────────────────────────────
-    detectHeadersFooters(finalRegions, textMeta, viewport, scale, filledRects);
+    detectHeadersFooters(finalRegions, textMeta, viewport, scale, filledRects, opts.chromeSigs);
 
     // columnSplits returned as plain X array (what pageAssembler expects).
     // rawSplits carries the full {x, leftFraction, rightFraction} objects for

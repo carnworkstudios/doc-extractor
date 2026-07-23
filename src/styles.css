@@ -513,6 +513,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 2px;
+  max-width: 350px;
   flex-shrink: 0;
   padding-bottom: 1px;
 }
@@ -526,7 +527,7 @@ body {
 .ribbon-group-buttons--wrap {
   flex-wrap: wrap;
   /* max-width: 220px; */
-  justify-content: center;
+  /* justify-content: center; */
 }
 
 .ribbon-btn-sep {
