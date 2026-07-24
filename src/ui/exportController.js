@@ -175,7 +175,13 @@ async function sendTablesToTafne() {
         return;
     }
 
-    // gx-tables-v1 rows are objects keyed by header — headers must be unique
+    // gx-tables-v1 rows are objects keyed by header — headers must be unique.
+    // Candidate-artifact contract (tool-intelligence-spec.md §04.2): a table
+    // extracted from a PDF is a CANDIDATE, not a finished fact. We attach its
+    // extraction confidence and mark candidate:true so TAFNE's trust stage
+    // treats it as "to verify", not "trusted" — the two-stage trust model
+    // (extracted-uncertain → validated-trusted). The score is the region's own
+    // classifier confidence when the table maps to an extracted region.
     const tables = domTables.map((t, i) => {
         const grid = tableToGrid(t);
         const seen = {};
@@ -187,7 +193,16 @@ async function sendTablesToTafne() {
         });
         const rows = grid.slice(1).map(r =>
             Object.fromEntries(headers.map((h, j) => [h, r[j] ?? ''])));
-        return { name: domTables.length > 1 ? `${baseName()} — table ${i + 1}` : baseName(), rows };
+        // Extraction confidence: prefer a data-confidence on the table element,
+        // fall back to 'uncertain' (0.7) so downstream always knows it's a candidate.
+        const conf = parseFloat(t.getAttribute?.('data-confidence'));
+        const extractionScore = !isNaN(conf) ? conf : 0.7;
+        return {
+            name: domTables.length > 1 ? `${baseName()} — table ${i + 1}` : baseName(),
+            rows,
+            candidate: true,
+            extractionScore,
+        };
     }).filter(t => t.rows.length);
     if (!tables.length) {
         showToast('Tables have no data rows to send.', 'error');
@@ -197,24 +212,33 @@ async function sendTablesToTafne() {
     try {
         window.CwsBridge.send('cws:tool:launch', { toolId: 'tifany', focusAfterLaunch: true }, 'os');
         await _waitForToolReady('tifany', 8000);
-        const payload = { schema: 'gx-tables-v1', tables, meta: { source: 'pdf-processor', title: baseName() } };
+        // meta.candidate flags the whole handoff as extracted-uncertain, so the
+        // receiver (TAFNE) knows to route it through its validate/trust stage.
+        const payload = { schema: 'gx-tables-v1', tables, meta: { source: 'pdf-processor', title: baseName(), candidate: true } };
         // Provenance assembly is intelligence-layer POLICY (shell-provided
         // GxProvenance module, assets/os/provenance.js) — NOT in this forkable
         // tool. Standalone/forked builds have no GxProvenance → no lineage sent,
         // tool still works. PDF is the pipeline SOURCE, so there is nothing
         // incoming to inherit; build() just returns this tool's extraction record.
+        // Aggregate extraction confidence across the candidate tables → the
+        // extraction-stage score on the lineage spine.
+        const avgScore = tables.reduce((s, t) => s + (t.extractionScore || 0), 0) / tables.length;
         const provenance = window.GxProvenance
             ? window.GxProvenance.build('pdf-processor', window.CwsContracts.PROVENANCE_STAGES.EXTRACTION, {
                 source: baseName(),
-                score: null,  // overall extraction confidence TBD per-table
+                score: avgScore,          // extracted-uncertain: real per-batch confidence
+                candidate: true,
             })
             : [];
         const pointerId = await window.CwsBridge.requestStore(JSON.stringify(payload), 'json-data');
         window.CwsBridge.offerData(window.CwsContracts.createEnvelope({
             pointer: pointerId,
             contentType: 'json-data',
-            metadata: { source: 'pdf-processor', title: baseName(), tableCount: tables.length },
-            hints: { suggestedTarget: 'tifany', action: 'load-tables' },
+            metadata: { source: 'pdf-processor', title: baseName(), tableCount: tables.length, candidate: true },
+            // action:'load-candidate-tables' tells TAFNE to route through verify,
+            // not treat as a finished table. TAFNE falls back to load-tables if it
+            // doesn't yet special-case candidates.
+            hints: { suggestedTarget: 'tifany', action: 'load-candidate-tables' },
             provenance,
         }));
         showToast(`Sent ${tables.length} table${tables.length > 1 ? 's' : ''} to TAFNE`, 'success');
