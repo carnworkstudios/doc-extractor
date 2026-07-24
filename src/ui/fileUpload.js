@@ -5,6 +5,8 @@
  */
 
 import $ from 'jquery';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { state } from '../state.js';
 import { renderPDFToCanvas } from './pdfCanvas.js';
 import { showStatus, hideStatus, enableDiffTab, disableDiffTab, switchView } from './viewController.js';
@@ -16,6 +18,10 @@ import { applyHtmlEverywhere, hydrateImages } from './htmlSync.js';
 import { showToast } from './toast.js';
 import { cwsBroker } from '@os/worker-broker.js';
 import { checkDoclingAgreement } from '../extraction/doclingCheck.js';
+import { classifyPage } from '../extraction/vector/contextClassifier.js';
+import { assemblePage, createFontRegistry } from '../extraction/vector/pageAssembler.js';
+import { synthesizeFromWords, makeSyntheticViewport } from '../extraction/vector/rasterSynth.js';
+import { ensureTesseract, recognizePage } from './tesseractOcr.js';
 // analyzePanel.js is injected by os-shell.js into this iframe at runtime.
 // All calls are proxied through window.__GX_PDF_CORE__ dispatchers set up in app.js.
 const _core = () => window.__GX_PDF_CORE__;
@@ -39,8 +45,11 @@ async function runAnalysis(bytes, filename) {
 // Kept so the docling cross-check and OCR suggestion can await it.
 let _analysisPromise = null;
 
-// Same resolution order as worker-broker.js. Shared with exportController.
+
 export function integrationBackendUrl() {
+    if (window.CwsContracts && window.CwsContracts.resolveBackend) {
+        return window.CwsContracts.resolveBackend().url;
+    }
     const meta = document.querySelector('meta[name="cws-backend"]');
     if (meta?.content) return meta.content.replace(/\/$/, '');
     const stored = localStorage.getItem('cws-backend-url');
@@ -279,6 +288,279 @@ function _ungateAdvanceExtraction() {
         label.style.cursor = 'pointer';
         label.querySelector('.gx-pro-interceptor')?.remove();
     }
+}
+
+// ── OCR: Tesseract.js (browser-native, whole-page, words+bbox+confidence) ────
+// Replaced the TrOCR (Transformers.js single-line) path. See tesseractOcr.js.
+// Tesseract does its own segmentation and returns word geometry, so the layout
+// worker (YOLO) is kept only to LABEL regions, not to find text lines.
+
+// ── Layout worker (YOLOv8/DocLayNet region detection) ───────────────────────
+// Mirrors the OCR worker's manager: requestId-matched detect() calls and a
+// stall-based init timeout (the ONNX model download can be slow on cold cache).
+const LAYOUT_MODEL_SIZE = 640;   // model input is 640×640 (see layoutWorker.js)
+let _layoutWorker = null;
+let _layoutReady = false;
+const _layoutCallbacks = new Map(); // requestId -> { resolve, reject }
+let _layoutReqId = 0;
+
+function ensureLayoutWorker() {
+    return new Promise((resolve, reject) => {
+        if (_layoutReady) { resolve(); return; }
+        if (_layoutWorker) {
+            const onReadyAgain = (e) => {
+                if (e.data.type === 'ready') {
+                    _layoutWorker.removeEventListener('message', onReadyAgain);
+                    _layoutReady = true;
+                    resolve();
+                } else if (e.data.type === 'error' && e.data.requestId == null) {
+                    _layoutWorker.removeEventListener('message', onReadyAgain);
+                    reject(new Error(e.data.error));
+                }
+            };
+            _layoutWorker.addEventListener('message', onReadyAgain);
+            return;
+        }
+
+        _layoutWorker = new Worker(
+            new URL('../workers/layoutWorker.js', import.meta.url),
+            { type: 'module' },
+        );
+
+        // Permanent listener: resolve detect() promises by requestId.
+        _layoutWorker.addEventListener('message', (e) => {
+            const msg = e.data;
+            if (msg.type === 'progress' && msg.status) {
+                console.log('[layoutWorker]', msg.status);
+                return;
+            }
+            if (msg.type === 'result' && msg.requestId != null) {
+                const cb = _layoutCallbacks.get(msg.requestId);
+                if (cb) { _layoutCallbacks.delete(msg.requestId); cb.resolve(msg.regions || []); }
+                return;
+            }
+            if (msg.type === 'error' && msg.requestId != null) {
+                const cb = _layoutCallbacks.get(msg.requestId);
+                if (cb) { _layoutCallbacks.delete(msg.requestId); cb.reject(new Error(msg.error || 'Layout detection failed')); }
+                return;
+            }
+        });
+
+        _layoutWorker.postMessage({ type: 'init' });
+
+        const STALL_MS = 90_000;
+        let stallTimer = null;
+        const clearStall = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } };
+        const armStall = () => {
+            clearStall();
+            stallTimer = setTimeout(() => {
+                _layoutWorker.removeEventListener('message', onReady);
+                reject(new Error('Layout model load stalled (no progress for 90s).'));
+            }, STALL_MS);
+        };
+        const onReady = (e) => {
+            if (e.data.type === 'progress') { armStall(); return; }
+            if (e.data.type === 'ready') {
+                clearStall();
+                _layoutWorker.removeEventListener('message', onReady);
+                _layoutReady = true;
+                resolve();
+            } else if (e.data.type === 'error' && e.data.requestId == null) {
+                clearStall();
+                _layoutWorker.removeEventListener('message', onReady);
+                reject(new Error(e.data.error));
+            }
+        };
+        _layoutWorker.addEventListener('message', onReady);
+        armStall();
+    });
+}
+
+/**
+ * Run layout detection on a page image.
+ * @param {ImageBitmap} imageBitmap
+ * @returns {Promise<Array<{label,confidence,bbox}>>} bbox in 640×640 model space.
+ */
+function layoutDetect(imageBitmap) {
+    return new Promise((resolve, reject) => {
+        if (!_layoutWorker || !_layoutReady) {
+            reject(new Error('Layout worker not ready. Call ensureLayoutWorker() first.'));
+            return;
+        }
+        const reqId = ++_layoutReqId;
+        _layoutCallbacks.set(reqId, { resolve, reject });
+        _layoutWorker.postMessage(
+            { type: 'detect', requestId: reqId, data: { imageBitmap } },
+            [imageBitmap],
+        );
+    });
+}
+
+function _disposeLayoutWorker() {
+    if (_layoutWorker) {
+        _layoutWorker.postMessage({ type: 'dispose' });
+        _layoutWorker.terminate();
+        _layoutWorker = null;
+        _layoutReady = false;
+    }
+}
+
+/**
+ * Extract a SCANNED PDF by rejoining the vector geometry pipeline:
+ *   render page → layoutWorker (regions) → per-region TrOCR → rasterSynth
+ *   (synthetic PDF.js text items + table borders) → classifyPage + assemblePage.
+ * This is the CTM-synthesis path: scanned docs produce the same record shapes
+ * and downstream output (tables, headings, columns) as vector PDFs, instead of
+ * the naive full-page single-line OCR dump.
+ *
+ * @param {Uint8Array} bytes
+ * @param {function} [onProgress]
+ * @returns {Promise<{html,text,tableCount,pages,source}>}
+ */
+async function extractViaScannedGeometry(bytes, onProgress) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = window.__VSC_PDF_WORKER_SRC__ || pdfWorkerUrl;
+
+    const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+    const numPages = pdf.numPages;
+
+    if (onProgress) onProgress('Preparing layout + OCR models…');
+    await Promise.all([ensureLayoutWorker(), ensureTesseract()]);
+
+    const VIEWPORT_SCALE = 2.0;   // classifyPage viewport scale
+    const RENDER_SCALE = 2.0;     // page render scale for detection + OCR
+    const fontRegistry = createFontRegistry();
+    const htmlParts = [];
+    const textParts = [];
+    const pageResults = [];
+    const analysisPages = [];     // analysis.pages[] for analyzePanel
+    const worker = ensureGeometryWorker();
+    let totalTables = 0;
+
+    for (let i = 1; i <= numPages; i++) {
+        if (onProgress) onProgress(`Layout + OCR page ${i}/${numPages}…`);
+
+        const page = await pdf.getPage(i);
+        const pageWidthPt = page.view[2] - page.view[0];
+        const pageHeightPt = page.view[3] - page.view[1];
+
+        // Render the page once; both layout detection and Tesseract read it.
+        const rViewport = page.getViewport({ scale: RENDER_SCALE });
+        const rw = Math.round(rViewport.width);
+        const rh = Math.round(rViewport.height);
+        const pageCanvas = new OffscreenCanvas(rw, rh);
+        const pctx = pageCanvas.getContext('2d');
+        await page.render({ canvasContext: pctx, viewport: rViewport }).promise;
+
+        // 1) Layout detection (YOLO) + full-page OCR (Tesseract) in parallel.
+        //    Tesseract does its OWN line/word segmentation and returns words with
+        //    real bboxes + confidence — no projection-profile line splitting, no
+        //    per-line model round-trips. YOLO is kept ONLY to LABEL regions
+        //    (table/figure/heading) so tableBuilder + heading detection fire.
+        const detectBitmap = await createImageBitmap(pageCanvas);
+        const [rawRegions, ocr] = await Promise.all([
+            layoutDetect(detectBitmap),          // bbox in 640-space
+            recognizePage(pageCanvas),           // { words:[{text,bbox,confidence}], text }
+        ]);
+
+        // Normalize 640-space YOLO boxes → fractional [0,1] page coords (top-left).
+        const labelRegions = rawRegions
+            .map(r => ({
+                label: r.label,
+                confidence: r.confidence,
+                bbox: {
+                    x: Math.max(0, r.bbox.x / LAYOUT_MODEL_SIZE),
+                    y: Math.max(0, r.bbox.y / LAYOUT_MODEL_SIZE),
+                    w: Math.min(1, r.bbox.w / LAYOUT_MODEL_SIZE),
+                    h: Math.min(1, r.bbox.h / LAYOUT_MODEL_SIZE),
+                },
+            }))
+            .filter(r => r.bbox.w > 0.005 && r.bbox.h > 0.005);
+
+        // 2) Synthesize vector-shaped inputs from WORDS (real bboxes) and run the
+        //    real pipeline. YOLO labels tag words (heading/table) + emit borders.
+        const geom = {
+            pageWidthPt, pageHeightPt,
+            renderWidth: rw, renderHeight: rh,
+            viewportWidth: pageWidthPt * VIEWPORT_SCALE,
+            viewportHeight: pageHeightPt * VIEWPORT_SCALE,
+        };
+        const synth = synthesizeFromWords(ocr.words, labelRegions, geom);
+        const viewport = makeSyntheticViewport(pageWidthPt, pageHeightPt, VIEWPORT_SCALE);
+
+        // No path segments on a scanned page; filledRects carry the table frames.
+        const { regions: classified, textMeta, columnSplits, rawSplits } = classifyPage(
+            [], synth.textItems, viewport, pageWidthPt, synth.imageMeta,
+            { filledRects: synth.filledRects },
+        );
+        const result = assemblePage(
+            classified, textMeta, synth.textItems, viewport, pageWidthPt, i,
+            fontRegistry, rawSplits ?? columnSplits, {}, null,
+        );
+
+        totalTables += result.tableCount || 0;
+        htmlParts.push(result.html);
+        textParts.push((result.text || '').trim());
+        pageResults.push({ page: i, ocr: true, scanned: true, tables: result.tableCount || 0 });
+
+        // Cache this page's synthetic inputs in the geometry worker so a later
+        // re-extract (analyzePanel sliders / column splits) re-runs classify on
+        // the SAME synthetic text items instead of re-parsing the (image-only) PDF.
+        worker.postMessage({
+            type: 'cache-scanned-page',
+            page: i,
+            synth: { textItems: synth.textItems, filledRects: synth.filledRects, imageMeta: synth.imageMeta },
+            pageWidthPt, pageHeightPt, viewportScale: VIEWPORT_SCALE,
+        });
+
+        // Build the analysis page object so analyzePanel renders this scanned
+        // page exactly like a technical one (canvas, region layers, re-extract).
+        analysisPages.push({
+            scanned: true,
+            ocrLayer: true,
+            pageNum: i,
+            widthPx: viewport.width,
+            heightPx: viewport.height,
+            widthPt: pageWidthPt,
+            heightPt: pageHeightPt,
+            widthIn: (pageWidthPt / 72).toFixed(2),
+            heightIn: (pageHeightPt / 72).toFixed(2),
+            textItemCount: synth.textItems.length,
+            hSegCount: synth.hSegs.length,
+            vSegCount: synth.vSegs.length,
+            diagSegCount: 0,
+            totalSegCount: synth.hSegs.length + synth.vSegs.length,
+            imageCount: synth.imageRegions.length,
+            closedRectCount: 0,
+            hSegs: synth.hSegs,
+            vSegs: synth.vSegs,
+            diagSegs: [],
+            closedRects: [],
+            imageRegions: synth.imageRegions,
+            textItems: synth.textItems,
+            viewport,
+        });
+
+        page.cleanup();
+    }
+
+    // Push the synthetic analysis so analyzePanel treats scanned pages like
+    // technical ones (region editing, sliders, send-to-schema all light up).
+    try {
+        _core()?._dispatchAnalysisReady({
+            metadata: { pageCount: numPages, source: 'local-ocr-geometry', scanned: true },
+            pages: analysisPages,
+        });
+    } catch (e) {
+        console.warn('[ScannedGeometry] analysis dispatch failed:', e.message);
+    }
+
+    return {
+        html: htmlParts.join('\n'),
+        text: textParts.join('\n\n'),
+        tableCount: totalTables,
+        pages: pageResults,
+        source: 'local-ocr-geometry',
+    };
 }
 
 function ensureGeometryWorker() {
@@ -550,32 +832,52 @@ async function handleFile(file, pdfIndex) {
 
         let data;
         let runAutoTune = false;
+        let scannedCount = 0;
+        let isScannedDoc = false;
+        let useLocalScannedGeometry = false;
 
         // Routing (pdf-extraction-v2.md §01): pdfjs-visible vector content is
         // ALWAYS extracted by the deterministic geometry engine — Advance
         // Extraction does not swap extractors, it adds the AI drive-and-verify
-        // pass on top (auto-tune of low-scoring pages, Pass 2). Docling runs
-        // only for scanned documents where there is no vector substrate, and
-        // returns its NATIVE html — the LLM semantic-HTML stage is skipped
-        // because orchestration degrades both engines' output.
+        // pass on top (auto-tune of low-scoring pages, Pass 2).
+        //
+        // SCANNED documents (no vector substrate — e.g. 0 fonts, image-only
+        // pages) have nothing for the geometry engine to read, so they route to
+        // the local-first raster→geometry bridge: layoutWorker (YOLOv8) finds
+        // regions, TrOCR transcribes each, and rasterSynth feeds synthetic text
+        // items back into the SAME classifyPage/assemblePage pipeline. This is
+        // free and in-tab (manifesto: heavy work, no server) — NOT gated behind
+        // the Pro Advance-Extraction toggle. Docling stays as the backend
+        // fallback only when the local models fail to load.
         let useBackend = false;
-        if (useAiLayout && pdfIndex === 1) {
+        if (pdfIndex === 1) {
             showStatus('Pre-flight: classifying document…');
             const analysis = await _analysisPromise;
             const pages = analysis?.pages || [];
-            const scannedCount = pages.filter(p => p.scanned).length;
-            if (pages.length && scannedCount > pages.length / 2) {
-                // Scanned document — Docling's OCR path is the right engine.
-                if (!brokerReady) {
-                    showStatus('Connecting to extraction service…');
-                    await cwsBroker.init();
-                    brokerReady = true;
+            scannedCount = pages.filter(p => p.scanned).length;
+            isScannedDoc = pages.length > 0 && scannedCount > pages.length / 2;
+
+            if (isScannedDoc) {
+                // Scanned → local raster→geometry bridge (layout + OCR in-tab).
+                showStatus('Scanned document — preparing local layout + OCR…');
+                try {
+                    await Promise.all([ensureLayoutWorker(), ensureTesseract()]);
+                    useLocalScannedGeometry = true;
+                } catch (mlErr) {
+                    console.warn('[HandleFile] Local layout/OCR init failed, falling back to backend:', mlErr.message);
+                    if (!brokerReady) {
+                        showStatus('Connecting to backend OCR service…');
+                        await cwsBroker.init();
+                        brokerReady = true;
+                    }
+                    useBackend = cwsBroker.getBackendStatus();
+                    if (!useBackend) {
+                        showToast('Backend unreachable and local OCR failed — scanned pages may not extract.', 'error');
+                    }
                 }
-                useBackend = cwsBroker.getBackendStatus();
-                if (!useBackend) {
-                    showToast('Backend unreachable — scanned pages cannot be extracted locally.', 'error');
-                }
-            } else {
+            } else if (useAiLayout) {
+                // Vector doc + Advance Extraction: geometry runs, AI re-tolerances
+                // low-scoring pages afterward (Pass 2).
                 runAutoTune = true;
             }
         }
@@ -609,8 +911,21 @@ async function handleFile(file, pdfIndex) {
             if (pdfIndex === 1 && data.assets) {
                 _crossCheckDocling(data.assets);
             }
+        } else if (useLocalScannedGeometry) {
+            // ── Local scanned path: layout (YOLOv8, labels) + Tesseract (words) →
+            //    rasterSynth → classifyPage/assemblePage. Same downstream as
+            //    vector PDFs, so tables/headings/columns are reconstructed.
+            showStatus('Running local layout + OCR on scanned pages…');
+            const result = await extractViaScannedGeometry(bytesForWorker, (msg) => showStatus(msg));
+            data = { html: result.html, text: result.text || '', source: 'local-ocr-geometry', tableCount: result.tableCount, pages: result.pages };
         } else {
             // ── Primary: deterministic geometry pipeline (Pass 1 + verifier) ──
+            // NOTE: a SCANNED doc reaching here means both local OCR (Tesseract)
+            // and the backend fell through — the vector engine has nothing to
+            // read, so warn instead of silently reporting an empty "success".
+            if (isScannedDoc) {
+                showToast('Scanned document, but local OCR and backend are both unavailable — extraction will be empty.', 'error');
+            }
             const result = await extractViaGeometryWorker(bytesForWorker, (msg) => showStatus(msg));
             data = { html: result.html, text: result.text || '', source: 'local', tableCount: result.tableCount, pages: result.pages };
             if (pdfIndex === 1) _maybeSuggestOcr();
@@ -639,9 +954,13 @@ async function handleFile(file, pdfIndex) {
             enableDiffTab();
         }
 
-        const source = data.source === 'local' ? 'deterministic vector pipeline' : 'Advance Extraction (Docling)';
+        const SOURCE_LABELS = {
+            'local': 'deterministic vector pipeline',
+            'local-ocr-geometry': 'local layout + OCR (scanned)',
+        };
+        const source = SOURCE_LABELS[data.source] || 'Advance Extraction (Docling)';
         const warnSuffix = data.warning ? ` (${data.warning})` : '';
-        const tableSuffix = data.source === 'local' && data.tableCount != null
+        const tableSuffix = (data.source === 'local' || data.source === 'local-ocr-geometry') && data.tableCount != null
             ? ` — ${data.tableCount} table${data.tableCount !== 1 ? 's' : ''} detected`
             : '';
         _updateVisualDiffLabels();

@@ -21,3 +21,4 @@ test-*
 *.xls
 test2.js
 .playwright-cli
+public/

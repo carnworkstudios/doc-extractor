@@ -13,8 +13,14 @@
  * Output is raw YOLOv8 detections that require NMS post-processing.
  */
 
-const MODEL_URL = '/models/yolov8n-doclaynet.onnx';
 import * as ort from 'onnxruntime-web';
+// Base-aware asset paths. In production the whole dist/ is copied to
+// dist/tools/pdf-processor/ (build.sh), so /models and /ort-wasm live UNDER the
+// Vite base ('/tools/pdf-processor/'), not at the site root. import.meta.env
+// .BASE_URL resolves to that base in the build and '/' in dev.
+const BASE = (import.meta.env && import.meta.env.BASE_URL) || '/';
+const MODEL_URL = `${BASE}models/yolov8n-doclaynet.onnx`;
+const ORT_WASM_PATH = `${BASE}ort-wasm/`;
 const CACHE_NAME = 'darla-models-v1';
 const MODEL_SIZE = 640;
 const CONF_THRESHOLD = 0.25;
@@ -29,19 +35,20 @@ const CLASS_LABELS = [
 let session = null;
 
 self.onmessage = async (e) => {
-    const { type, data } = e.data;
+    const { type, data, requestId } = e.data;
 
     try {
         switch (type) {
             case 'init':
-                await initModel(data?.onProgress);
+                self.postMessage({ type: 'progress', status: 'Loading layout model…' });
+                await initModel();
                 self.postMessage({ type: 'ready' });
                 break;
 
             case 'detect':
                 if (!session) throw new Error('Model not initialized. Send "init" first.');
                 const regions = await detect(data.imageBitmap);
-                self.postMessage({ type: 'result', regions });
+                self.postMessage({ type: 'result', regions, requestId });
                 break;
 
             case 'dispose':
@@ -53,10 +60,10 @@ self.onmessage = async (e) => {
                 break;
 
             default:
-                self.postMessage({ type: 'error', error: `Unknown message type: ${type}` });
+                self.postMessage({ type: 'error', error: `Unknown message type: ${type}`, requestId });
         }
     } catch (err) {
-        self.postMessage({ type: 'error', error: err.message });
+        self.postMessage({ type: 'error', error: err.message, requestId });
     }
 };
 
@@ -65,8 +72,15 @@ self.onmessage = async (e) => {
 async function initModel() {
     // Static import used instead of dynamic to avoid registerBackend undefined error
 
-    // Point to the WASM/MJS files in public/ort-wasm/ (served in both dev and prod)
-    ort.env.wasm.wasmPaths = '/ort-wasm/';
+    // Explicit file mapping (NOT a directory) so ORT loads the plain
+    // simd-threaded WASM build. If we only set a directory, ORT 1.19 defaults
+    // to the JSEP (WebGPU) loader — whose .wasm is ~25 MB and exceeds
+    // Cloudflare Pages' 25 MiB per-file limit. We ship WASM-only, so pin the
+    // non-jsep files by name.
+    ort.env.wasm.wasmPaths = {
+        mjs:  `${ORT_WASM_PATH}ort-wasm-simd-threaded.mjs`,
+        wasm: `${ORT_WASM_PATH}ort-wasm-simd-threaded.wasm`,
+    };
 
     // Disable multi-threading to avoid SharedArrayBuffer / COOP/COEP issues
     // that break Monaco editor workers and cross-origin font loading.

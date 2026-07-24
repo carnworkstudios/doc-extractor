@@ -22,6 +22,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { extractSubpaths } from '../extraction/vector/ctmAdapter.js';
 import { reconcile } from '../extraction/vector/pathReconciler.js';
+import { makeSyntheticViewport } from '../extraction/vector/rasterSynth.js';
 import { classifyPage } from '../extraction/vector/contextClassifier.js';
 import { assemblePage, createFontRegistry, generateDocumentStyles } from '../extraction/vector/pageAssembler.js';
 import { readStructTree } from '../extraction/vector/structTreeReader.js';
@@ -60,6 +61,10 @@ let _cachedBytes       = null;
 let _cachedFontRegistry = null;
 let _cachedDocScale    = null;
 let _cachedChromeSigs  = null;   // cross-page running header/footer signatures
+// Scanned pages have no operator list to re-parse. The bridge caches each
+// scanned page's synthetic inputs here so 'reprocess' re-runs classify/assemble
+// on the SAME text items (honoring slider/split pipeline) instead of the PDF.
+const _scannedPages = new Map(); // pageNum -> { textItems, filledRects, imageRegions, pageWidthPt, viewportScale }
 
 // Render the page once at 4× and crop every image-like area:
 //   - raster XObjects from imageMeta (keyed by meta.id)
@@ -132,8 +137,24 @@ self.onmessage = async (e) => {
         _cachedBytes = e.data.bytes ? e.data.bytes.slice() : null;
         return;
     }
+    if (e.data.type === 'cache-scanned-page') {
+        _scannedPages.set(e.data.page, {
+            textItems: e.data.synth.textItems,
+            filledRects: e.data.synth.filledRects,
+            imageMeta: e.data.synth.imageMeta,
+            pageWidthPt: e.data.pageWidthPt,
+            pageHeightPt: e.data.pageHeightPt,
+            viewportScale: e.data.viewportScale ?? 2.0,
+        });
+        return;
+    }
     if (e.data.type === 'reprocess') {
-        await _handleReprocess(e.data);
+        // Scanned page? Re-run on cached synthetic inputs, not the PDF.
+        if (_scannedPages.has(e.data.page)) {
+            await _handleScannedReprocess(e.data);
+        } else {
+            await _handleReprocess(e.data);
+        }
         return;
     }
     if (e.data.type !== 'process') return;
@@ -427,6 +448,70 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
             page: pageNum,
             error: `Reprocess page ${pageNum}: ${err.message || err}`
         });
+    }
+}
+
+// ── Single-page re-extraction for a SCANNED page ───────────────────────────────
+// Sources from the cached synthetic text items (no PDF re-parse — the page has
+// no operator list). Honors the same slider/split pipeline as the vector path.
+async function _handleScannedReprocess({ page: pageNum, pipeline = {} }) {
+    const cached = _scannedPages.get(pageNum);
+    if (!cached) {
+        self.postMessage({ type: 'error', reprocess: true, page: pageNum,
+            error: `No cached scanned page ${pageNum}.` });
+        return;
+    }
+    const { skip = [], scaleOverrides = {}, customRegions = [], manualSplits = [] } = pipeline;
+    const skipSet = new Set(skip);
+
+    try {
+        const { textItems, filledRects, imageMeta, pageWidthPt, pageHeightPt, viewportScale } = cached;
+        const viewport = makeSyntheticViewport(pageWidthPt, pageHeightPt ?? pageWidthPt * 1.4142, viewportScale);
+
+        const { regions, textMeta, columnSplits, rawSplits, scale } = classifyPage(
+            [], textItems, viewport, pageWidthPt, imageMeta || [],
+            {
+                filledRects: filledRects || [],
+                pipeline: { skip: skipSet, scaleOverrides, customRegions, manualSplits },
+                docScale: _cachedDocScale,
+            },
+        );
+
+        const fontRegistry = _cachedFontRegistry ?? createFontRegistry();
+        const result = assemblePage(
+            regions, textMeta, textItems, viewport, pageWidthPt, pageNum,
+            fontRegistry, rawSplits ?? columnSplits, {}, null,
+        );
+
+        self.postMessage({
+            type: 'page',
+            reprocess: true,
+            page: pageNum,
+            html: result.html,
+            text: result.text.trim(),
+            tables: result.tableCount,
+            regions: regions.map((r, i) => ({
+                id: r.id || `p${pageNum}-r${i}`,
+                type: r.type,
+                bbox: r.bbox,
+                algorithm: r.algorithm ?? 'ocr-synth',
+                confidence: r.confidence ?? 1.0,
+                columnIndex: r.columnIndex ?? -1,
+                imageId: r.imageId ?? null,
+                flowId: r.flowId ?? null,
+                flowNext: r.flowNext ?? null,
+                flowJoin: r.flowJoin ?? null,
+            })),
+            pageScale: scale.toJSON(),
+            docScale: _cachedDocScale ? _cachedDocScale.toJSON() : null,
+            layoutTree: result.layoutTree ?? null,
+            fidelityScore: result.fidelityScore ?? 0,
+            layoutMethod: result.layoutMethod ?? 'flat-zones',
+            verification: scoreExtraction(regions, textMeta, viewport),
+        });
+    } catch (err) {
+        self.postMessage({ type: 'error', reprocess: true, page: pageNum,
+            error: `Scanned reprocess page ${pageNum}: ${err.message || err}` });
     }
 }
 

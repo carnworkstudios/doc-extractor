@@ -25,7 +25,8 @@ from ultralytics import YOLO
 
 REPO_ID = "hantian/yolo-doclaynet"
 MODEL_FILE = "yolov8n-doclaynet.pt"
-OUTPUT_DIR = Path(__file__).parent.parent / "src" / "public" / "models"
+# Vite publicDir is pdf-processor/public/ (project root moved out of src/).
+OUTPUT_DIR = Path(__file__).parent.parent / "public" / "models"
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
