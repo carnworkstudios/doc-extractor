@@ -334,97 +334,189 @@ function tableToXml(tableEl, indent) {
     return out;
 }
 
+// ── Flow-chain merge (reading-order rejoin) ───────────────────────────────────
+//
+// The assembler links paragraphs that continue across column/zone seams: the
+// FIRST <p> of a continuation region carries data-flow-prev + data-continuation,
+// and the head <p> carries data-flow-next (see flowLinker.js / pageAssembler.js).
+// The spatial HTML keeps every fragment in its own column, but the semantic
+// exports (Markdown/XML) must present one continuous paragraph. This pre-pass
+// walks each chain head-first and folds every continuation <p> into the head,
+// mirroring the assembler's _joinFlowText join semantics, then removes the
+// now-empty continuation <p> so the recursive emitter never sees it.
+
+// Trailing hyphen forms the dehyphenate join strips: ASCII, unicode, soft.
+const FLOW_HYPHEN_END_RE = /[-‐‑­]\s*$/;
+
+/** Deepest last non-empty text node in an element (for seam joining). */
+function _lastTextNode(el) {
+    for (let i = el.childNodes.length - 1; i >= 0; i--) {
+        const n = el.childNodes[i];
+        if (n.nodeType === Node.TEXT_NODE) {
+            if (n.textContent && n.textContent.trim()) return n;
+        } else if (n.nodeType === Node.ELEMENT_NODE) {
+            const found = _lastTextNode(n);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
+/**
+ * Fold continuation <p> `cont` into head <p> `head`, honoring the join kind
+ * (mirrors pageAssembler._joinFlowText): 'dehyphenate' strips the trailing
+ * hyphen and butts the words together, 'hyphen-keep' butts with the hyphen
+ * intact, 'space' (default) inserts a single separating space. Inline markup
+ * (bold/italic spans) is preserved by moving nodes rather than text.
+ */
+function _absorbFlow(head, cont, join, doc) {
+    const last = _lastTextNode(head);
+    if (join === 'dehyphenate') {
+        if (last) last.textContent = last.textContent.replace(FLOW_HYPHEN_END_RE, '');
+    } else if (join === 'hyphen-keep') {
+        if (last) last.textContent = last.textContent.replace(/\s+$/, '');
+    } else {
+        if (last) last.textContent = last.textContent.replace(/\s+$/, '');
+        head.appendChild(doc.createTextNode(' '));
+    }
+    let first = true;
+    while (cont.firstChild) {
+        const child = cont.firstChild;
+        if (first && child.nodeType === Node.TEXT_NODE) {
+            child.textContent = child.textContent.replace(/^\s+/, '');
+        }
+        head.appendChild(child);
+        first = false;
+    }
+}
+
+/** Merge all paragraph flow chains in-place, removing absorbed continuations. */
+function mergeFlowChains(doc) {
+    const byId = new Map();
+    doc.querySelectorAll('[id]').forEach(el => byId.set(el.getAttribute('id'), el));
+
+    // Chain heads: have a next link but no continuation link that resolves in
+    // this document (a true head, not a mid-chain node).
+    const heads = [...doc.querySelectorAll('[data-flow-next]')].filter(el => {
+        const prev = el.getAttribute('data-flow-prev');
+        return !prev || !byId.has(prev);
+    });
+
+    for (const head of heads) {
+        const seen = new Set([head]);
+        let nextId = head.getAttribute('data-flow-next');
+        while (nextId) {
+            const cont = byId.get(nextId);
+            if (!cont || seen.has(cont)) break; // dangling ref or cycle guard
+            seen.add(cont);
+            const following = cont.getAttribute('data-flow-next'); // read before removal
+            const join = cont.getAttribute('data-flow-join') || 'space';
+            _absorbFlow(head, cont, join, doc);
+            cont.remove();
+            nextId = following;
+        }
+        head.removeAttribute('data-flow-next');
+        head.removeAttribute('data-flow-prev');
+        head.removeAttribute('data-flow-join');
+        head.removeAttribute('data-continuation');
+    }
+}
+
+// Structural wrappers the semantic exporters descend through — reading order is
+// child order within each (page-row → col → zone → region), so a plain
+// depth-first walk over children yields blocks in reading order.
+const FLOW_WRAPPER_RE = /\bpdf-(page-row|col|zone|region)\b/;
+
 // ── Markdown export ───────────────────────────────────────────────────────────
 
 async function exportToMarkdown(html) {
     showToast('Generating Markdown…', 'info');
     const doc = parseDoc(html);
+    mergeFlowChains(doc);
     const lines = [];
 
     const pages = doc.querySelectorAll('section.pdf-page-content');
     const sections = pages.length ? pages : [doc.body];
 
-    sections.forEach((page, pi) => {
-        if (pages.length > 1) {
-            if (pi > 0) lines.push('\n---\n');
+    const emitLeaf = (el) => {
+        const tag = el.tagName.toLowerCase();
+        const cls = el.className || '';
+
+        // Headings
+        if (tag === 'h1') { lines.push(`# ${blockText(el)}\n`); return; }
+        if (tag === 'h2') { lines.push(`## ${blockText(el)}\n`); return; }
+        if (tag === 'h3') { lines.push(`### ${blockText(el)}\n`); return; }
+        if (tag === 'h4') { lines.push(`#### ${blockText(el)}\n`); return; }
+        if (tag === 'h5') { lines.push(`##### ${blockText(el)}\n`); return; }
+        if (tag === 'h6') { lines.push(`###### ${blockText(el)}\n`); return; }
+
+        // Page label emitted by assembler — skip, it's noise
+        if (cls.includes('page-label')) return;
+
+        // Divider
+        if (tag === 'hr') { lines.push('---\n'); return; }
+
+        // Table
+        if (cls.includes('pdf-table-wrap')) {
+            const table = el.querySelector('table');
+            if (table) { lines.push(tableToMarkdown(table) + '\n'); }
+            return;
         }
 
-        for (const el of page.children) {
-            const tag = el.tagName.toLowerCase();
+        // Callout box → blockquote
+        if (tag === 'aside' && cls.includes('pdf-box')) {
+            const role = cls.includes('warning') ? '> **⚠ Warning**\n>\n'
+                       : cls.includes('caution') ? '> **⚡ Caution**\n>\n'
+                       : cls.includes('note')    ? '> **ℹ Note**\n>\n'
+                       : cls.includes('tip')     ? '> **✅ Tip**\n>\n'
+                       : '> ';
+            const body = blockText(el).split('\n').map(l => `> ${l}`).join('\n');
+            lines.push(role + body + '\n');
+            return;
+        }
+
+        // Unordered list
+        if (tag === 'ul') {
+            [...el.querySelectorAll('li')].forEach(li => {
+                lines.push(`- ${blockText(li)}`);
+            });
+            lines.push('');
+            return;
+        }
+
+        // Ordered list
+        if (tag === 'ol') {
+            [...el.querySelectorAll('li')].forEach((li, i) => {
+                lines.push(`${i + 1}. ${blockText(li)}`);
+            });
+            lines.push('');
+            return;
+        }
+
+        // Image placeholder
+        if (tag === 'div' && cls.includes('pdf-image-placeholder')) {
+            const img = el.querySelector('img[data-img-id]');
+            const id = img?.getAttribute('data-img-id') || 'img';
+            lines.push(`![Image ${id}](image_${id}.png)\n`);
+            return;
+        }
+
+        // Paragraph div (font/align classes) or any other block
+        const text = blockText(el);
+        if (text) lines.push(text + '\n');
+    };
+
+    const walk = (container) => {
+        for (const el of container.children) {
             const cls = el.className || '';
-
-            // Headings
-            if (tag === 'h1') { lines.push(`# ${blockText(el)}\n`); continue; }
-            if (tag === 'h2') { lines.push(`## ${blockText(el)}\n`); continue; }
-            if (tag === 'h3') { lines.push(`### ${blockText(el)}\n`); continue; }
-            if (tag === 'h4') { lines.push(`#### ${blockText(el)}\n`); continue; }
-            if (tag === 'h5') { lines.push(`##### ${blockText(el)}\n`); continue; }
-            if (tag === 'h6') { lines.push(`###### ${blockText(el)}\n`); continue; }
-
-            // Page label emitted by assembler — skip, it's noise
-            if (cls.includes('page-label')) continue;
-
-            // Divider
-            if (tag === 'hr') { lines.push('---\n'); continue; }
-
-            // Table
-            if (cls.includes('pdf-table-wrap')) {
-                const table = el.querySelector('table');
-                if (table) { lines.push(tableToMarkdown(table) + '\n'); }
-                continue;
-            }
-
-            // Callout box → blockquote
-            if (tag === 'aside' && cls.includes('pdf-box')) {
-                const role = cls.includes('warning') ? '> **⚠ Warning**\n>\n'
-                           : cls.includes('caution') ? '> **⚡ Caution**\n>\n'
-                           : cls.includes('note')    ? '> **ℹ Note**\n>\n'
-                           : cls.includes('tip')     ? '> **✅ Tip**\n>\n'
-                           : '> ';
-                const body = blockText(el).split('\n').map(l => `> ${l}`).join('\n');
-                lines.push(role + body + '\n');
-                continue;
-            }
-
-            // Unordered list
-            if (tag === 'ul') {
-                [...el.querySelectorAll('li')].forEach(li => {
-                    lines.push(`- ${blockText(li)}`);
-                });
-                lines.push('');
-                continue;
-            }
-
-            // Ordered list
-            if (tag === 'ol') {
-                [...el.querySelectorAll('li')].forEach((li, i) => {
-                    lines.push(`${i + 1}. ${blockText(li)}`);
-                });
-                lines.push('');
-                continue;
-            }
-
-            // Image placeholder
-            if (tag === 'div' && cls.includes('pdf-image-placeholder')) {
-                const img = el.querySelector('img[data-img-id]');
-                const id = img?.getAttribute('data-img-id') || 'img';
-                lines.push(`![Image ${id}](image_${id}.png)\n`);
-                continue;
-            }
-
-            // Zone / column wrappers — recurse into children
-            if (cls.includes('pdf-zone') || cls.includes('pdf-col')) {
-                for (const child of el.children) {
-                    const t = child.textContent.trim();
-                    if (t) lines.push(blockText(child) + '\n');
-                }
-                continue;
-            }
-
-            // Paragraph div (font/align classes) or any other block
-            const text = blockText(el);
-            if (text) lines.push(text + '\n');
+            if (FLOW_WRAPPER_RE.test(cls)) { walk(el); continue; }
+            emitLeaf(el);
         }
+    };
+
+    sections.forEach((page, pi) => {
+        if (pages.length > 1 && pi > 0) lines.push('\n---\n');
+        walk(page);
     });
 
     downloadBlob(lines.join('\n'), 'text/markdown', 'md');
@@ -436,83 +528,83 @@ async function exportToMarkdown(html) {
 function exportToXML(html) {
     showToast('Generating XML…', 'info');
     const doc = parseDoc(html);
+    mergeFlowChains(doc);
     const name = baseName();
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<document name="${xmlEsc(name)}">\n`;
 
     const pages = doc.querySelectorAll('section.pdf-page-content');
     const sections = pages.length ? [...pages] : [doc.body];
 
+    const emitLeaf = (el) => {
+        const tag = el.tagName.toLowerCase();
+        const cls = el.className || '';
+
+        if (cls.includes('page-label')) return;
+
+        // Headings
+        if (/^h[1-6]$/.test(tag)) {
+            const level = tag[1];
+            xml += `    <heading level="${level}">${xmlEsc(el.textContent.trim())}</heading>\n`;
+            return;
+        }
+
+        // Divider
+        if (tag === 'hr') { xml += `    <divider/>\n`; return; }
+
+        // Table
+        if (cls.includes('pdf-table-wrap')) {
+            const table = el.querySelector('table');
+            if (table) xml += tableToXml(table, '    ') + '\n';
+            return;
+        }
+
+        // Callout box
+        if (tag === 'aside' && cls.includes('pdf-box')) {
+            const role = cls.includes('warning') ? 'warning'
+                       : cls.includes('caution') ? 'caution'
+                       : cls.includes('note')    ? 'note'
+                       : cls.includes('tip')     ? 'tip'
+                       : 'box';
+            xml += `    <callout type="${role}">${xmlEsc(el.textContent.trim())}</callout>\n`;
+            return;
+        }
+
+        // Lists
+        if (tag === 'ul' || tag === 'ol') {
+            const kind = tag === 'ol' ? 'ordered' : 'unordered';
+            xml += `    <list type="${kind}">\n`;
+            [...el.querySelectorAll('li')].forEach(li => {
+                xml += `      <item>${xmlEsc(li.textContent.trim())}</item>\n`;
+            });
+            xml += `    </list>\n`;
+            return;
+        }
+
+        // Image placeholder
+        if (cls.includes('pdf-image-placeholder')) {
+            const img = el.querySelector('img[data-img-id]');
+            const id = img?.getAttribute('data-img-id') || '';
+            xml += `    <image ref="${xmlEsc(id)}"/>\n`;
+            return;
+        }
+
+        // Paragraph
+        const text = el.textContent.trim();
+        if (text) xml += `    <paragraph>${xmlEsc(text)}</paragraph>\n`;
+    };
+
+    const walk = (container) => {
+        for (const el of container.children) {
+            const cls = el.className || '';
+            if (FLOW_WRAPPER_RE.test(cls)) { walk(el); continue; }
+            emitLeaf(el);
+        }
+    };
+
     sections.forEach((page, pi) => {
         const pageNum = page.getAttribute('data-page') || (pi + 1);
         xml += `  <page number="${pageNum}">\n`;
-
-        for (const el of page.children) {
-            const tag = el.tagName.toLowerCase();
-            const cls = el.className || '';
-
-            if (cls.includes('page-label')) continue;
-
-            // Headings
-            if (/^h[1-6]$/.test(tag)) {
-                const level = tag[1];
-                xml += `    <heading level="${level}">${xmlEsc(el.textContent.trim())}</heading>\n`;
-                continue;
-            }
-
-            // Divider
-            if (tag === 'hr') { xml += `    <divider/>\n`; continue; }
-
-            // Table
-            if (cls.includes('pdf-table-wrap')) {
-                const table = el.querySelector('table');
-                if (table) xml += tableToXml(table, '    ') + '\n';
-                continue;
-            }
-
-            // Callout box
-            if (tag === 'aside' && cls.includes('pdf-box')) {
-                const role = cls.includes('warning') ? 'warning'
-                           : cls.includes('caution') ? 'caution'
-                           : cls.includes('note')    ? 'note'
-                           : cls.includes('tip')     ? 'tip'
-                           : 'box';
-                xml += `    <callout type="${role}">${xmlEsc(el.textContent.trim())}</callout>\n`;
-                continue;
-            }
-
-            // Lists
-            if (tag === 'ul' || tag === 'ol') {
-                const kind = tag === 'ol' ? 'ordered' : 'unordered';
-                xml += `    <list type="${kind}">\n`;
-                [...el.querySelectorAll('li')].forEach(li => {
-                    xml += `      <item>${xmlEsc(li.textContent.trim())}</item>\n`;
-                });
-                xml += `    </list>\n`;
-                continue;
-            }
-
-            // Image placeholder
-            if (cls.includes('pdf-image-placeholder')) {
-                const img = el.querySelector('img[data-img-id]');
-                const id = img?.getAttribute('data-img-id') || '';
-                xml += `    <image ref="${xmlEsc(id)}"/>\n`;
-                continue;
-            }
-
-            // Zone / column wrappers — flatten children as paragraphs
-            if (cls.includes('pdf-zone') || cls.includes('pdf-col')) {
-                for (const child of el.children) {
-                    const t = child.textContent.trim();
-                    if (t) xml += `    <paragraph>${xmlEsc(t)}</paragraph>\n`;
-                }
-                continue;
-            }
-
-            // Paragraph
-            const text = el.textContent.trim();
-            if (text) xml += `    <paragraph>${xmlEsc(text)}</paragraph>\n`;
-        }
-
+        walk(page);
         xml += `  </page>\n`;
     });
 

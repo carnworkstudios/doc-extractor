@@ -95,6 +95,39 @@ const DEFAULT_SCALE_OVERRIDES = {
     R_Y_BAND: 0.45, R_PARA_GAP: 1.80, R_COL_GAP_MIN: 1.50, STREAM_CONFIDENCE: 0.60,
 };
 
+// Best-effort product-analytics capture. window.posthog is initialised in
+// index.html (assets/js/posthog-init.js); guard it so standalone/forked builds
+// without the snippet don't throw. Frontend AI-funnel events land under the
+// same project as the backend; the distinct_id stitching work (see
+// project_analytics_baseline) is what will chain them end-to-end.
+function _phCapture(event, props) {
+    try { window.posthog?.capture?.(event, { tool: 'pdf-processor', ...props }); }
+    catch (_) { /* analytics is never load-bearing */ }
+}
+
+// ── Large-document gate for the AI drive-and-verify pass ─────────────────────
+// The AI pass (Advance Extraction) is a Pro feature — the toggle is disabled in
+// markup for free users. This gate is the SIZE dimension layered on top: Pro
+// users have no page limit; any non-Pro context (e.g. a DOM-forced toggle, or a
+// future BYO-key surface) reaching the AI pass with a document beyond
+// AI_MAX_FREE_PAGES is the `document_too_large_for_ai` conversion moment — we
+// skip only the costly AI refinement (deterministic extraction has already
+// produced the full document), record it, and surface a Pro upsell.
+const AI_MAX_FREE_PAGES = 20;
+
+function _aiSizeGateOk(pageCount) {
+    if (_isProUser() || pageCount <= AI_MAX_FREE_PAGES) return true;
+    _phCapture('document_too_large_for_ai', {
+        page_count: pageCount, limit: AI_MAX_FREE_PAGES, tier: 'free',
+    });
+    showToast(
+        `${pageCount}-page document: AI refinement is capped at ${AI_MAX_FREE_PAGES} pages on the free tier. `
+        + `Upgrade to Pro for unlimited AI on large documents — the deterministic extraction below is complete.`,
+        'info',
+    );
+    return false;
+}
+
 async function _autoTunePages(pageResults) {
     const scored = pageResults.filter(p => p.verification);
     if (!scored.length) return;
@@ -115,15 +148,23 @@ async function _autoTunePages(pageResults) {
         showToast('AI review: no page falls below this document\'s own quality baseline.', 'success');
         return;
     }
+    // AI funnel — requested. Pairs with the ai_extraction_completed event below
+    // so the requested→completed insight (dashboard 1916836) can be built from
+    // frontend data instead of only backend spans.
+    _phCapture('ai_extraction_requested', { candidate_pages: candidates.length });
     showToast(`AI reviewing ${candidates.length} low-scoring page(s)…`, 'info');
-    let improved = 0;
+    let improved = 0, failed = 0;
     for (const p of candidates) {
         try {
             if (await _autoTunePage(p)) improved++;
         } catch (e) {
+            failed++;
             console.warn(`[AI tune] page ${p.page} failed:`, e.message);
         }
     }
+    _phCapture('ai_extraction_completed', {
+        candidate_pages: candidates.length, improved, failed,
+    });
     showToast(`AI tune: improved ${improved} of ${candidates.length} page(s)`, improved ? 'success' : 'info');
 }
 
@@ -424,7 +465,11 @@ async function extractViaScannedGeometry(bytes, onProgress) {
     const numPages = pdf.numPages;
 
     if (onProgress) onProgress('Preparing layout + OCR models…');
-    await Promise.all([ensureLayoutWorker(), ensureTesseract()]);
+    await ensureTesseract();
+    const layoutAvailable = await ensureLayoutWorker().then(() => true).catch(layoutErr => {
+        console.warn('[extractViaScannedGeometry] Layout model unavailable, OCR will run without region labels:', layoutErr.message);
+        return false;
+    });
 
     const VIEWPORT_SCALE = 2.0;   // classifyPage viewport scale
     const RENDER_SCALE = 2.0;     // page render scale for detection + OCR
@@ -456,9 +501,9 @@ async function extractViaScannedGeometry(bytes, onProgress) {
         //    real bboxes + confidence — no projection-profile line splitting, no
         //    per-line model round-trips. YOLO is kept ONLY to LABEL regions
         //    (table/figure/heading) so tableBuilder + heading detection fire.
-        const detectBitmap = await createImageBitmap(pageCanvas);
+        const detectBitmap = layoutAvailable ? await createImageBitmap(pageCanvas) : null;
         const [rawRegions, ocr] = await Promise.all([
-            layoutDetect(detectBitmap),          // bbox in 640-space
+            detectBitmap ? layoutDetect(detectBitmap) : Promise.resolve([]),   // bbox in 640-space
             recognizePage(pageCanvas),           // { words:[{text,bbox,confidence}], text }
         ]);
 
@@ -835,6 +880,7 @@ async function handleFile(file, pdfIndex) {
         let scannedCount = 0;
         let isScannedDoc = false;
         let useLocalScannedGeometry = false;
+        let localOcrFailReason = null;
 
         // Routing (pdf-extraction-v2.md §01): pdfjs-visible vector content is
         // ALWAYS extracted by the deterministic geometry engine — Advance
@@ -859,26 +905,34 @@ async function handleFile(file, pdfIndex) {
 
             if (isScannedDoc) {
                 // Scanned → local raster→geometry bridge (layout + OCR in-tab).
-                showStatus('Scanned document — preparing local layout + OCR…');
+                // Tesseract (OCR) is the load-bearing piece and is required; the
+                // YOLO layout model only LABELS regions (table/heading) for nicer
+                // structure, so its failure alone must not force a fallback to
+                // the Pro-gated backend — that would wrongly look like local OCR
+                // is tier-gated when it isn't.
+                showStatus('Scanned document — preparing local OCR…');
                 try {
-                    await Promise.all([ensureLayoutWorker(), ensureTesseract()]);
+                    await ensureTesseract();
                     useLocalScannedGeometry = true;
+                    ensureLayoutWorker().catch(layoutErr =>
+                        console.warn('[HandleFile] Layout model failed to load, OCR will run without region labels:', layoutErr.message));
                 } catch (mlErr) {
-                    console.warn('[HandleFile] Local layout/OCR init failed, falling back to backend:', mlErr.message);
+                    localOcrFailReason = mlErr.message;
+                    console.warn('[HandleFile] Local OCR (Tesseract) init failed, falling back to backend:', mlErr.message);
                     if (!brokerReady) {
                         showStatus('Connecting to backend OCR service…');
                         await cwsBroker.init();
                         brokerReady = true;
                     }
                     useBackend = cwsBroker.getBackendStatus();
-                    if (!useBackend) {
-                        showToast('Backend unreachable and local OCR failed — scanned pages may not extract.', 'error');
-                    }
                 }
             } else if (useAiLayout) {
                 // Vector doc + Advance Extraction: geometry runs, AI re-tolerances
-                // low-scoring pages afterward (Pass 2).
-                runAutoTune = true;
+                // low-scoring pages afterward (Pass 2). The AI pass is Pro-only
+                // (toggle-gated) and additionally size-gated — Pro has no page
+                // limit, non-Pro large docs skip the AI pass with a Pro upsell.
+                // Deterministic extraction below runs regardless and stays free.
+                runAutoTune = _aiSizeGateOk(pages.length);
             }
         }
 
@@ -924,7 +978,12 @@ async function handleFile(file, pdfIndex) {
             // and the backend fell through — the vector engine has nothing to
             // read, so warn instead of silently reporting an empty "success".
             if (isScannedDoc) {
-                showToast('Scanned document, but local OCR and backend are both unavailable — extraction will be empty.', 'error');
+                showToast(
+                    localOcrFailReason
+                        ? `Scanned document, but local OCR failed to start (${localOcrFailReason}) and the backend is unavailable — extraction will be empty.`
+                        : 'Scanned document, but local OCR and backend are both unavailable — extraction will be empty.',
+                    'error',
+                );
             }
             const result = await extractViaGeometryWorker(bytesForWorker, (msg) => showStatus(msg));
             data = { html: result.html, text: result.text || '', source: 'local', tableCount: result.tableCount, pages: result.pages };
