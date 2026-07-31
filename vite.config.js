@@ -3,9 +3,58 @@ import path from 'path'
 import fs from 'fs'
 import { createRequire } from 'module'
 import wasm from 'vite-plugin-wasm'
+import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 const require = createRequire(import.meta.url)
 const monacoEditorPlugin = require('vite-plugin-monaco-editor').default
+
+// ── OCR / layout runtime assets sourced from node_modules ────────────────────
+// tesseract.js and onnxruntime-web load these companion files at RUNTIME by URL
+// (see src/ui/tesseractOcr.js and src/workers/layoutWorker.js), so they must be
+// emitted as static files rather than bundled. They are NOT committed — public/
+// is gitignored in this submodule, so a fresh CI clone has none of them, which
+// previously shipped a prod build whose /tesseract/worker.min.js 404'd to the
+// HTML error page ("non-JavaScript MIME type of text/html") and disabled OCR.
+// Copying from node_modules keeps them reproducible from package-lock.json.
+// The two model blobs with no npm source (yolov8n-doclaynet.onnx,
+// eng.traineddata) stay committed under public/.
+// onnxruntime-web locates its wasm with `new URL("ort-wasm-simd-threaded.wasm",
+// import.meta.url)`. Vite resolves that to an emitted, content-hashed asset — a
+// second 11.9 MB copy of a file we already ship at a pinned path. layoutWorker
+// overwrites ort.env.wasm.wasmPaths inside initModel(), which runs AFTER that
+// injected assignment, so the emitted copy is never fetched. Rewrite the URL
+// construction to a bare string in ORT's module only; nothing reads the value.
+// (rollupOptions.external does not apply here — `new URL(...)` is Vite asset
+// handling, not a module import.)
+const stripOrtWasmAssetEmit = () => ({
+    name: 'strip-ort-wasm-asset-emit',
+    apply: 'build',
+    enforce: 'pre',
+    transform(code, id) {
+        if (!id.includes('onnxruntime-web')) return null
+        if (!code.includes('ort-wasm-simd-threaded.wasm')) return null
+        // Keep it a URL object so downstream `.href` access stays valid — only
+        // the base is swapped to import.meta.url's directory, which Vite does
+        // not treat as an asset reference and therefore does not emit a copy.
+        const out = code.replaceAll(
+            'new URL("ort-wasm-simd-threaded.wasm",import.meta.url)',
+            'new URL("./"+"ort-wasm-simd-threaded.wasm",import.meta.url)',
+        )
+        return out === code ? null : { code: out, map: null }
+    },
+})
+
+const RUNTIME_ASSET_COPIES = [
+    { src: 'node_modules/tesseract.js/dist/worker.min.js', dest: 'tesseract' },
+    { src: 'node_modules/tesseract.js-core/tesseract-core-lstm.*', dest: 'tesseract' },
+    { src: 'node_modules/tesseract.js-core/tesseract-core-simd-lstm.*', dest: 'tesseract' },
+    { src: 'node_modules/tesseract.js-core/tesseract-core-relaxedsimd-lstm.*', dest: 'tesseract' },
+    // Pinned by filename: layoutWorker sets ort.env.wasm.wasmPaths to these two
+    // exact files to avoid ORT's default JSEP/WebGPU build (~25MB, over
+    // Cloudflare Pages' per-file limit).
+    { src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs', dest: 'ort-wasm' },
+    { src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm', dest: 'ort-wasm' },
+]
 
 export default defineConfig({
     // Project root = pdf-processor/ so editor/index.html is served at /tools/pdf-processor/editor/
@@ -73,7 +122,7 @@ export default defineConfig({
 
     worker: {
         format: 'es',
-        plugins: () => [wasm()],
+        plugins: () => [stripOrtWasmAssetEmit(), wasm()],
         rollupOptions: {
             output: {
                 // Stable name for geometryWorker — no hash suffix.
@@ -102,6 +151,8 @@ export default defineConfig({
         monacoEditorPlugin({
             languageWorkers: ['editorWorkerService', 'html', 'css'],
         }),
+        // Emit the runtime OCR/layout assets into dist/ (and serve them in dev).
+        viteStaticCopy({ targets: RUNTIME_ASSET_COPIES }),
         // Serve /assets/* from the repo root during dev — these files live outside
         // the pdf-processor/ Vite root so they 404 without this middleware.
         {
@@ -121,6 +172,61 @@ export default defineConfig({
                         '.svg':  'image/svg+xml',
                         '.woff2':'font/woff2',
                         '.woff': 'font/woff',
+                    }[ext] || 'application/octet-stream';
+                    res.setHeader('Content-Type', mime);
+                    fs.createReadStream(filePath).pipe(res);
+                });
+            },
+        },
+        // onnxruntime-web (layoutWorker) and tesseract.js dynamically `import()`/fetch
+        // their .mjs/.wasm/.onnx/.traineddata companions from public/ort-wasm,
+        // public/tesseract, public/models, public/tessdata at runtime. Vite's dev
+        // server refuses to serve public/ files through its module-transform
+        // pipeline ("should not be imported from source code") — that check only
+        // applies to requests Vite treats as ESM imports, not plain static fetches.
+        // Intercept these paths before Vite's resolver sees them so they're always
+        // served as raw bytes, matching what actually happens in the built dist/.
+        {
+            name: 'serve-runtime-model-assets',
+            configureServer(server) {
+                const publicDir = path.resolve(__dirname, 'public');
+                // Resolve a request to a real file. models/ and tessdata/ live in
+                // public/; tesseract/ and ort-wasm/ are build-time copies out of
+                // node_modules (RUNTIME_ASSET_COPIES) that do not exist on disk
+                // under public/ during dev, so fall back to their npm source.
+                const npmFallback = {
+                    '/tesseract/worker.min.js': 'node_modules/tesseract.js/dist/worker.min.js',
+                };
+                const npmDirFallback = [
+                    ['/tesseract/', 'node_modules/tesseract.js-core'],
+                    ['/ort-wasm/', 'node_modules/onnxruntime-web/dist'],
+                ];
+                const resolveAsset = (urlPath) => {
+                    const inPublic = path.join(publicDir, urlPath);
+                    if (fs.existsSync(inPublic)) return inPublic;
+                    if (npmFallback[urlPath]) {
+                        const p = path.resolve(__dirname, npmFallback[urlPath]);
+                        if (fs.existsSync(p)) return p;
+                    }
+                    for (const [prefix, dir] of npmDirFallback) {
+                        if (!urlPath.startsWith(prefix)) continue;
+                        const p = path.resolve(__dirname, dir, urlPath.slice(prefix.length));
+                        if (fs.existsSync(p)) return p;
+                    }
+                    return null;
+                };
+                const rawPrefixes = ['/ort-wasm/', '/tesseract/', '/models/', '/tessdata/'];
+                server.middlewares.use((req, res, next) => {
+                    if (!rawPrefixes.some(p => req.url.startsWith(p))) return next();
+                    const filePath = resolveAsset(req.url.split('?')[0]);
+                    if (!filePath) return next();
+                    const ext = path.extname(filePath);
+                    const mime = {
+                        '.mjs':  'application/javascript',
+                        '.js':   'application/javascript',
+                        '.wasm': 'application/wasm',
+                        '.onnx': 'application/octet-stream',
+                        '.traineddata': 'application/octet-stream',
                     }[ext] || 'application/octet-stream';
                     res.setHeader('Content-Type', mime);
                     fs.createReadStream(filePath).pipe(res);

@@ -21,4 +21,13 @@ test-*
 *.xls
 test2.js
 .playwright-cli
-public/
+
+# ── public/ runtime assets ───────────────────────────────────────────────────
+# tesseract/ and ort-wasm/ are copied out of node_modules at build time by
+# vite-plugin-static-copy (see RUNTIME_ASSET_COPIES in vite.config.js), so they
+# are reproducible from package-lock.json and must NOT be committed.
+#
+# models/ and tessdata/ have NO npm source — they are the only assets that must
+# live in git. Without them a fresh CI clone builds a site whose OCR 404s.
+public/tesseract/
+public/ort-wasm/

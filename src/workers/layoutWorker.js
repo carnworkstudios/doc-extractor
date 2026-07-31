@@ -13,7 +13,13 @@
  * Output is raw YOLOv8 detections that require NMS post-processing.
  */
 
-import * as ort from 'onnxruntime-web';
+// Import the WASM-ONLY entry point, not the bare 'onnxruntime-web' (which
+// resolves to the full build: WebGPU/JSEP + asyncify backends we never use).
+// That pulled two dead .wasm variants into the bundle — a 24.2 MB jsep build
+// sitting at 97% of Cloudflare Pages' 25 MiB per-file limit, plus a 21.8 MB
+// asyncify build. Neither is ever loaded: wasmPaths is pinned below and the
+// session runs executionProviders:['wasm'].
+import * as ort from 'onnxruntime-web/wasm';
 // Base-aware asset paths. In production the whole dist/ is copied to
 // dist/tools/pdf-processor/ (build.sh), so /models and /ort-wasm live UNDER the
 // Vite base ('/tools/pdf-processor/'), not at the site root. import.meta.env
