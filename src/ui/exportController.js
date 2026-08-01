@@ -258,6 +258,17 @@ function baseName() {
 }
 
 function downloadBlob(content, type, ext) {
+    // The success moment of the whole product: the user is taking their data
+    // out. Recorded here rather than at button-click so format and size are
+    // known, and so it fires for every export route through this helper.
+    try {
+        window.GxTrack?.('document_exported', {
+            tool: 'pdf-processor',
+            export_format: ext,
+            size_bytes: typeof content === 'string' ? content.length : null,
+        });
+    } catch (_) { /* analytics is never load-bearing */ }
+
     const blob = new Blob([content], { type });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);

@@ -101,8 +101,14 @@ const DEFAULT_SCALE_OVERRIDES = {
 // same project as the backend; the distinct_id stitching work (see
 // project_analytics_baseline) is what will chain them end-to-end.
 function _phCapture(event, props) {
-    try { window.posthog?.capture?.(event, { tool: 'pdf-processor', ...props }); }
-    catch (_) { /* analytics is never load-bearing */ }
+    // GxTrack (assets/js/gx-track.js) picks the working transport: window.posthog
+    // on the web, the extension-host bridge inside a VS Code webview where the
+    // CSP blocks PostHog entirely. Falls back to posthog directly so a
+    // standalone/forked build without the shim still reports.
+    try {
+        if (window.GxTrack) window.GxTrack(event, { tool: 'pdf-processor', ...props });
+        else window.posthog?.capture?.(event, { tool: 'pdf-processor', ...props });
+    } catch (_) { /* analytics is never load-bearing */ }
 }
 
 // ── Large-document gate for the AI drive-and-verify pass ─────────────────────
@@ -746,11 +752,19 @@ export function initFileInputs() {
                 return;
             }
             if (e.data?.type === 'ginexys:pdf-bytes') {
-                const { buffer, fileName, mode } = e.data.payload;
+                const { buffer, encoding, fileName, mode } = e.data.payload;
                 const name = fileName ?? 'document.pdf';
                 const isHtml = /\.html?$/i.test(name);
                 const mimeType = isHtml ? 'text/html' : 'application/pdf';
-                const bytes = new Uint8Array(buffer);
+                // 0.1.7+ sends base64; older hosts sent a plain byte array.
+                let bytes;
+                if (encoding === 'base64' || typeof buffer === 'string') {
+                    const bin = atob(buffer);
+                    bytes = new Uint8Array(bin.length);
+                    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                } else {
+                    bytes = new Uint8Array(buffer);
+                }
                 const blob = new Blob([bytes], { type: mimeType });
                 const file = new File([blob], name, { type: mimeType });
                 const process = isHtml ? handleDocumentFile(file) : handleFile(file, 1);
@@ -1023,12 +1037,31 @@ async function handleFile(file, pdfIndex) {
             ? ` — ${data.tableCount} table${data.tableCount !== 1 ? 's' : ''} detected`
             : '';
         _updateVisualDiffLabels();
+        // The outcome event. `data.source` distinguishes the local deterministic
+        // pipeline from local OCR and from the backend, so the three engines can
+        // be compared on table yield rather than guessed at.
+        _phCapture('document_extracted', {
+            source: data.source,
+            table_count: data.tableCount ?? null,
+            page_count: data.pages?.length ?? null,
+            found_tables: (data.tableCount ?? 0) > 0,
+            has_warning: !!data.warning,
+            is_scanned: !!isScannedDoc,
+            slot: pdfIndex,
+        });
         showToast(`PDF loaded via ${source}${tableSuffix}${warnSuffix}`, 'success');
         hideStatus();
 
     } catch (err) {
         console.error(`Error loading PDF ${pdfIndex}:`, err);
         hideStatus();
+        // No `is_scanned` here: it is declared with `let` inside the try block
+        // above, so reading it from catch would throw a ReferenceError and take
+        // out the error toast with it.
+        _phCapture('document_extraction_failed', {
+            reason: (err && err.message) ? String(err.message).slice(0, 200) : 'unknown',
+            slot: pdfIndex,
+        });
         showToast('Extraction Error: ' + (err.message || err.toString()), 'error');
         if (pdfIndex === 2) disableDiffTab();
     }
