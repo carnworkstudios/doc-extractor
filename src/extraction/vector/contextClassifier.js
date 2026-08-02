@@ -273,16 +273,20 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
                 }
                 rows.push(bbox.y + bbox.h);
 
+                // detectionMethod 'user-drawn': this grid came from a region the
+                // user drew, not from streamDetector's scored candidate search.
+                // The 1.0 is "the human said so", NOT a measurement — tableBuilder
+                // only publishes a data-confidence for genuinely measured sources.
                 lattice = {
                     rows, cols, hLines: [], vLines: [], bbox, border: false,
-                    detectionMethod: 'stream', confidence: 1.0
+                    detectionMethod: 'user-drawn', confidence: 1.0
                 };
             } else {
                 lattice = {
                     rows: [bbox.y, bbox.y + bbox.h],
                     cols: [bbox.x, bbox.x + bbox.w],
                     hLines: [], vLines: [], bbox, border: false,
-                    detectionMethod: 'stream', confidence: 1.0
+                    detectionMethod: 'user-drawn', confidence: 1.0
                 };
             }
         }

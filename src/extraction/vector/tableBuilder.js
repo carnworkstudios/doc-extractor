@@ -244,10 +244,58 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
     // not from lines that don't exist.
     const isBorderless = hLines.length === 0 && vLines.length === 0;
 
+    // ── Trust attributes ─────────────────────────────────────────────────────
+    // The headless structured-extraction contract needs a per-table confidence
+    // that a consumer can trust, which means it may only be emitted when the
+    // pipeline actually measured one. Two real sources exist:
+    //
+    //   • OCR pages  — rasterSynth carries Tesseract's per-word confidence
+    //     (0..100) onto each synthetic text item. The mean over the words that
+    //     landed in this table IS a measurement of this table's text.
+    //   • Stream (borderless) tables — streamDetector scores a candidate as
+    //     (column-alignment + row-spacing)/2 and rejects below threshold; that
+    //     score rides on lattice.confidence.
+    //
+    // Ruled (lattice) tables have NO confidence signal in the pipeline today,
+    // so no attribute is emitted and the contract's `null` applies. Do not
+    // substitute a constant here — a made-up number is worse than no number.
+    let confidence = null;
+    let confidenceSource = null;
+    let ocrItems = 0;
+    let confSum = 0;
+    let confN = 0;
+    for (const row of cells) {
+        for (const cell of row) {
+            for (const it of cell) {
+                if (typeof it.fontName === 'string' && it.fontName.startsWith('ocr-')) ocrItems++;
+                if (typeof it.confidence === 'number' && isFinite(it.confidence)) {
+                    confSum += it.confidence;
+                    confN++;
+                }
+            }
+        }
+    }
+    if (confN > 0) {
+        // Tesseract word confidence is 0..100; the contract wants 0..1.
+        confidence = Math.min(1, Math.max(0, (confSum / confN) / 100));
+        confidenceSource = 'ocr-word-mean';
+    } else if (lattice.detectionMethod === 'stream' && typeof lattice.confidence === 'number'
+               && isFinite(lattice.confidence)) {
+        confidence = Math.min(1, Math.max(0, lattice.confidence));
+        confidenceSource = 'stream-detector';
+    }
+
+    let tableAttrs = '';
+    if (confidence !== null) {
+        tableAttrs += ` data-confidence="${Math.round(confidence * 1000) / 1000}"`;
+        tableAttrs += ` data-confidence-source="${confidenceSource}"`;
+    }
+    if (ocrItems > 0) tableAttrs += ' data-text-source="ocr"';
+
     let html = '<div class="panel" style="display: block; overflow: auto;">\n';
     html += isBorderless
-        ? '<table class="tablecoil borderless">\n<tbody>\n'
-        : '<table class="tablecoil">\n<tbody>\n';
+        ? `<table class="tablecoil borderless"${tableAttrs}>\n<tbody>\n`
+        : `<table class="tablecoil"${tableAttrs}>\n<tbody>\n`;
 
     for (let r = 0; r < numRows; r++) {
         html += '<tr>';

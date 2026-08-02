@@ -18,6 +18,7 @@ import { applyHtmlEverywhere, hydrateImages } from './htmlSync.js';
 import { showToast } from './toast.js';
 import { cwsBroker } from '@os/worker-broker.js';
 import { checkDoclingAgreement } from '../extraction/doclingCheck.js';
+import { buildStructuredPayload } from './structuredExtract.js';
 import { classifyPage } from '../extraction/vector/contextClassifier.js';
 import { assemblePage, createFontRegistry } from '../extraction/vector/pageAssembler.js';
 import { synthesizeFromWords, makeSyntheticViewport } from '../extraction/vector/rasterSynth.js';
@@ -44,6 +45,11 @@ async function runAnalysis(bytes, filename) {
 // Resolves to the pre-flight analysis of the current pdf1, or null.
 // Kept so the docling cross-check and OCR suggestion can await it.
 let _analysisPromise = null;
+
+// Resolves when the in-flight load of slot 1 has finished (or failed). An MCP
+// caller can send bytes and immediately ask for the structured extraction, so
+// the reply has to wait for the pipeline instead of answering "no document".
+let _slot1Load = null;
 
 
 export function integrationBackendUrl() {
@@ -721,11 +727,9 @@ export function initFileInputs() {
     $('#file1-input').on('change', e => {
         const file = e.target.files[0];
         if (!file) return;
-        if (/\.(html?|md)$/i.test(file.name)) {
-            handleDocumentFile(file);
-        } else {
-            handleFile(file, 1);
-        }
+        _slot1Load = (/\.(html?|md)$/i.test(file.name)
+            ? handleDocumentFile(file)
+            : handleFile(file, 1)).catch(() => {});
     });
 
     $('#file2-input').on('change', e => {
@@ -745,9 +749,27 @@ export function initFileInputs() {
             // MCP round-trip: extension host requests extracted text, reply with it
             if (e.data?.__ginexys && e.data.type === 'ginexys:mcp-extract-text') {
                 const text = window.state?.pdf1?.extractedText ?? '';
-                window.CwsBridge.send('ginexys:mcp-reply', {
-                    requestId: e.data.requestId,
-                    payload: { text: text || null },
+                window.CwsBridge.reply(e.data.requestId, { text: text || null });
+                return;
+            }
+            // MCP round-trip: STRUCTURED extraction — span-resolved tables,
+            // per-table confidence and provenance (headless-extraction-contract.md).
+            // Awaits an in-flight load first: bytes and this request can arrive
+            // back-to-back from an agent that never opened the file by hand.
+            if (e.data?.__ginexys && e.data.type === 'ginexys:mcp-extract-structured') {
+                const requestId = e.data.requestId;
+                Promise.resolve(_slot1Load).catch(() => {}).then(() => {
+                    let payload;
+                    try {
+                        payload = buildStructuredPayload();
+                    } catch (err) {
+                        payload = {
+                            ok: false,
+                            reason: 'structured-extract-failed',
+                            detail: String(err?.message || err),
+                        };
+                    }
+                    window.CwsBridge.reply(requestId, payload);
                 });
                 return;
             }
@@ -768,6 +790,7 @@ export function initFileInputs() {
                 const blob = new Blob([bytes], { type: mimeType });
                 const file = new File([blob], name, { type: mimeType });
                 const process = isHtml ? handleDocumentFile(file) : handleFile(file, 1);
+                _slot1Load = process.catch(() => {});
                 process.then(() => { if (mode) switchView(mode); });
             }
         });
@@ -801,6 +824,15 @@ async function handleDocumentFile(file, slot = 1) {
     pdfState.extractedHTML = clean;
     pdfState.extractedText = clean.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     pdfState.file = file;
+    // An imported HTML/Markdown document was never run through the PDF
+    // pipeline — no page model, no scanned classification, nothing measured.
+    pdfState.extraction = {
+        source: 'document-import',
+        pageCount: null,
+        tableCount: null,
+        scannedPageCount: null,
+        isScanned: null,
+    };
     $(`#${label}-name`).text(file.name);
     $(`#${label}-input`).closest('.file-btn').addClass('loaded');
 
@@ -1006,6 +1038,18 @@ async function handleFile(file, pdfIndex) {
 
         pdfState.extractedHTML = data.html;
         pdfState.extractedText = data.text || '';
+        // Extraction facts the DOM cannot carry — which engine ran, how many
+        // pages it saw, and whether the pre-flight classified the document as
+        // scanned. The structured MCP reply reports these rather than guessing.
+        pdfState.extraction = {
+            source: data.source ?? null,
+            pageCount: data.pages?.length ?? null,
+            tableCount: data.tableCount ?? null,
+            // Pre-flight classification only runs for slot 1; null (unknown)
+            // rather than false for the compare slot.
+            scannedPageCount: pdfIndex === 1 ? scannedCount : null,
+            isScanned: pdfIndex === 1 ? !!isScannedDoc : null,
+        };
 
         if (pdfIndex === 1) {
             // Push the freshly-extracted HTML to ALL surfaces in one shot:

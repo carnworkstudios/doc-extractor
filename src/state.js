@@ -4,8 +4,11 @@
  */
 
 export const state = {
-    pdf1: { file: null, doc: null, bytes: null, extractedHTML: '', extractedText: '' },
-    pdf2: { file: null, doc: null, bytes: null, extractedHTML: '', extractedText: '' },
+    // `extraction` holds the facts about HOW the current content was produced
+    // (engine, page count, scanned classification) — set by fileUpload, read by
+    // the structured MCP reply. Null until something has been extracted.
+    pdf1: { file: null, doc: null, bytes: null, extractedHTML: '', extractedText: '', extraction: null },
+    pdf2: { file: null, doc: null, bytes: null, extractedHTML: '', extractedText: '', extraction: null },
     activeView: 'pdf',
     monacoEditor: null,   // monaco.editor instance (HTML editor)
     
