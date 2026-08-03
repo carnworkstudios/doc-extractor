@@ -18,6 +18,7 @@ import { detectVectorFigures } from './classifiers/figureDetector.js';
 import { detectLatticeTables } from './classifiers/latticeDetector.js';
 import { detectStreamTableRegions } from './classifiers/streamTableDetector.js';
 import { detectBoxRegions } from './classifiers/boxDetector.js';
+import { analyzeBlock } from './classifiers/proseGate.js';
 import { detectDividers } from './classifiers/dividerDetector.js';
 import { detectHeadersFooters } from './classifiers/headerFooterDetector.js';
 import { classifyHeading } from './classifiers/headingDetector.js';
@@ -153,7 +154,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         });
     });
 
-    const tableSegs = filterTableSegs(segments, underlineSegIds, isInsideImageOrFigure);
+    const tableSegs = filterTableSegs(segments, underlineSegIds, isInsideImageOrFigure, viewport);
     const regions = [...keptImageRegions, ...figureRegions];
 
     // ── 4. Build PageGraph (shared spatial context) ─────────────────────────
@@ -379,9 +380,22 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         }
     }
 
+    // ── 4.5. Container boxes (notices, warnings, callout panels) ─────────────
+    // Runs BEFORE the table detectors. A bordered admonition and a bordered
+    // table are drawn with the same four segments, so whichever detector went
+    // first used to win the page on ordering alone. Containers are one level
+    // above tabular structure: they carve the page into areas, and a table is
+    // something found INSIDE an area. Resolve the container first, then let the
+    // lattice pass reclaim any real grid nested within it.
+    let boxRegions = [];
+    if (!skip.has('BOX')) {
+        boxRegions = detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale, viewport, regions, filledRects, assignedTextIndices);
+        for (const r of boxRegions) regions.push(r);
+    }
+
     // ── 5. Lattice table regions ─────────────────────────────────────────────
     if (!skip.has('LATTICE_TABLE')) {
-        const latticeRegions = detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts);
+        const latticeRegions = detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts, boxRegions);
         for (const r of latticeRegions) regions.push(r);
     }
 
@@ -411,17 +425,42 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
             streamColXs = preSplits.map(s => s.x ?? s).filter(x => x > viewport.width * 0.1 && x < viewport.width * 0.9);
         }
         const streamTables = detectStreamTableRegions(unclaimedMeta, scale, regions, tableSegs, pageGraph, streamColXs);
+        // A stream (borderless) table's bbox already carries its own row/column
+        // slack (rows.js pads a half row-height above/below, cols pads a right
+        // extent) built directly from the text that IS the table. tablePad
+        // (~0.8x body font size) exists for LATTICE tables, where a drawn
+        // border can sit a few px from the text it encloses. Reusing that same
+        // generous pad here let a prose line sitting just outside a stream
+        // table's tight text-derived bbox still fall inside bbox+tablePad and
+        // get claimed as the table's own content — then buildTable's
+        // nearest-cell fallback glued it onto whichever edge row was closest.
+        // A stream table needs only rounding slack, not border clearance.
+        const streamTablePad = Math.min(tablePad, 4);
         for (const lattice of streamTables) {
             if (!lattice?.bbox) continue;
             const bbox = lattice.bbox;
             const tableTextIndices = [];
             for (const tm of unclaimedMeta) {
                 if (assignedTextIndices.has(tm.idx)) continue;
-                if (insideBBox(tm.vx, tm.vy, bbox, tablePad)) {
+                if (insideBBox(tm.vx, tm.vy, bbox, streamTablePad)) {
                     tableTextIndices.push(tm.idx);
-                    assignedTextIndices.add(tm.idx);
                 }
             }
+
+            // Content gate before claiming. A numbered procedure or a
+            // hanging-indent bullet list has the exact geometric signature the
+            // stream detector looks for: a stable marker x, a stable text x,
+            // repeated over many row bands. Alignment alone cannot tell that
+            // apart from a two-column table, so ask what the text reads like.
+            // Only a confident prose verdict demotes; inconclusive blocks keep
+            // the table path.
+            if (analyzeBlock(tableTextIndices, textMeta, bbox, scale).prose) continue;
+
+            // A single-band candidate is one line of text with wide gaps in it,
+            // not a table. Nothing downstream can render a 1-row grid usefully.
+            if ((lattice.rows?.length ?? 0) < 3) continue;
+
+            for (const idx of tableTextIndices) assignedTextIndices.add(idx);
             regions.push({
                 type: RegionType.STREAM_TABLE,
                 bbox,
@@ -432,12 +471,6 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
                 proximityPx: scale.proximityPx,
             });
         }
-    }
-
-    // ── 8. Isolated-rectangle box detection ─────────────────────────────────
-    if (!skip.has('BOX')) {
-        const boxRegions = detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale, viewport, regions, filledRects, assignedTextIndices);
-        for (const r of boxRegions) regions.push(r);
     }
 
     // ── 10. Page-level column detection ──────────────────────────────────────

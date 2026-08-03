@@ -156,6 +156,56 @@ function _clusterByX(items, tol) {
 }
 
 /**
+ * Fold a sparse column anchor into an adjacent, much denser neighbor.
+ *
+ * A currency symbol ("$"), unit prefix, or similar short token that only
+ * appears on a handful of rows (e.g. the first/subtotal/last row of a
+ * financial statement, where "$" prefixes the beginning/end-of-period and
+ * supplemental-section totals but not the rows between them) clusters into
+ * its own low-presence X-anchor immediately next to the real value column's
+ * anchor. Left uncorrected, every such decoration counts as a full competing
+ * "column" and dilutes the anchor-quality gate below threshold on tables
+ * that are otherwise unambiguously columnar — this is exactly why a real
+ * born-digital 10-Q cash-flow statement (4 numeric columns, "$" on 3 of 44
+ * rows) produced zero detected tables before this fix.
+ *
+ * The asymmetry in presence (>=3x) is what distinguishes "a stray decoration
+ * riding next to the real column" from "two genuinely separate columns that
+ * happen to sit close together" — two real columns are expected to have
+ * comparable row coverage, a decoration is not.
+ */
+function _mergeSparseAnchors(colAnchors, mergeTol) {
+    if (colAnchors.length < 2) return colAnchors;
+    const presence = a => new Set(a.items.map(i => i._band)).size;
+    const merged = [];
+    for (const anchor of colAnchors) {
+        const prev = merged[merged.length - 1];
+        if (prev && Math.abs(anchor.x - prev.x) <= mergeTol) {
+            const pPresence = presence(prev);
+            const aPresence = presence(anchor);
+            if (pPresence >= aPresence * 3 || aPresence >= pPresence * 3) {
+                // Union `items` so band-presence counts the merged pair as one
+                // anchor (fixes the anchor-count/quality gates). But keep
+                // `alignItems` scoped to the DOMINANT side's own items only —
+                // colAlignScore must measure how tightly the real column
+                // lines up, not be diluted by a decoration sitting ~20px away
+                // from it (that would zero out the score for every merge).
+                const dominant = pPresence >= aPresence ? prev : anchor;
+                merged[merged.length - 1] = {
+                    x: dominant.x,
+                    items: prev.items.concat(anchor.items),
+                    alignItems: dominant.alignItems ?? dominant.items,
+                    alignXs: dominant.alignXs,
+                };
+                continue;
+            }
+        }
+        merged.push({ x: anchor.x, items: anchor.items, alignItems: anchor.items, alignXs: anchor.alignXs });
+    }
+    return merged;
+}
+
+/**
  * Find X ranges where fewer than minFrac of bands have text coverage.
  * Returns gutter center X positions — used as column boundary candidates.
  */
@@ -235,6 +285,48 @@ function _splitAnchorsAtXGap(colAnchors, absMinPx) {
     return [colAnchors.slice(0, maxIdx + 1), colAnchors.slice(maxIdx + 1)];
 }
 
+// Build column anchors from a tagged item set, clustering on the given edge
+// (left = vx, right = vx + vWidth), then fold sparse decorations into their
+// denser neighbor. Returns { anchors, qualified } so the caller can compare
+// the left-edge and right-edge clusterings and keep whichever is cleaner.
+function _buildAnchors(tagged, colTol, edgeOf) {
+    const edgeTagged = tagged.map(t => ({ ...t, vx: edgeOf(t) }));
+    const xClusters = _clusterByX(edgeTagged, colTol);
+    let anchors = [];
+    for (const cluster of xClusters) {
+        const bandSet = new Set(cluster.map(i => i._band));
+        if (bandSet.size >= 2) {
+            // Anchor POSITION still uses the original left-edge vx (that is
+            // what the final column-boundary math expects — a midpoint
+            // between two anchors works as a divider regardless of which
+            // edge justified clustering them). But alignXs records the
+            // values in the edge space that was ACTUALLY used to cluster —
+            // colAlignScore must measure variance there, not on the left
+            // edge, or a right-edge-justified column (a "45" and a
+            // "(123,456)" that share a right edge but not a left one) would
+            // score as badly-aligned by definition, undoing the whole reason
+            // right-edge clustering was chosen for it.
+            const origItems = cluster.map(i => i._orig);
+            anchors.push({
+                x: _mean(origItems.map(i => i.vx)),
+                items: origItems,
+                alignXs: cluster.map(i => i.vx), // edge-space value, not left-edge
+            });
+        }
+    }
+    anchors.sort((a, b) => a.x - b.x);
+    // 4x (not 3x) colTol: measured on a real financial statement, a "$" anchor
+    // sits up to ~19px from its number anchor (vs. ~5.6px colTol here) — 3x
+    // colTol (16.8px) was consistently just short. Real inter-column gaps
+    // start at ~26.7px on the same page, so 4x leaves comfortable headroom
+    // without merging genuinely separate columns.
+    anchors = _mergeSparseAnchors(anchors, colTol * 4);
+    const bandCounts = anchors.map(a => new Set(a.items.map(i => i._band)).size);
+    const minPresence = Math.max(2, Math.floor(_mean(bandCounts)));
+    const qualified = bandCounts.filter(bc => bc >= minPresence).length;
+    return { anchors, qualified };
+}
+
 function _buildCandidate(bands, scale, segments = [], { zoneMode = false } = {}) {
     const colTol = scale.colTolPx;
     const eps = 4;
@@ -244,21 +336,33 @@ function _buildCandidate(bands, scale, segments = [], { zoneMode = false } = {})
         for (const item of bands[bi].items) {
             tagged.push({
                 vx: item.vx, vy: item.vy, vWidth: item.vWidth || 0,
-                str: item.str || '', _band: bi
+                str: item.str || '', _band: bi, _orig: null,
             });
         }
     }
+    for (const t of tagged) t._orig = t; // self-reference so _buildAnchors can recover the original after remapping vx
 
-    // Column anchor = X cluster present in ≥ 2 distinct bands
-    const xClusters = _clusterByX(tagged, colTol);
-    const colAnchors = [];
-    for (const cluster of xClusters) {
-        const bandSet = new Set(cluster.map(i => i._band));
-        if (bandSet.size >= 2) {
-            colAnchors.push({ x: _mean(cluster.map(i => i.vx)), items: cluster });
-        }
-    }
-    colAnchors.sort((a, b) => a.x - b.x);
+    // Column anchor = X cluster present in ≥ 2 distinct bands. Try both
+    // left-edge (the historical default) and right-edge clustering, and keep
+    // whichever produces the cleaner set of anchors. Right-aligned numeric
+    // columns (extremely common in financial tables) line up on their RIGHT
+    // edge, not their left — a column mixing "45" with "(123,456)" has left
+    // edges far enough apart to split into two competing anchors even though
+    // the values are visually one column. Measured on a synthetic table with
+    // deliberately extreme width variance: left-edge clustering produced 7
+    // anchors for 5 real columns and only 1 anchor qualified as high-presence
+    // (anchor-quality gate failed outright); right-edge clustering on the
+    // same data produced the correct 5 anchors, all qualified.
+    const leftResult = _buildAnchors(tagged, colTol, t => t.vx);
+    const rightResult = _buildAnchors(tagged, colTol, t => t.vx + t.vWidth);
+    // Prefer more qualified (high-presence) anchors first — that is what the
+    // anchor-quality gate actually checks next. Fewer total anchors is the
+    // tiebreaker (a cleaner, more consolidated column set). Left-edge wins
+    // ties, preserving existing behavior on every table where both edges
+    // already agree (the overwhelming majority of real tables).
+    const useRight = rightResult.qualified > leftResult.qualified ||
+        (rightResult.qualified === leftResult.qualified && rightResult.anchors.length < leftResult.anchors.length);
+    let colAnchors = useRight ? rightResult.anchors : leftResult.anchors;
 
     // If anchors span a large X gap (likely two separate page columns), signal
     // the caller to re-run per X zone by returning a special sentinel.
@@ -291,15 +395,64 @@ function _buildCandidate(bands, scale, segments = [], { zoneMode = false } = {})
     if (qualifiedAnchors < Math.ceil(colAnchors.length / 2)) return null;
 
     // ── Score 1: column alignment consistency ────────────────────────────────
+    // Use alignItems (the dominant sub-cluster only) rather than the full,
+    // possibly-merged items set — see _mergeSparseAnchors.
     const colAlignScore = Math.max(0,
-        1 - _mean(colAnchors.map(a => _stdDev(a.items.map(i => i.vx)))) / colTol,
+        1 - _mean(colAnchors.map(a => _stdDev(a.alignXs ?? (a.alignItems ?? a.items).map(i => i.vx)))) / colTol,
     );
 
     // ── Score 2: row spacing regularity (participating bands only) ───────────
+    //
+    // "Has one item near one anchor" alone is not enough of a filter: on a
+    // dense, justified prose column, some word start coincidentally lands
+    // within colTol of SOME anchor on almost every line (measured on a real
+    // 2-column paper: prose lines matched 1-7 of 7 anchors essentially at
+    // random, and one prose line matched all 7). Left unfiltered, ~14 prose
+    // bands surrounding a real 7-row results table all qualified as
+    // "participating" and were absorbed into the table region.
+    //
+    // Real table rows have a second, much sharper signature: a near-constant
+    // item count per row (one item per cell). Prose bands scatter across many
+    // different item counts (word-wrapped lines rarely share a token count).
+    // Require BOTH the existing anchor-proximity check AND an item count
+    // close to the group's own mode — the dominant, most common item count
+    // among ANCHOR-ALIGNED bands only (so the mode isn't itself diluted by
+    // the same prose bands we're trying to exclude).
     const anchorXs = colAnchors.map(a => a.x);
-    const participating = bands.filter(band =>
+    const anchorAligned = bands.filter(band =>
         band.items.some(item => anchorXs.some(ax => Math.abs(item.vx - ax) <= colTol)),
     );
+    const itemCounts = new Map();
+    for (const band of anchorAligned) {
+        const n = band.items.length;
+        itemCounts.set(n, (itemCounts.get(n) || 0) + 1);
+    }
+    let modeCount = 0, modeFreq = 0;
+    for (const [n, freq] of itemCounts) {
+        if (freq > modeFreq) { modeCount = n; modeFreq = freq; }
+    }
+    // Exact match, not a tolerance band: measured on a real 2-column paper,
+    // a +-2 tolerance still let 3 of 12 prose bands leak in (their item counts
+    // landed close enough to the mode by coincidence) and that was enough to
+    // corrupt rowSpacingScore (0.32 instead of the true row cadence). A row
+    // occasionally carrying one extra decoration token (e.g. an unmerged "$")
+    // is who this excludes too, but that is the same acceptable trade the
+    // anchor-merge fix already makes elsewhere: losing a few decorated rows
+    // from `participating` is far cheaper than losing the whole table to
+    // prose contamination.
+    const itemCountTol = 0;
+    const participating = anchorAligned.filter(band =>
+        Math.abs(band.items.length - modeCount) <= itemCountTol,
+    );
+    // Every gate below measures the CANDIDATE TABLE, not the whole band group
+    // that was passed in. Before this, fillRate/avgLen/avgItemsPerBand and the
+    // bbox extent were all computed from `tagged` — the full, possibly
+    // prose-including group — so tightening `participating` above (excluding
+    // real prose bands) actually made the items/band gate WORSE: the
+    // denominator shrank while the numerator (tagged.length) still counted
+    // every excluded prose item. Scoping to participatingItems is what makes
+    // the two fixes coherent with each other.
+    const participatingItems = participating.flatMap(b => b.items);
 
     // ── Structural context gates ──────────────────────────────────────────────
     // Pre-detect gutters before the avgLen gate so gutter evidence can relax it.
@@ -308,10 +461,10 @@ function _buildCandidate(bands, scale, segments = [], { zoneMode = false } = {})
     const earlyGutters = _detectGutters(participating, 0.6, scale.S * 0.15);
     const hasGutterEvidence = earlyGutters.length >= 1;
 
-    const fillRate = tagged.length / (participating.length * colAnchors.length);
+    const fillRate = participatingItems.length / (participating.length * colAnchors.length);
     if (fillRate < scale.STREAM_MIN_FILL) return null;
 
-    const avgLen = tagged.reduce((s, i) => s + i.str.trim().length, 0) / (tagged.length || 1);
+    const avgLen = participatingItems.reduce((s, i) => s + i.str.trim().length, 0) / (participatingItems.length || 1);
     // Relax avgLen only in zone mode (items are pre-filtered to one page column)
     // so the relaxation cannot allow prose from mixed-content pages through.
     const avgLenCap = (zoneMode && hasGutterEvidence)
@@ -325,7 +478,7 @@ function _buildCandidate(bands, scale, segments = [], { zoneMode = false } = {})
     // per band and must not be rejected by the fixed prose cap. Allow up to
     // 1.4× the detected anchor count (slack for the occasional two-token cell),
     // never below the base prose cap.
-    const avgItemsPerBand = tagged.length / (participating.length || 1);
+    const avgItemsPerBand = participatingItems.length / (participating.length || 1);
     const itemsPerBandCap = Math.max(scale.STREAM_MAX_ITEMS_BAND, colAnchors.length * 1.4);
     if (avgItemsPerBand > itemsPerBandCap) return null;
 

@@ -111,15 +111,86 @@ export class LatticeReconstructor {
                     continue;
                 }
             }
-            results.push(lattice);
+            results.push(this._extendTrailingUnruledRow(lattice));
         }
         if (results.length) return results;
 
         // Fallback: try full set
         const full = this._reconstructFromSegments(this.segments);
-        if (full) return [full];
+        if (full) return [this._extendTrailingUnruledRow(full)];
 
         return [];
+    }
+
+    /**
+     * Extend a lattice by exactly one trailing unruled row when a single band
+     * of text sits immediately below the last detected row line, still inside
+     * the table's column span. This covers the common "ruled header, one
+     * unruled data row underneath" pattern (e.g. a single-line-item invoice)
+     * without attempting general partial-lattice detection: it only ever adds
+     * ONE row, and only when that row's items land inside the already-
+     * established column boundaries across at least 40% of them. A table
+     * missing MULTIPLE consecutive row rulings, or unruled in the middle, is
+     * NOT handled here — that needs row-extent-from-text-continuity as a real
+     * capability (like the stream detector's Y-banding), not a bounded patch.
+     *
+     * The new row boundary must be backed by a synthetic hLine/vLine entry,
+     * not just a `rows`/`cols` value. tableBuilder's rowspan/colspan inference
+     * treats "no line at this boundary" as "these cells are merged" — without
+     * a synthetic line here, the header would silently absorb this row into
+     * one big rowspan, or this row's own columns would collapse into one
+     * colspan. Both defeat the entire point of extending the grid in the
+     * first place.
+     */
+    _extendTrailingUnruledRow(lattice) {
+        if (!lattice) return lattice;
+        const { rows, cols, hLines, vLines } = lattice;
+        if (!rows || rows.length < 2 || !cols || cols.length < 2 || !this.textMeta.length) return lattice;
+
+        const lastRowY = rows[rows.length - 1];
+        const rowHeights = [];
+        for (let i = 1; i < rows.length; i++) rowHeights.push(rows[i] - rows[i - 1]);
+        const medianRowH = [...rowHeights].sort((a, b) => a - b)[Math.floor(rowHeights.length / 2)] || 20;
+
+        const xMin = cols[0] - this.eps * 2;
+        const xMax = cols[cols.length - 1] + this.eps * 2;
+        // Search window: from just below the last row line to 1.6x the median
+        // row height further down — enough room for one real data row, not a
+        // whole page of unrelated content below the table.
+        const bandTop = lastRowY + this.eps;
+        const bandBottom = lastRowY + medianRowH * 1.6;
+
+        const candidates = this.textMeta.filter(tm =>
+            tm.str?.trim() &&
+            tm.vy > bandTop && tm.vy <= bandBottom &&
+            tm.vx >= xMin && tm.vx <= xMax
+        );
+        if (!candidates.length) return lattice;
+
+        // Require the candidate band to actually spread across most of the
+        // table's columns — a single stray caption or footnote word landing
+        // in this Y range should not trigger an extension.
+        const touchedCols = new Set();
+        for (const tm of candidates) {
+            for (let c = 0; c + 1 < cols.length; c++) {
+                if (tm.vx >= cols[c] - this.eps && tm.vx < cols[c + 1] + this.eps) { touchedCols.add(c); break; }
+            }
+        }
+        if (touchedCols.size < Math.max(2, Math.ceil((cols.length - 1) * 0.4))) return lattice;
+
+        const maxY = Math.max(...candidates.map(tm => tm.vy));
+        const newLastRow = maxY + medianRowH * 0.25; // small pad below the text baseline
+
+        const newHLine = { y: newLastRow, xMin: cols[0], xMax: cols[cols.length - 1] };
+        const newVLines = cols.map(x => ({ x, yMin: lastRowY, yMax: newLastRow }));
+
+        return {
+            ...lattice,
+            rows: [...rows, newLastRow],
+            hLines: [...hLines, newHLine],
+            vLines: [...vLines, ...newVLines],
+            bbox: { ...lattice.bbox, h: newLastRow - rows[0] },
+        };
     }
 
     // Returns the Y midpoint of the first inter-row band not spanned by any
@@ -254,8 +325,8 @@ export class LatticeReconstructor {
             const gridCells = (rows.length - 1) * (cols.length - 1);
             if (gridCells < 2) return null;
 
-            filteredRows = this._filterGridLines(rows, cols, intersections, 'y', 'x', clusterEps);
-            filteredCols = this._filterGridLines(cols, rows, intersections, 'x', 'y', clusterEps);
+            filteredRows = this._filterGridLines(rows, cols, intersections, 'y', 'x', clusterEps, hMerged, [cols[0], cols[cols.length - 1]]);
+            filteredCols = this._filterGridLines(cols, rows, intersections, 'x', 'y', clusterEps, vMerged, [rows[0], rows[rows.length - 1]]);
 
             if (filteredRows.length < 2 || filteredCols.length < 2) return null;
 
@@ -286,15 +357,37 @@ export class LatticeReconstructor {
     /**
      * Filter grid lines to keep only those that participate in enough intersections.
      * A valid grid line should intersect with at least 30% of the perpendicular lines.
+     *
+     * Exception: a line whose ORIGINAL merged segment spans nearly the full
+     * table width (for a row line) or height (for a column line) is kept
+     * regardless of intersection count. A full-width banner row above a table
+     * whose body has many columns — e.g. a single-cell section header row
+     * sitting over a 7-column detail grid — only touches the two outermost
+     * verticals, so it can never clear a density threshold sized for a row
+     * that shares the same column count as the rest of the table. That is a
+     * real structural border, not sparse noise; the 30% rule was tuned for
+     * uniform-column tables and doesn't generalize to a row/column count that
+     * legitimately changes partway through one table.
      */
-    _filterGridLines(lines, perpLines, intersections, lineAxis, perpAxis, eps) {
+    _filterGridLines(lines, perpLines, intersections, lineAxis, perpAxis, eps, fullSpanLines = null, fullSpanRange = null) {
+        const rangeSpan = fullSpanRange ? fullSpanRange[1] - fullSpanRange[0] : 0;
         return lines.filter(lineVal => {
             const hits = intersections.filter(p => Math.abs(p[lineAxis] - lineVal) <= eps);
             const uniquePerps = new Set(hits.map(p => {
                 // Find which perp line this hit belongs to
                 return perpLines.findIndex(pl => Math.abs(pl - p[perpAxis]) <= eps);
             }));
-            return uniquePerps.size >= Math.max(2, perpLines.length * 0.3);
+            if (uniquePerps.size >= Math.max(2, perpLines.length * 0.3)) return true;
+
+            if (fullSpanLines && rangeSpan > 0) {
+                const match = fullSpanLines.find(l => Math.abs(l[lineAxis] - lineVal) <= eps);
+                if (match) {
+                    const lo = lineAxis === 'y' ? match.xMin : match.yMin;
+                    const hi = lineAxis === 'y' ? match.xMax : match.yMax;
+                    if ((hi - lo) / rangeSpan >= 0.9) return true;
+                }
+            }
+            return false;
         });
     }
 

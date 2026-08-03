@@ -1,17 +1,41 @@
 // latticeDetector.js
 // Detects bordered table regions using LatticeReconstructor.
-// Also handles single-column lattice → BOX classification (notes/warnings/cautions).
-// Extracted from contextClassifier.js lines 238-324.
+// Runs AFTER boxDetector: container rectangles (notices, warnings, callout
+// panels) are already claimed, so anything reaching here is either a grid or a
+// bordered block the box pass declined. A lattice found strictly inside a
+// claimed box is a real table nested in that box and reclaims its own text.
 
 import { LatticeReconstructor } from '../latticeReconstructor.js';
 import { RegionType } from './regionTypes.js';
+import { buildBoxRegion } from './boxDetector.js';
 
 function insideBBox(px, py, bbox, pad = 0) {
     return px >= bbox.x - pad && px <= bbox.x + bbox.w + pad &&
         py >= bbox.y - pad && py <= bbox.y + bbox.h + pad;
 }
 
-export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts = {}) {
+function bboxContains(outer, inner, pad = 0) {
+    return inner.x >= outer.x - pad && inner.y >= outer.y - pad &&
+        inner.x + inner.w <= outer.x + outer.w + pad &&
+        inner.y + inner.h <= outer.y + outer.h + pad;
+}
+
+// Locate the claimed BOX enclosing a lattice, if any.
+//   'same'   — the box IS this rectangle; the box pass already won, skip it
+//   'nested' — a genuinely smaller table sitting inside the box
+function findEnclosingBox(bbox, boxRegions, scale) {
+    const pad = scale.proximityPx ?? 4;
+    for (const box of boxRegions) {
+        if (!box.bbox || !bboxContains(box.bbox, bbox, pad)) continue;
+        const boxArea = box.bbox.w * box.bbox.h;
+        const area = bbox.w * bbox.h;
+        if (!boxArea) continue;
+        return { box, relation: area / boxArea > 0.85 ? 'same' : 'nested' };
+    }
+    return null;
+}
+
+export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts = {}, boxRegions = []) {
     const reconstructor = new LatticeReconstructor(tableSegs, {
         eps: 5, scale, textMeta, pageHeight: viewport.height,
     });
@@ -20,65 +44,66 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
 
     for (const lattice of lattices) {
         if (!lattice?.bbox) continue;
+        const bbox = lattice.bbox;
 
+        // Container arbitration. boxDetector ran first and already claimed the
+        // page's notice/warning panels, so a lattice covering the same
+        // rectangle is that panel's border, not a table.
+        // Page chrome. The header rule, footer rule and margin rules close into
+        // a rectangle the size of the page; with enough interior text bands it
+        // clears the occupancy check and swallows the entire page as one table.
+        // Nothing that covers the whole sheet is a table.
+        if (bbox.w > viewport.width * 0.80 && bbox.h > viewport.height * 0.80) continue;
+
+        const enclosing = findEnclosingBox(bbox, boxRegions, scale);
+        if (enclosing?.relation === 'same') continue;
+
+        // A grid drawn across two already-claimed boxes — two admonitions side
+        // by side in a two-column spread reconstruct into one rectangle
+        // enclosing both. The boxes are the real regions; the wrapper is an
+        // artifact of reading their borders as one lattice.
+        const pad = scale.proximityPx ?? 4;
+        if (boxRegions.some(b => b.bbox &&
+            bboxContains(bbox, b.bbox, pad) &&
+            b.bbox.w * b.bbox.h < bbox.w * bbox.h * 0.9)) continue;
+        const parentBox = enclosing?.relation === 'nested' ? enclosing.box : null;
+        const parentClaimed = parentBox ? new Set(parentBox.textItemIndices) : null;
+
+        // Text inside the bbox. A table nested in a box reclaims the items its
+        // parent swallowed; everything else respects existing claims.
+        const collect = () => {
+            const out = [];
+            for (const tm of textMeta) {
+                if (!tm.str.trim()) continue;
+                if (assignedTextIndices.has(tm.idx) && !parentClaimed?.has(tm.idx)) continue;
+                if (insideBBox(tm.vx, tm.vy, bbox, scale.tablePadPx)) out.push(tm.idx);
+            }
+            return out;
+        };
+
+        const claim = (indices) => {
+            for (const idx of indices) assignedTextIndices.add(idx);
+            if (parentBox) {
+                const taken = new Set(indices);
+                parentBox.textItemIndices =
+                    parentBox.textItemIndices.filter(i => !taken.has(i));
+            }
+        };
+
+        // Single-column bordered block: cols holds only the outer edges, so
+        // there is no interior column and no grid to build. It is a box.
         if ((lattice.cols?.length ?? 0) <= 2) {
-            const bbox = lattice.bbox;
-            if (!bbox) continue;
-
             if (bbox.x < viewport.width * 0.04 && bbox.w > viewport.width * 0.65) continue;
             if (bbox.w > viewport.width * 0.88) continue;
 
-            const boxTextIndices = [];
-            let maxItemWidth = 0;
-            for (const tm of textMeta) {
-                if (!tm.str.trim() || assignedTextIndices.has(tm.idx)) continue;
-                if (insideBBox(tm.vx, tm.vy, bbox, scale.tablePadPx)) {
-                    boxTextIndices.push(tm.idx);
-                    if (tm.vWidth > maxItemWidth) maxItemWidth = tm.vWidth;
-                }
-            }
-
-            if (maxItemWidth < bbox.w * 0.30 || boxTextIndices.length === 0) continue;
-
-            const sortedItems = boxTextIndices
-                .map(i => textMeta[i])
-                .sort((a, b) => a.vy - b.vy || a.vx - b.vx);
-            const sampleText = sortedItems.slice(0, 8).map(tm => tm.str).join(' ').trim().slice(0, 60).toUpperCase();
-            let boxRole = 'generic';
-            if (/\bWARNING\b|\bDANGER\b|\bCRITICAL\b/.test(sampleText)) boxRole = 'warning';
-            else if (/\bCAUTION\b|\bATTENTION\b/.test(sampleText)) boxRole = 'caution';
-            else if (/\bNOTE\b|\bINFO\b|\bINFORMATION\b|\bIMPORTANT\b|\bNOTICE\b/.test(sampleText)) boxRole = 'note';
-            else if (/\bTIP\b|\bHINT\b|\bEXAMPLE\b/.test(sampleText)) boxRole = 'tip';
-
-            let boxFillColor = null;
-            for (const fr of filledRects) {
-                const overlaps = fr.x < bbox.x + bbox.w && fr.x + fr.w > bbox.x &&
-                                 fr.y < bbox.y + bbox.h && fr.y + fr.h > bbox.y;
-                if (overlaps) { boxFillColor = fr.fillColor; break; }
-            }
-
-            for (const idx of boxTextIndices) assignedTextIndices.add(idx);
-            regions.push({
-                type: RegionType.BOX,
-                bbox,
-                yCenter: bbox.y + bbox.h / 2,
-                textItemIndices: boxTextIndices,
-                columnIndex: -1,
-                boxRole,
-                fillColor: boxFillColor,
-            });
+            const boxTextIndices = collect();
+            if (!boxTextIndices.length) continue;
+            claim(boxTextIndices);
+            regions.push(buildBoxRegion(bbox, boxTextIndices, textMeta, filledRects));
             continue;
         }
 
-        const bbox = lattice.bbox;
-        const tableTextIndices = [];
-        for (const tm of textMeta) {
-            if (!tm.str.trim()) continue;
-            if (assignedTextIndices.has(tm.idx)) continue;
-            if (insideBBox(tm.vx, tm.vy, bbox, scale.tablePadPx)) {
-                tableTextIndices.push(tm.idx);
-            }
-        }
+        const tableTextIndices = collect();
 
         // Occupancy validation: a real table has text in most of its cells.
         // Measured on reference PDFs: real tables 0.58–0.96, spurious grids
@@ -87,13 +112,13 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
         const occ = _cellOccupancy(lattice, tableTextIndices, textMeta);
         if (occ < 0.5) {
             if (tableTextIndices.length > 0) {
-                for (const idx of tableTextIndices) assignedTextIndices.add(idx);
-                regions.push(_asBox(bbox, tableTextIndices, textMeta, filledRects));
+                claim(tableTextIndices);
+                regions.push(buildBoxRegion(bbox, tableTextIndices, textMeta, filledRects));
             }
             continue;
         }
 
-        for (const idx of tableTextIndices) assignedTextIndices.add(idx);
+        claim(tableTextIndices);
         regions.push({
             type: RegionType.LATTICE_TABLE,
             bbox,
@@ -102,6 +127,7 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
             textItemIndices: tableTextIndices,
             columnIndex: -1,
             proximityPx: scale.proximityPx,
+            parentRegionType: parentBox ? RegionType.BOX : null,
         });
     }
 
@@ -127,33 +153,4 @@ function _cellOccupancy(lattice, textIndices, textMeta) {
         if (ri >= 0 && ci >= 0) occupied.add(ri * (cols.length - 1) + ci);
     }
     return occupied.size / nCells;
-}
-
-function _asBox(bbox, boxTextIndices, textMeta, filledRects) {
-    const sortedItems = boxTextIndices
-        .map(i => textMeta[i])
-        .sort((a, b) => a.vy - b.vy || a.vx - b.vx);
-    const sampleText = sortedItems.slice(0, 8).map(tm => tm.str).join(' ').trim().slice(0, 60).toUpperCase();
-    let boxRole = 'generic';
-    if (/\bWARNING\b|\bDANGER\b|\bCRITICAL\b/.test(sampleText)) boxRole = 'warning';
-    else if (/\bCAUTION\b|\bATTENTION\b/.test(sampleText)) boxRole = 'caution';
-    else if (/\bNOTE\b|\bINFO\b|\bINFORMATION\b|\bIMPORTANT\b|\bNOTICE\b/.test(sampleText)) boxRole = 'note';
-    else if (/\bTIP\b|\bHINT\b|\bEXAMPLE\b/.test(sampleText)) boxRole = 'tip';
-
-    let boxFillColor = null;
-    for (const fr of filledRects) {
-        const overlaps = fr.x < bbox.x + bbox.w && fr.x + fr.w > bbox.x &&
-                         fr.y < bbox.y + bbox.h && fr.y + fr.h > bbox.y;
-        if (overlaps) { boxFillColor = fr.fillColor; break; }
-    }
-
-    return {
-        type: RegionType.BOX,
-        bbox,
-        yCenter: bbox.y + bbox.h / 2,
-        textItemIndices: boxTextIndices,
-        columnIndex: -1,
-        boxRole,
-        fillColor: boxFillColor,
-    };
 }

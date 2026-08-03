@@ -59,10 +59,31 @@ export function detectImageRegions(imageMeta) {
     return { regions, imageBBoxes, isInsideImage };
 }
 
-export function filterTableSegs(segments, underlineSegIds, isInsideImage) {
+export function filterTableSegs(segments, underlineSegIds, isInsideImage, viewport = null) {
     return segments.filter(s => {
         if (underlineSegIds.has(s.id)) return false;
         if (isInsideImage(s.x1, s.y1) && isInsideImage(s.x2, s.y2)) return false;
+        if (viewport && isPageEdgeSeg(s, viewport)) return false;
         return true;
     });
+}
+
+// A rule lying on the sheet edge and running its full length is the page
+// border, not table ruling. Left in the pool it merges with any table whose Y
+// range it overlaps, adding two phantom columns and stretching the table's bbox
+// to the full page — which then reads as a table that swallowed the layout.
+function isPageEdgeSeg(s, viewport) {
+    const { width: W, height: H } = viewport;
+    const edge = 0.01;
+    const full = 0.9;
+
+    const x = (s.x1 + s.x2) / 2, y = (s.y1 + s.y2) / 2;
+    const dx = Math.abs(s.x2 - s.x1), dy = Math.abs(s.y2 - s.y1);
+
+    const onLeftOrRight = x <= W * edge || x >= W * (1 - edge);
+    const onTopOrBottom = y <= H * edge || y >= H * (1 - edge);
+
+    if (dy > dx && dy >= H * full && onLeftOrRight) return true;
+    if (dx > dy && dx >= W * full && onTopOrBottom) return true;
+    return false;
 }

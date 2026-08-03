@@ -4,10 +4,62 @@
 // Extracted from contextClassifier.js lines 366-482.
 
 import { RegionType } from './regionTypes.js';
+import { analyzeBlock } from './proseGate.js';
 
 function insideBBox(px, py, bbox, pad = 0) {
     return px >= bbox.x - pad && px <= bbox.x + bbox.w + pad &&
         py >= bbox.y - pad && py <= bbox.y + bbox.h + pad;
+}
+
+// ── Shared box construction ──────────────────────────────────────────────────
+// The lattice detector also emits BOX regions, for rectangles whose interior
+// ruling turned out not to be a grid. Both paths build the region here so the
+// role vocabulary and fill lookup can never drift apart.
+
+/**
+ * Classify an admonition role from the opening words of a box, in reading order.
+ * @returns {'warning'|'caution'|'note'|'tip'|'generic'}
+ */
+export function classifyBoxRole(textIndices, textMeta) {
+    const sampleText = textIndices
+        .map(i => textMeta[i])
+        .filter(Boolean)
+        .sort((a, b) => a.vy - b.vy || a.vx - b.vx)
+        .slice(0, 8)
+        .map(tm => tm.str)
+        .join(' ')
+        .trim()
+        .slice(0, 60)
+        .toUpperCase();
+
+    if (/\bWARNING\b|\bDANGER\b|\bCRITICAL\b/.test(sampleText)) return 'warning';
+    if (/\bCAUTION\b|\bATTENTION\b/.test(sampleText)) return 'caution';
+    if (/\bNOTE\b|\bINFO\b|\bINFORMATION\b|\bIMPORTANT\b|\bNOTICE\b/.test(sampleText)) return 'note';
+    if (/\bTIP\b|\bHINT\b|\bEXAMPLE\b/.test(sampleText)) return 'tip';
+    return 'generic';
+}
+
+/** First filled rect overlapping the bbox — the box's background swatch. */
+export function findFillColor(bbox, filledRects) {
+    for (const fr of filledRects) {
+        const overlaps = fr.x < bbox.x + bbox.w && fr.x + fr.w > bbox.x &&
+            fr.y < bbox.y + bbox.h && fr.y + fr.h > bbox.y;
+        if (overlaps) return fr.fillColor;
+    }
+    return null;
+}
+
+/** Build a BOX region from a bbox and the text items it encloses. */
+export function buildBoxRegion(bbox, textIndices, textMeta, filledRects) {
+    return {
+        type: RegionType.BOX,
+        bbox,
+        yCenter: bbox.y + bbox.h / 2,
+        textItemIndices: textIndices,
+        columnIndex: -1,
+        boxRole: classifyBoxRole(textIndices, textMeta),
+        fillColor: findFillColor(bbox, filledRects),
+    };
 }
 
 export function detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale, viewport, regions, filledRects, assignedTextIndices) {
@@ -65,54 +117,104 @@ export function detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale,
 
             if (_isPageFrame(x1, x2 - x1)) continue;
 
+            // A container box is an EMPTY rectangle: four edges, nothing ruled
+            // inside. A bordered table has the same four edges PLUS interior
+            // ruling — and because every pair of its row rules spans the same
+            // left/right borders, each pair forms another perfectly valid
+            // rectangle. Running this pass first without a structure check
+            // shreds a table into one "box" per row pair. Reject interior
+            // structure geometrically, before the text is even looked at.
+            const interiorV = freeV.some(s => {
+                const sx = (s.x1 + s.x2) / 2;
+                if (sx <= x1 + eps6 || sx >= x2 - eps6) return false;
+                const sTop = Math.min(s.y1, s.y2), sBot = Math.max(s.y1, s.y2);
+                return Math.min(sBot, y2) - Math.max(sTop, y1) >= (y2 - y1) * 0.6;
+            });
+            if (interiorV) continue;
+
+            // Interior horizontal rules spanning the rectangle: row separators.
+            // A banner-topped admonition has exactly one (the bar's lower
+            // edge), so two or more means a ruled grid. Counted as distinct Y
+            // clusters, not raw segments — a filled bar reconciles into several
+            // near-coincident edges a few px apart, and counting those would
+            // reject every admonition on the page.
+            const innerYs = [];
+            for (const s of freeH) {
+                const y = (s.y1 + s.y2) / 2;
+                if (y <= y1 + eps6 || y >= y2 - eps6) continue;
+                const a = Math.min(s.x1, s.x2), b = Math.max(s.x1, s.x2);
+                if (Math.min(b, x2) - Math.max(a, x1) < (x2 - x1) * 0.8) continue;
+                if (!innerYs.some(r => Math.abs(r - y) <= eps6)) innerYs.push(y);
+            }
+            if (innerYs.length >= 2) continue;
+
             const boxTextIndices = [];
-            let maxItemWidth = 0;
             for (const tm of textMeta) {
                 if (!tm.str.trim() || assignedTextIndices.has(tm.idx)) continue;
                 if (insideBBox(tm.vx, tm.vy, bbox, tablePad)) {
                     boxTextIndices.push(tm.idx);
-                    if (tm.vWidth > maxItemWidth) maxItemWidth = tm.vWidth;
                 }
             }
-            if (maxItemWidth < bbox.w * 0.25 || boxTextIndices.length === 0) continue;
+            if (boxTextIndices.length === 0) continue;
 
-            const sampleText = boxTextIndices.slice(0, 8)
-                .map(i => textMeta[i].str).join(' ').toUpperCase().slice(0, 60);
-            let boxRole = 'generic';
-            if (/\bWARNING\b|\bDANGER\b|\bCRITICAL\b/.test(sampleText)) boxRole = 'warning';
-            else if (/\bCAUTION\b|\bATTENTION\b/.test(sampleText)) boxRole = 'caution';
-            else if (/\bNOTE\b|\bINFO\b|\bINFORMATION\b|\bIMPORTANT\b|\bNOTICE\b/.test(sampleText)) boxRole = 'note';
-            else if (/\bTIP\b|\bHINT\b|\bEXAMPLE\b/.test(sampleText)) boxRole = 'tip';
-
-            let boxFillColor = null;
-            for (const fr of filledRects) {
-                if (fr.x < x2 && fr.x + fr.w > x1 && fr.y < y2 && fr.y + fr.h > y1) {
-                    boxFillColor = fr.fillColor; break;
-                }
-            }
+            const boxRole = classifyBoxRole(boxTextIndices, textMeta);
+            const boxFillColor = findFillColor(bbox, filledRects);
 
             // Banner detection: a short box whose text is dominated by a single
             // role keyword in a large font (the black "! WARNING" / "! CAUTION"
             // bar atop a safety admonition). Flagged so it can be merged with the
             // bordered body box directly below and rendered as a styled header.
-            const bannerText = boxTextIndices
+            //
+            // The label is read from the largest-font items only. A banner bar
+            // is barely taller than its own text, so the tablePad used to
+            // collect text reaches past the bar and picks up the tail of the
+            // paragraph above it — enough to push the label past the length
+            // limit and silently disable the merge.
+            const maxFont = boxTextIndices.reduce((m, i) =>
+                Math.max(m, textMeta[i].vFont || 0), 0);
+            const labelIndices = boxTextIndices.filter(
+                i => (textMeta[i].vFont || 0) >= maxFont - 0.5);
+            const bannerText = labelIndices
                 .map(i => textMeta[i].str.trim())
                 .filter(s => /^[A-Za-z]/.test(s))
                 .join(' ')
                 .toUpperCase();
-            const maxFont = boxTextIndices.reduce((m, i) =>
-                Math.max(m, textMeta[i].vFont || 0), 0);
+            // Bar height is measured against the label's OWN font, not the page
+            // body size. On a figure-heavy page the mode font is the callout
+            // labels rather than the body text, so page S can land at half its
+            // true value and a fixed multiple of it rejects every banner on the
+            // page. A banner bar is always just slightly taller than the word
+            // printed in it, whatever the rest of the page is doing.
             const isBanner = boxRole !== 'generic'
                 && bannerText.length <= 12
                 && maxFont >= scale.S * 1.5
-                && bbox.h <= scale.S * 5;
+                && bbox.h <= maxFont * 2.2;
 
-            for (const idx of boxTextIndices) assignedTextIndices.add(idx);
+            // A banner claims only its label. Text the pad reached into belongs
+            // to the neighbouring paragraph, and the merge below discards the
+            // banner region entirely — claiming it here would delete it.
+            const claimIndices = isBanner ? labelIndices : boxTextIndices;
+
+            // Content gate. This detector runs BEFORE the lattice detector, so
+            // it sees every closed rectangle on the page — including real
+            // bordered tables, which are drawn with the same four segments as a
+            // notice panel. Claim only on positive evidence of a container:
+            //   - a banner bar (the styled "! WARNING" header), or
+            //   - a role keyword in the opening text, or
+            //   - contents that read as flowing text.
+            // A recurring interior column anchor overrides all three: that is a
+            // grid, and it belongs to the lattice detector.
+            const verdict = analyzeBlock(boxTextIndices, textMeta, bbox, scale);
+            const admonition = boxRole !== 'generic';
+            if (verdict.anchors > 0) continue;
+            if (!isBanner && !admonition && !verdict.prose) continue;
+
+            for (const idx of claimIndices) assignedTextIndices.add(idx);
             boxRegions.push({
                 type: RegionType.BOX,
                 bbox,
                 yCenter: cy,
-                textItemIndices: boxTextIndices,
+                textItemIndices: claimIndices,
                 columnIndex: -1,
                 boxRole,
                 fillColor: boxFillColor,
