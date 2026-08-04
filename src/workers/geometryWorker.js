@@ -66,21 +66,131 @@ let _cachedChromeSigs  = null;   // cross-page running header/footer signatures
 // on the SAME text items (honoring slider/split pipeline) instead of the PDF.
 const _scannedPages = new Map(); // pageNum -> { textItems, filledRects, imageRegions, pageWidthPt, viewportScale }
 
-// Render the page once at 4× and crop every image-like area:
-//   - raster XObjects from imageMeta (keyed by meta.id)
-//   - vector line-art figure regions from the classifier (keyed by region.id)
+// Render the page once at 4× and crop every picture region the classifier
+// found (keyed by region.id), whether it was painted as a raster XObject,
+// as vector line art, as a swarm of image masks, or as a mix of all three.
 // Geometry pipeline uses scale 2.0; upRatio converts those bbox coords into
 // 4×-canvas pixel coords. Returns {} when OffscreenCanvas is unavailable.
-async function _extractPageImages(page, imageMeta, regions) {
+// Resolve one decoded image from PDF.js and encode it as a PNG data URL.
+//
+// NOT FOR OCR. This is the raw image with nothing drawn on top of it: vector
+// callout labels, leader lines and annotations painted OVER a diagram exist in
+// a page-render crop and are absent here. OCR must always read rendered pixels
+// (see fileUpload.js, which renders its own canvas for Tesseract) — reusing
+// this fast path to feed a recogniser would silently drop overlaid text.
+//
+// Returns null when the object never resolves OR when it carries fewer pixels
+// than the page render would, so the caller can fall back.
+async function _cropFromDecodedImage(page, id, minWidth) {
+    const obj = await new Promise((resolve) => {
+        let settled = false;
+        const finish = (v) => { if (!settled) { settled = true; resolve(v); } };
+        // Image objects are only populated as the operator list is consumed, so
+        // an object may not be there yet — or ever, if it was never painted.
+        setTimeout(() => finish(null), 3000);
+        try {
+            if (page.objs.has(id)) { finish(page.objs.get(id)); return; }
+            page.objs.get(id, finish);
+        } catch { finish(null); }
+    });
+    if (!obj) return null;
+
+    try {
+        const w = obj.width, h = obj.height;
+        if (!w || !h) return null;
+        // Take the decoded image only when it actually carries more detail than
+        // the render would. Measured across the corpus, these PDFs place images
+        // at roughly 1:1 with the page, so a 4× render normally OUT-resolves
+        // the source (a 1198px screenshot renders at 3892px) and substituting
+        // the original would be a downgrade. The decoded path is for the
+        // opposite case — a high-resolution photo scaled down into a small
+        // frame — where the render throws most of the pixels away.
+        if (minWidth && w < minWidth) return null;
+        const canvas = new OffscreenCanvas(w, h);
+        const ctx = canvas.getContext('2d');
+        // Composite on white: the page shows these pixels over the sheet, and a
+        // bare alpha channel would render as black in some PNG consumers.
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, w, h);
+
+        if (obj.bitmap) {
+            ctx.drawImage(obj.bitmap, 0, 0);
+        } else if (obj.data) {
+            const src = obj.data;
+            const img = ctx.createImageData(w, h);
+            const dst = img.data;
+            if (src.length === w * h * 4) {
+                dst.set(src);
+            } else if (src.length === w * h * 3) {
+                for (let i = 0, j = 0; i < src.length; i += 3, j += 4) {
+                    dst[j] = src[i]; dst[j + 1] = src[i + 1];
+                    dst[j + 2] = src[i + 2]; dst[j + 3] = 255;
+                }
+            } else {
+                return null;   // 1bpp stencils and friends — let the render win
+            }
+            const tmp = new OffscreenCanvas(w, h);
+            tmp.getContext('2d').putImageData(img, 0, 0);
+            ctx.drawImage(tmp, 0, 0);
+        } else {
+            return null;
+        }
+
+        const blob = await canvas.convertToBlob({ type: 'image/png' });
+        const arr = new Uint8Array(await blob.arrayBuffer());
+        let binary = '';
+        for (let b = 0; b < arr.length; b += 8192) {
+            binary += String.fromCharCode(...arr.subarray(b, b + 8192));
+        }
+        return { dataUrl: 'data:image/png;base64,' + btoa(binary), pw: w, ph: h };
+    } catch {
+        return null;
+    }
+}
+
+async function _extractPageImages(page, regions) {
     const extractedImages = {};
-    const figureRegions = (regions || []).filter(r => r.vectorFigure && r.bbox && r.id);
-    if ((imageMeta.length === 0 && figureRegions.length === 0) ||
-        typeof OffscreenCanvas === 'undefined') {
+    // Crop the PICTURE REGIONS, not the raw image operators. One figure can be
+    // painted as hundreds of tiny masks (a service-manual diagram runs to 458
+    // fragments of 1×9 px); cropping per operator produced hundreds of useless
+    // slivers instead of the drawing. The classifier has already assembled each
+    // picture into one region, and a region that is exactly one untouched
+    // XObject keeps that XObject's id, so lookups by image id still resolve.
+    const pictureRegions = (regions || []).filter(r => r.type === 'IMAGE' && r.bbox && r.id);
+    if (pictureRegions.length === 0 || typeof OffscreenCanvas === 'undefined') {
         return extractedImages;
     }
 
     const IMG_SCALE = 4.0;
     const upRatio   = IMG_SCALE / 2.0;
+
+    // Split the work. A region that is exactly ONE un-composited, axis-aligned
+    // XObject can be taken straight from PDF.js's decoded image: native
+    // resolution instead of 4× the PLACED size (a 3000px screenshot dropped in
+    // a 200pt box only survives as ~800px through the render crop), and no
+    // neighbouring ink baked into the edges. Everything else — composites,
+    // masks, vector art, rotated placements — must come off the page render,
+    // which is the only thing that shows the picture as the page shows it.
+    const direct = [], viaRender = [];
+    const seen = new Set();
+    for (const pic of pictureRegions) {
+        if (seen.has(pic.id)) continue;
+        seen.add(pic.id);
+        const ids = pic.sourceImageIds || [];
+        const canUseDecoded = ids.length === 1 && ids[0] === pic.id &&
+            !pic.composite && !pic.vectorFigure &&
+            pic.axisAligned !== false && /^img_/.test(pic.id);
+        (canUseDecoded ? direct : viaRender).push(pic);
+    }
+
+    for (const pic of direct) {
+        const entry = await _cropFromDecodedImage(page, pic.id, pic.bbox.w * upRatio);
+        if (entry) extractedImages[pic.id] = entry;
+        else viaRender.push(pic);   // unresolved, unsupported, or lower-res
+    }
+
+    if (!viaRender.length) return extractedImages;
+
     try {
         const imgViewport = page.getViewport({ scale: IMG_SCALE });
         const cw = Math.round(imgViewport.width);
@@ -91,18 +201,7 @@ async function _extractPageImages(page, imageMeta, regions) {
             viewport: imgViewport,
         }).promise;
 
-        const crops = [];
-        const seen = new Set();
-        for (const meta of imageMeta) {
-            if (seen.has(meta.id)) continue;
-            seen.add(meta.id);
-            crops.push({ id: meta.id, bbox: meta.bbox });
-        }
-        for (const fig of figureRegions) {
-            if (seen.has(fig.id)) continue;
-            seen.add(fig.id);
-            crops.push({ id: fig.id, bbox: fig.bbox });
-        }
+        const crops = viaRender.map(pic => ({ id: pic.id, bbox: pic.bbox }));
 
         for (const { id, bbox } of crops) {
             const { x, y, w, h } = bbox;
@@ -268,7 +367,7 @@ self.onmessage = async (e) => {
             // Runs AFTER classification so vector line-art figures (diagrams the
             // classifier detected from path segments) get cropped too, not just
             // raster XObjects.
-            const extractedImages = await _extractPageImages(page, imageMeta, regions);
+            const extractedImages = await _extractPageImages(page, regions);
 
             // ── Phase 3+4: Scoped extraction + assembly ─────────────────────
             const result = assemblePage(
@@ -397,7 +496,7 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
         );
 
         // Image + vector-figure crops (after classification, same as process path)
-        const extractedImages = await _extractPageImages(page, imageMeta, regions);
+        const extractedImages = await _extractPageImages(page, regions);
 
         const fontRegistry = _cachedFontRegistry ?? createFontRegistry();
         const result = assemblePage(

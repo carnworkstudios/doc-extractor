@@ -38,6 +38,8 @@ const MERGE_GAP_PX   = 24;   // merge accepted bboxes closer than this
 // (0 matches), while line-art pages emit thousands of these. Requiring the
 // multi-seg source excludes single tiny fragments (underline end caps, stripe
 // corners) that painted false figures over table number columns.
+export function isFigureStroke(s, eps = 4) { return _isFigureStroke(s, eps); }
+
 function _isFigureStroke(s, eps = 4) {
     if (!(s.srcSegCount > 1)) return false;
     const dx = Math.abs(s.x2 - s.x1);

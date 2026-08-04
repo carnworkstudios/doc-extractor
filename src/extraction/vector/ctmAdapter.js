@@ -265,7 +265,19 @@ export function extractSubpaths(opList, viewport, OPS) {
                 const [x2, y2] = toViewport(1, 1);
                 const left = Math.min(x1, x2), right = Math.max(x1, x2);
                 const top = Math.min(y1, y2), bottom = Math.max(y1, y2);
-                imageMeta.push({ id: imgId, bbox: { x: left, y: top, w: right - left, h: bottom - top }, inline: false });
+                // Record whether the placement is axis-aligned (no rotation or
+                // skew: b and c of the CTM are zero). The bbox derived from the
+                // unit-square corners is only meaningful when it is, and a
+                // consumer that wants to substitute the DECODED image for a
+                // rendered crop must not do so for a rotated placement — the
+                // decoded pixels carry no rotation.
+                const axisAligned = Math.abs(ctm[1]) < 1e-6 && Math.abs(ctm[2]) < 1e-6;
+                imageMeta.push({
+                    id: imgId,
+                    bbox: { x: left, y: top, w: right - left, h: bottom - top },
+                    inline: false,
+                    axisAligned,
+                });
                 break;
             }
             case OPS.paintImageMaskXObject: {

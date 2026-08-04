@@ -35,7 +35,14 @@ function findEnclosingBox(bbox, boxRegions, scale) {
     return null;
 }
 
-export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts = {}, boxRegions = []) {
+function overlapFrac(a, b) {
+    const iw = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+    const ih = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    if (iw <= 0 || ih <= 0) return 0;
+    return (iw * ih) / (a.w * a.h || 1);
+}
+
+export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts = {}, boxRegions = [], imageRegions = []) {
     const reconstructor = new LatticeReconstructor(tableSegs, {
         eps: 5, scale, textMeta, pageHeight: viewport.height,
     });
@@ -54,6 +61,25 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
         // clears the occupancy check and swallows the entire page as one table.
         // Nothing that covers the whole sheet is a table.
         if (bbox.w > viewport.width * 0.80 && bbox.h > viewport.height * 0.80) continue;
+
+        // Pictures are containers too. A diagram's leader lines and frame are
+        // clean H/V strokes, so whatever the picture pass did not enclose can
+        // still reconstruct into a grid sitting on top of the drawing. A table
+        // does not overlap a figure; if it does, it is the figure.
+        // Two directions, because a drawing can be bigger or smaller than the
+        // grid its own rectangles reconstruct into:
+        //   - the grid sits on a picture, or
+        //   - the grid CONTAINS picture fragments. A box drawing is built from
+        //     clean H/V rectangles, which trace a convincing lattice while the
+        //     picture pass only catches the diagonals as separate blobs. A real
+        //     table does not have figures inside it.
+        if (imageRegions.some(ir => ir.bbox && overlapFrac(bbox, ir.bbox) > 0.5)) continue;
+        if (imageRegions.some(ir => {
+            if (!ir.bbox) return false;
+            const irArea = ir.bbox.w * ir.bbox.h;
+            if (!irArea || irArea < bbox.w * bbox.h * 0.05) return false;
+            return overlapFrac(ir.bbox, bbox) > 0.7;
+        })) continue;
 
         const enclosing = findEnclosingBox(bbox, boxRegions, scale);
         if (enclosing?.relation === 'same') continue;

@@ -897,6 +897,51 @@ function _scopeItems(region, textItems, textMeta) {
     });
 }
 
+/**
+ * Build a positioned, editable text layer for a picture's own labels.
+ *
+ * Geometry is emitted in PERCENTAGES of the region box and font size in `cqw`
+ * (container query width) units, so the layer tracks the image under
+ * `max-width: 100%` instead of drifting off it the moment the column narrows.
+ * Absolute px would only line up at one viewport size.
+ *
+ * `vy` from the classifier is the text BASELINE; CSS `top` is the box top, so
+ * it is lifted by roughly the cap height.
+ */
+function _imageTextLayer(region, textMeta) {
+    const bbox = region.bbox;
+    const idxs = region.textItemIndices || [];
+    if (!bbox || !bbox.w || !bbox.h || !idxs.length) return { html: '', text: '' };
+
+    const items = idxs
+        .map(i => textMeta[i])
+        .filter(tm => tm && tm.str && tm.str.trim())
+        .sort((a, b) => a.vy - b.vy || a.vx - b.vx);
+    if (!items.length) return { html: '', text: '' };
+
+    const spans = [];
+    for (const tm of items) {
+        const left = ((tm.vx - bbox.x) / bbox.w) * 100;
+        const top  = ((tm.vy - (tm.vFont || 0) * 0.8 - bbox.y) / bbox.h) * 100;
+        if (!isFinite(left) || !isFinite(top)) continue;
+        // Font size as a fraction of the region's width, so it scales with the
+        // container rather than staying pinned to the extraction scale.
+        const fs = ((tm.vFont || 10) / bbox.w) * 100;
+        spans.push(
+            `<span class="pdf-img-label" contenteditable="true" ` +
+            `style="position:absolute;left:${left.toFixed(2)}%;top:${top.toFixed(2)}%;` +
+            `font-size:${fs.toFixed(2)}cqw;line-height:1;white-space:pre;">` +
+            esc(tm.str) + `</span>`
+        );
+    }
+    if (!spans.length) return { html: '', text: '' };
+
+    return {
+        html: `<div class="pdf-image-textlayer" style="position:absolute;inset:0;">${spans.join('')}</div>`,
+        text: items.map(tm => tm.str).join(' ').replace(/\s+/g, ' ').trim(),
+    };
+}
+
 function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages = {}, _pageScaleOpts = {}, containers = null) {
     const container = containers
         ? (containers.byCol.get(region.columnIndex ?? -1) || containers.page)
@@ -963,10 +1008,22 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                     imgTag + `</div>`;
             }
             
+            // Overlay the picture's own labels as a positioned, editable text
+            // layer — the same shape as a PDF viewer's selectable text over a
+            // page canvas. A diagram's callouts are real content: the region
+            // CLAIMS them so they don't scatter into the paragraph flow, and
+            // without this they were then dropped from both the markup and the
+            // text output, silently deleting every label on the page.
+            const layer = _imageTextLayer(region, textMeta);
+            if (layer.html) {
+                imgHtml = `<div class="pdf-image-stack" style="position: relative; display: inline-block; max-width: 100%; container-type: inline-size;">${imgHtml}${layer.html}</div>`;
+                text = layer.text;
+            }
+
             if (region.captionRegion) {
                 const capData = _renderRegion(region.captionRegion, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages, _pageScaleOpts, containers);
                 html = `<figure class="pdf-figure" style="margin: 16px 0;">${imgHtml}<figcaption class="pdf-figcaption" style="text-align: center; font-size: 0.9em; color: #666; margin-top: 8px;">${capData.html}</figcaption></figure>`;
-                text = capData.text;
+                text = text ? `${text}\n${capData.text}` : capData.text;
             } else {
                 html = imgHtml;
             }

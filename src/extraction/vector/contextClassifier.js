@@ -13,8 +13,7 @@ import { readStructTree } from './structTreeReader.js';
 import { PageGraph } from './spatialGraph.js';
 import { detectPageColumns, splitByColumns } from './classifiers/columnSplitDetector.js';
 import { detectUnderlines } from './classifiers/underlineDetector.js';
-import { detectImageRegions, filterTableSegs } from './classifiers/imageRegionDetector.js';
-import { detectVectorFigures } from './classifiers/figureDetector.js';
+import { detectPictureRegions, filterTableSegs } from './classifiers/imageRegionDetector.js';
 import { detectLatticeTables } from './classifiers/latticeDetector.js';
 import { detectStreamTableRegions } from './classifiers/streamTableDetector.js';
 import { detectBoxRegions } from './classifiers/boxDetector.js';
@@ -125,37 +124,30 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
 
     const underlineSegIds = detectUnderlines(hSegs, textMeta, scale, opts);
 
-    // ── 3. Image regions + filtered segments ────────────────────────────────
-    const { regions: imageRegions, imageBBoxes, isInsideImage } = detectImageRegions(imageMeta);
+    // ── 3. Picture regions ──────────────────────────────────────────────────
+    // One detector over ALL ink, raster and vector. A figure is routinely both:
+    // masks for its cells and labels, strokes for its frame and arrows. Detected
+    // BEFORE lattice so a wiring diagram's runs can't be reconstructed into a
+    // bogus table grid; its segments leave the table pool and its labels are
+    // claimed for the picture rather than scattered into the paragraph flow.
+    const imageBBoxes = imageMeta.map(img => img.bbox);
+    const isInsideImage = (x, y) => imageBBoxes.some(b =>
+        x >= b.x - 5 && x <= b.x + b.w + 5 &&
+        y >= b.y - 5 && y <= b.y + b.h + 5
+    );
 
-    // ── 3.5. Vector line-art figures (diagrams drawn as paths, not XObjects) ─
-    // Detected BEFORE lattice so a wiring diagram's wire runs can't be
-    // reconstructed into a bogus table grid. Their segments are excluded from
-    // the table pool and their label text is claimed for the figure.
-    const figureRegions = (!skip.has('IMAGE'))
-        ? detectVectorFigures(segments, textMeta, viewport, scale, isInsideImage)
+    const keptImageRegions = (!skip.has('IMAGE'))
+        ? detectPictureRegions(imageMeta, segments, textMeta, viewport, scale)
         : [];
 
-    const insideFigure = (x, y) => figureRegions.some(f =>
+    const insideFigure = (x, y) => keptImageRegions.some(f =>
         x >= f.bbox.x - 2 && x <= f.bbox.x + f.bbox.w + 2 &&
         y >= f.bbox.y - 2 && y <= f.bbox.y + f.bbox.h + 2
     );
     const isInsideImageOrFigure = (x, y) => isInsideImage(x, y) || insideFigure(x, y);
 
-    // Raster images swallowed by a figure bbox are dropped: the figure crop
-    // renders the whole area, including the embedded raster content.
-    const keptImageRegions = imageRegions.filter(ir => {
-        if (!figureRegions.length) return true;
-        const b = ir.bbox;
-        return !figureRegions.some(f => {
-            const iw = Math.min(b.x + b.w, f.bbox.x + f.bbox.w) - Math.max(b.x, f.bbox.x);
-            const ih = Math.min(b.y + b.h, f.bbox.y + f.bbox.h) - Math.max(b.y, f.bbox.y);
-            return iw > 0 && ih > 0 && (iw * ih) / (b.w * b.h || 1) > 0.6;
-        });
-    });
-
     const tableSegs = filterTableSegs(segments, underlineSegIds, isInsideImageOrFigure, viewport);
-    const regions = [...keptImageRegions, ...figureRegions];
+    const regions = [...keptImageRegions];
 
     // ── 4. Build PageGraph (shared spatial context) ─────────────────────────
     const pageGraph = PageGraph.build(segments, textMeta, viewport, imageBBoxes, underlineSegIds);
@@ -313,18 +305,19 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         assignedTextIndices.add(idx);
     }
 
-    // Claim figure label text: items whose center sits inside a vector figure
-    // belong to the figure crop, not to the paragraph flow.
-    if (figureRegions.length) {
+    // Claim diagram label text: items whose center sits inside a region that
+    // contains drawn ink belong to that picture's crop, not to the paragraph
+    // flow. Pure raster regions are handled separately below — a scanned page
+    // or a full-bleed background is a picture with real body text over it, and
+    // must not swallow the page.
+    for (const ir of keptImageRegions) {
+        if (!ir.vectorFigure) continue;
         for (const tm of textMeta) {
             if (!tm.str.trim() || assignedTextIndices.has(tm.idx)) continue;
             const cx = tm.vx + (tm.vWidth || 0) / 2;
-            const fig = figureRegions.find(f =>
-                cx >= f.bbox.x && cx <= f.bbox.x + f.bbox.w &&
-                tm.vy >= f.bbox.y && tm.vy <= f.bbox.y + f.bbox.h
-            );
-            if (fig) {
-                fig.textItemIndices.push(tm.idx);
+            if (cx >= ir.bbox.x && cx <= ir.bbox.x + ir.bbox.w &&
+                tm.vy >= ir.bbox.y && tm.vy <= ir.bbox.y + ir.bbox.h) {
+                ir.textItemIndices.push(tm.idx);
                 assignedTextIndices.add(tm.idx);
             }
         }
@@ -351,6 +344,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         // background) have hundreds of items and must keep their text.
         const POSTER_MAX_ITEMS = 60;
         for (const ir of keptImageRegions) {
+            if (ir.vectorFigure) continue;   // already claimed as a diagram above
             const b = ir.bbox;
             const isInset = (b.w * b.h) / pageArea <= 0.35 &&
                 !(b.w >= viewport.width * 0.85 && b.h >= viewport.height * 0.5);
@@ -395,7 +389,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
 
     // ── 5. Lattice table regions ─────────────────────────────────────────────
     if (!skip.has('LATTICE_TABLE')) {
-        const latticeRegions = detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts, boxRegions);
+        const latticeRegions = detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts, boxRegions, keptImageRegions);
         for (const r of latticeRegions) regions.push(r);
     }
 

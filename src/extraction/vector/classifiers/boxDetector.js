@@ -226,7 +226,46 @@ export function detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale,
     }
 
     _mergeBannersIntoBodies(boxRegions, scale);
+    _dedupeOverlapping(boxRegions, assignedTextIndices);
     return boxRegions;
+}
+
+// Collapse boxes that cover substantially the same area. Admonition panels are
+// routinely drawn with a double rule, an outer and an inner rectangle a few px
+// apart; both close into valid boxes, so both get emitted and the text lands in
+// whichever one the pad reached first — leaving a near-duplicate holding one
+// stray item beside the real region.
+//
+// Neither "keep the outer" nor "keep the inner" is right: which rectangle wins
+// the text depends only on rounding. Keep whichever actually holds the content.
+function _dedupeOverlapping(boxRegions, assignedTextIndices) {
+    for (let i = boxRegions.length - 1; i >= 0; i--) {
+        const a = boxRegions[i];
+        for (let j = 0; j < boxRegions.length; j++) {
+            if (i === j) continue;
+            const b = boxRegions[j];
+            const iw = Math.min(a.bbox.x + a.bbox.w, b.bbox.x + b.bbox.w) - Math.max(a.bbox.x, b.bbox.x);
+            const ih = Math.min(a.bbox.y + a.bbox.h, b.bbox.y + b.bbox.h) - Math.max(a.bbox.y, b.bbox.y);
+            if (iw <= 0 || ih <= 0) continue;
+            const smaller = Math.min(a.bbox.w * a.bbox.h, b.bbox.w * b.bbox.h) || 1;
+            if ((iw * ih) / smaller < 0.8) continue;
+
+            // Loser is the one holding less text; ties go to the smaller box so
+            // a wrapper never survives over the panel it wraps.
+            const aLoses = a.textItemIndices.length < b.textItemIndices.length ||
+                (a.textItemIndices.length === b.textItemIndices.length &&
+                    a.bbox.w * a.bbox.h > b.bbox.w * b.bbox.h);
+            if (!aLoses) continue;
+
+            // Hand the stray items to the survivor rather than dropping them.
+            for (const idx of a.textItemIndices) {
+                if (!b.textItemIndices.includes(idx)) b.textItemIndices.push(idx);
+                assignedTextIndices.add(idx);
+            }
+            boxRegions.splice(i, 1);
+            break;
+        }
+    }
 }
 
 // Merge each banner box ("! WARNING" bar) into the bordered body box directly
