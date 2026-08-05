@@ -23,6 +23,10 @@ import { classifyPage } from '../extraction/vector/contextClassifier.js';
 import { assemblePage, createFontRegistry } from '../extraction/vector/pageAssembler.js';
 import { synthesizeFromWords, makeSyntheticViewport } from '../extraction/vector/rasterSynth.js';
 import { ensureTesseract, recognizePage } from './tesseractOcr.js';
+import { htmlToGxDoc } from '../ir/htmlToGxDoc.js';
+import { gxDocToHtml } from '../ir/gxDocToHtml.js';
+import { docxToGxDoc } from '../ir/docxToGxDoc.js';
+import { jsonToGxDoc } from '../ir/jsonToGxDoc.js';
 // analyzePanel.js is injected by os-shell.js into this iframe at runtime.
 // All calls are proxied through window.__GX_PDF_CORE__ dispatchers set up in app.js.
 const _core = () => window.__GX_PDF_CORE__;
@@ -727,16 +731,26 @@ export function initFileInputs() {
     $('#file1-input').on('change', e => {
         const file = e.target.files[0];
         if (!file) return;
-        _slot1Load = (/\.(html?|md)$/i.test(file.name)
-            ? handleDocumentFile(file)
-            : handleFile(file, 1)).catch(() => {});
+        const route = _routeFile(file.name);
+        _slot1Load = (route === 'docx'
+            ? handleDocxFile(file, 1)
+            : route === 'doc'
+                ? handleDocumentFile(file)
+                : route === 'json'
+                    ? handleJsonFile(file, 1)
+                    : handleFile(file, 1)).catch(() => {});
     });
 
     $('#file2-input').on('change', e => {
         const file = e.target.files[0];
         if (!file) return;
-        if (/\.(html?|md)$/i.test(file.name)) {
+        const route = _routeFile(file.name);
+        if (route === 'docx') {
+            handleDocxFile(file, 2);
+        } else if (route === 'doc') {
             handleDocumentFile(file, 2);
+        } else if (route === 'json') {
+            handleJsonFile(file, 2);
         } else {
             handleFile(file, 2);
         }
@@ -776,8 +790,11 @@ export function initFileInputs() {
             if (e.data?.type === 'ginexys:pdf-bytes') {
                 const { buffer, encoding, fileName, mode } = e.data.payload;
                 const name = fileName ?? 'document.pdf';
-                const isHtml = /\.html?$/i.test(name);
-                const mimeType = isHtml ? 'text/html' : 'application/pdf';
+                const route = _routeFile(name);
+                const mimeType = route === 'docx'
+                    ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                    : route === 'json' ? 'application/json'
+                    : route === 'doc' ? 'text/html' : 'application/pdf';
                 // 0.1.7+ sends base64; older hosts sent a plain byte array.
                 let bytes;
                 if (encoding === 'base64' || typeof buffer === 'string') {
@@ -789,12 +806,23 @@ export function initFileInputs() {
                 }
                 const blob = new Blob([bytes], { type: mimeType });
                 const file = new File([blob], name, { type: mimeType });
-                const process = isHtml ? handleDocumentFile(file) : handleFile(file, 1);
+                const process = route === 'docx' ? handleDocxFile(file, 1)
+                    : route === 'json' ? handleJsonFile(file, 1)
+                    : route === 'doc' ? handleDocumentFile(file)
+                    : handleFile(file, 1);
                 _slot1Load = process.catch(() => {});
                 process.then(() => { if (mode) switchView(mode); });
             }
         });
     }
+}
+
+/** File extension → import pipeline: 'docx' | 'doc' (HTML/MD) | 'json' | 'pdf'. */
+function _routeFile(name) {
+    if (/\.docx$/i.test(name)) return 'docx';
+    if (/\.json$/i.test(name)) return 'json';
+    if (/\.(html?|md)$/i.test(name)) return 'doc';
+    return 'pdf';
 }
 
 async function handleDocumentFile(file, slot = 1) {
@@ -824,6 +852,10 @@ async function handleDocumentFile(file, slot = 1) {
     pdfState.extractedHTML = clean;
     pdfState.extractedText = clean.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     pdfState.file = file;
+    pdfState.gxDoc = htmlToGxDoc(clean, {
+        source: /\.md$/i.test(file.name) ? 'markdown' : 'html',
+        title: file.name,
+    });
     // An imported HTML/Markdown document was never run through the PDF
     // pipeline — no page model, no scanned classification, nothing measured.
     pdfState.extraction = {
@@ -848,6 +880,78 @@ async function handleDocumentFile(file, slot = 1) {
     switchView('html');
     _updateVisualDiffLabels();
     showToast(`${file.name} loaded`, 'success');
+}
+
+async function handleDocxFile(file, slot = 1) {
+    const buf = await file.arrayBuffer();
+    const gxDoc = await docxToGxDoc(buf, { source: 'docx', title: file.name });
+    const html = gxDocToHtml(gxDoc);
+    const pdfState = slot === 2 ? state.pdf2 : state.pdf1;
+    const label = slot === 2 ? 'file2' : 'file1';
+
+    pdfState.gxDoc = gxDoc;
+    pdfState.extractedHTML = html;
+    pdfState.extractedText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    pdfState.file = file;
+    pdfState.extraction = {
+        source: 'docx',
+        pageCount: gxDoc.pages.length,
+        tableCount: null,
+        scannedPageCount: null,
+        isScanned: false,
+    };
+    $(`#${label}-name`).text(file.name);
+    $(`#${label}-input`).closest('.file-btn').addClass('loaded');
+
+    if (slot === 2) {
+        if (state.pdf1.extractedHTML) refreshCodeDiff();
+        _updateVisualDiffLabels();
+        showToast(`${file.name} loaded for compare`, 'success');
+        return;
+    }
+
+    applyHtmlEverywhere(html, null);
+    switchView('html');
+    _updateVisualDiffLabels();
+    showToast(`${file.name} loaded`, 'success');
+}
+
+async function handleJsonFile(file, slot = 1) {
+    try {
+        const text = await file.text();
+        const gxDoc = jsonToGxDoc(text, { source: 'json', title: file.name });
+        const html = gxDocToHtml(gxDoc);
+        const pdfState = slot === 2 ? state.pdf2 : state.pdf1;
+        const label = slot === 2 ? 'file2' : 'file1';
+
+        pdfState.gxDoc = gxDoc;
+        pdfState.extractedHTML = html;
+        pdfState.extractedText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        pdfState.file = file;
+        pdfState.extraction = {
+            source: 'json',
+            pageCount: gxDoc.pages.length,
+            tableCount: null,
+            scannedPageCount: null,
+            isScanned: false,
+        };
+        $(`#${label}-name`).text(file.name);
+        $(`#${label}-input`).closest('.file-btn').addClass('loaded');
+
+        if (slot === 2) {
+            if (state.pdf1.extractedHTML) refreshCodeDiff();
+            _updateVisualDiffLabels();
+            showToast(`${file.name} loaded for compare`, 'success');
+            return;
+        }
+
+        applyHtmlEverywhere(html, null);
+        switchView('html');
+        _updateVisualDiffLabels();
+        showToast(`${file.name} loaded`, 'success');
+    } catch (err) {
+        showToast(`Could not import ${file.name}: ${err.message}`, 'error');
+    }
 }
 
 function markdownToHtml(md) {
@@ -1038,6 +1142,13 @@ async function handleFile(file, pdfIndex) {
 
         pdfState.extractedHTML = data.html;
         pdfState.extractedText = data.text || '';
+        // The typed IR mirrors the rendered HTML so exporters and the MCP fast
+        // path can read blocks without re-parsing the DOM (import-export-gateway.md).
+        pdfState.gxDoc = htmlToGxDoc(data.html, {
+            source: data.source === 'local-ocr-geometry' ? 'pdf-scanned' : 'pdf',
+            title: file.name,
+            pageCount: data.pages?.length ?? null,
+        });
         // Extraction facts the DOM cannot carry — which engine ran, how many
         // pages it saw, and whether the pre-flight classified the document as
         // scanned. The structured MCP reply reports these rather than guessing.

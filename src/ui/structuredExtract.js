@@ -153,14 +153,19 @@ function describeTable(table) {
  * extracted document. Never throws for "nothing loaded" — returns the
  * contract's failure shape instead.
  *
+ * Fast path: when the gx-doc/1 IR is present (state.pdf1.gxDoc), tables are
+ * read from the typed blocks with no DOM re-parse. Fallback: the existing
+ * DOMParser walk, used for any document that predates the IR.
+ *
  * @returns {object} payload — { ok: true, … } or { ok: false, reason, detail }
  */
 export function buildStructuredPayload() {
     const pdf = state.pdf1;
     const html = pdf?.extractedHTML || '';
     const text = pdf?.extractedText || '';
+    const gxDoc = pdf?.gxDoc || null;
 
-    if (!html && !text) {
+    if (!html && !text && !gxDoc) {
         return {
             ok: false,
             reason: 'no-document',
@@ -168,22 +173,41 @@ export function buildStructuredPayload() {
         };
     }
 
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    const tables = [...doc.querySelectorAll('table')].map(describeTable);
+    let tables;
+    let pageCount;
+    if (gxDoc) {
+        // Fast path: typed IR, no DOM re-parse. Cells resolve to a zero-based
+        // grid (header row at r 0) exactly like VisualGridMapper's output.
+        tables = gxDoc.pages.flatMap(p =>
+            (p.blocks || [])
+                .filter(b => b.type === 'table')
+                .map(b => ({
+                    page: p.page,
+                    rows: (b.rows || []).length + 1,
+                    cols: (b.headers?.length || b.rows?.[0]?.length || 0),
+                    confidence: b.confidence ?? null,
+                    cells: _blockToCells(b),
+                    flags: b.flags ?? [],
+                })),
+        );
+        pageCount = (gxDoc.meta?.pageCount ?? gxDoc.pages.length) || null;
+    } else {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        tables = [...doc.querySelectorAll('table')].map(describeTable);
+
+        const pageSections = new Set(
+            [...doc.querySelectorAll('[data-page]')].map(el => el.getAttribute('data-page')),
+        );
+        const meta = pdf.extraction || null;
+        pageCount = meta?.pageCount ?? (pageSections.size || null);
+    }
 
     // Document confidence is the LOWEST table confidence — a document is only
     // as trustworthy as its weakest table. Null when no table measured one.
     const scored = tables.map(t => t.confidence).filter(c => c !== null);
     const confidence = scored.length ? Math.min(...scored) : null;
 
-    // Page count from the extraction result when the pipeline reported one,
-    // else the number of distinct page sections the emitter produced.
     const meta = pdf.extraction || null;
-    const pageSections = new Set(
-        [...doc.querySelectorAll('[data-page]')].map(el => el.getAttribute('data-page')),
-    );
-    const pageCount = meta?.pageCount ?? (pageSections.size || null);
-
     const docFlags = [];
     // scanned-document: the pre-flight analyzer classified a majority of pages
     // as having no vector text substrate, which is what routed the document
@@ -215,4 +239,21 @@ export function buildStructuredPayload() {
         flags: docFlags,
         provenance,
     };
+}
+
+/**
+ * Resolve a gx-doc table block to the contract's cells array (zero-based
+ * grid, post-span positions) so consumers index it without replaying spans.
+ */
+function _blockToCells(block) {
+    const cells = [];
+    (block.headers || []).forEach((h, c) => {
+        cells.push({ r: 0, c, rowSpan: 1, colSpan: 1, text: h, isHeader: true });
+    });
+    (block.rows || []).forEach((row, r) => {
+        row.forEach((cell, c) => {
+            cells.push({ r: r + 1, c, rowSpan: 1, colSpan: 1, text: cell, isHeader: false });
+        });
+    });
+    return cells;
 }

@@ -19,6 +19,7 @@ import { state } from '../state.js';
 import { showToast } from './toast.js';
 import { downloadExtractedHTML, exportExtractedPDF, isProUser, integrationBackendUrl } from './fileUpload.js';
 import { _waitForToolReady } from './analyzePanel.js';
+import { gxDocToHtml } from '../ir/gxDocToHtml.js';
 
 export function initExportSystem() {
     $('#btn-export-main').on('click', (e) => {
@@ -63,8 +64,9 @@ export function initExportSystem() {
 }
 
 async function handleExport(format) {
-    const html = state.pdf1.extractedHTML;
-    if (!html) {
+    const gxDoc = state.pdf1.gxDoc;
+    const html  = state.pdf1.extractedHTML;
+    if (!html && !gxDoc) {
         showToast('No content to export. Load a file first.', 'error');
         return;
     }
@@ -77,13 +79,16 @@ async function handleExport(format) {
             exportExtractedPDF();
             break;
         case 'markdown':
-            await exportToMarkdown(html);
+            await exportToMarkdown(gxDoc ?? null, html);
             break;
         case 'xml':
-            exportToXML(html);
+            exportToXML(gxDoc ?? null, html);
             break;
         case 'doc':
-            exportToDoc(html);
+            exportToDoc(gxDoc ?? null, html);
+            break;
+        case 'json':
+            exportToJson(gxDoc);
             break;
         case 'notion':
         case 'sheets':
@@ -402,7 +407,7 @@ function _absorbFlow(head, cont, join, doc) {
 }
 
 /** Merge all paragraph flow chains in-place, removing absorbed continuations. */
-function mergeFlowChains(doc) {
+export function mergeFlowChains(doc) {
     const byId = new Map();
     doc.querySelectorAll('[id]').forEach(el => byId.set(el.getAttribute('id'), el));
 
@@ -436,11 +441,17 @@ function mergeFlowChains(doc) {
 // Structural wrappers the semantic exporters descend through — reading order is
 // child order within each (page-row → col → zone → region), so a plain
 // depth-first walk over children yields blocks in reading order.
-const FLOW_WRAPPER_RE = /\bpdf-(page-row|col|zone|region)\b/;
+export const FLOW_WRAPPER_RE = /\bpdf-(page-row|col|zone|region)\b/;
 
 // ── Markdown export ───────────────────────────────────────────────────────────
 
-async function exportToMarkdown(html) {
+async function exportToMarkdown(gxDoc, html) {
+    if (gxDoc) {
+        showToast('Generating Markdown…', 'info');
+        downloadBlob(gxDocToMarkdown(gxDoc), 'text/markdown', 'md');
+        showToast('Markdown exported', 'success');
+        return;
+    }
     showToast('Generating Markdown…', 'info');
     const doc = parseDoc(html);
     mergeFlowChains(doc);
@@ -536,7 +547,14 @@ async function exportToMarkdown(html) {
 
 // ── XML export ────────────────────────────────────────────────────────────────
 
-function exportToXML(html) {
+function exportToXML(gxDoc, html) {
+    if (gxDoc) {
+        showToast('Generating XML…', 'info');
+        const name = baseName();
+        downloadBlob(gxDocToXml(gxDoc, name), 'application/xml', 'xml');
+        showToast('XML exported', 'success');
+        return;
+    }
     showToast('Generating XML…', 'info');
     const doc = parseDoc(html);
     mergeFlowChains(doc);
@@ -626,9 +644,10 @@ function exportToXML(html) {
 
 // ── DOC export (HTML → Office mhtml envelope) ─────────────────────────────────
 
-function exportToDoc(html) {
+function exportToDoc(gxDoc, html) {
     showToast('Generating Word document…', 'info');
     const name = baseName();
+    const body = gxDoc ? gxDocToHtml(gxDoc) : html;
 
     const doc = `
 <html xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -656,12 +675,153 @@ function exportToDoc(html) {
   </style>
 </head>
 <body>
-${html}
+${body}
 </body>
 </html>`.trim();
 
     downloadBlob(doc, 'application/msword', 'doc');
     showToast('Word document exported', 'success');
+}
+
+// ── JSON export (gx-doc/1 IR) ─────────────────────────────────────────────────
+
+function exportToJson(gxDoc) {
+    if (!gxDoc) {
+        showToast('No structured document in state.', 'error');
+        return;
+    }
+    downloadBlob(JSON.stringify(gxDoc, null, 2), 'application/json', 'json');
+    showToast('JSON exported', 'success');
+}
+
+// ── gx-doc emitters (typed IR path for Markdown / XML) ────────────────────────
+
+/** Render a block's runs to inline Markdown; falls back to its plain text. */
+function runsToMarkdown(block) {
+    if (!Array.isArray(block.runs) || !block.runs.length) return block.text || '';
+    return block.runs.map(r => {
+        const s = r.text || '';
+        if (r.bold && r.italic) return `***${s}***`;
+        if (r.bold) return `**${s}**`;
+        if (r.italic) return `*${s}*`;
+        return s;
+    }).join('');
+}
+
+function gxDocToMarkdown(gxDoc) {
+    const lines = [];
+    gxDoc.pages.forEach((page, pi) => {
+        if (pi > 0) lines.push('\n---\n');
+        // Array order is the emitter's reading order (column-major inside a
+        // page row) — identical to the DOM-walk export it replaces.
+        for (const b of page.blocks) {
+            switch (b.type) {
+                case 'heading':
+                    lines.push(`${'#'.repeat(b.level)} ${runsToMarkdown(b).trim()}\n`);
+                    break;
+                case 'paragraph': {
+                    const text = runsToMarkdown(b).trim();
+                    if (text) lines.push(text + '\n');
+                    break;
+                }
+                case 'table':
+                    lines.push(gxTableToMarkdown(b) + '\n');
+                    break;
+                case 'list':
+                    (b.items || []).forEach((item, i) => {
+                        lines.push(`${b.ordered ? `${i + 1}.` : '-'} ${item}`);
+                    });
+                    lines.push('');
+                    break;
+                case 'callout': {
+                    const role = b.kind === 'warning' ? '> **⚠ Warning**\n>\n'
+                        : b.kind === 'caution' ? '> **⚡ Caution**\n>\n'
+                        : b.kind === 'note' ? '> **ℹ Note**\n>\n'
+                        : b.kind === 'tip' ? '> **✅ Tip**\n>\n'
+                        : '> ';
+                    const body = (b.text || '').split('\n').map(l => `> ${l}`).join('\n');
+                    lines.push(role + body + '\n');
+                    break;
+                }
+                case 'image':
+                    lines.push(`![Image ${b.id}](image_${b.id}.png)\n`);
+                    break;
+                case 'divider':
+                    lines.push('---\n');
+                    break;
+            }
+        }
+    });
+    return lines.join('\n');
+}
+
+function gxTableToMarkdown(b) {
+    const grid = [b.headers || [], ...(b.rows || [])].filter(row => row.length);
+    if (!grid.length) return '';
+    const header = grid[0];
+    const sep = header.map(() => '---');
+    const body = grid.slice(1);
+    const escCell = c => String(c == null ? '' : c).replace(/\|/g, '\\|');
+    const lines = [
+        `| ${header.map(escCell).join(' | ')} |`,
+        `| ${sep.join(' | ')} |`,
+        ...body.map(row => `| ${row.map(escCell).join(' | ')} |`),
+    ];
+    return lines.join('\n');
+}
+
+function gxDocToXml(gxDoc, name) {
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<document name="${xmlEsc(name)}">\n`;
+    gxDoc.pages.forEach((page, pi) => {
+        xml += `  <page number="${page.page ?? (pi + 1)}">\n`;
+        for (const b of page.blocks) {
+            switch (b.type) {
+                case 'heading':
+                    xml += `    <heading level="${b.level}">${xmlEsc(b.text || '')}</heading>\n`;
+                    break;
+                case 'paragraph':
+                    if (b.text) xml += `    <paragraph>${xmlEsc(b.text)}</paragraph>\n`;
+                    break;
+                case 'table':
+                    xml += gxTableToXml(b, '    ') + '\n';
+                    break;
+                case 'list':
+                    xml += `    <list type="${b.ordered ? 'ordered' : 'unordered'}">\n`;
+                    (b.items || []).forEach(item => xml += `      <item>${xmlEsc(item)}</item>\n`);
+                    xml += `    </list>\n`;
+                    break;
+                case 'callout':
+                    xml += `    <callout type="${xmlEsc(b.kind || 'box')}">${xmlEsc(b.text || '')}</callout>\n`;
+                    break;
+                case 'image':
+                    xml += `    <image ref="${xmlEsc(b.id || '')}"/>\n`;
+                    break;
+                case 'divider':
+                    xml += `    <divider/>\n`;
+                    break;
+            }
+        }
+        xml += `  </page>\n`;
+    });
+    xml += `</document>`;
+    return xml;
+}
+
+function gxTableToXml(b, indent) {
+    const i = indent;
+    let out = `${i}<table>\n`;
+    if (b.headers && b.headers.length) {
+        out += `${i}  <row>\n`;
+        b.headers.forEach(h => out += `${i}    <header>${xmlEsc(h)}</header>\n`);
+        out += `${i}  </row>\n`;
+    }
+    (b.rows || []).forEach(row => {
+        out += `${i}  <row>\n`;
+        row.forEach(cell => out += `${i}    <cell>${xmlEsc(cell)}</cell>\n`);
+        out += `${i}  </row>\n`;
+    });
+    out += `${i}</table>`;
+    return out;
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

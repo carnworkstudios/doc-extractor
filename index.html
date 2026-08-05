@@ -195,7 +195,7 @@
                     <line x1="12" y1="3" x2="12" y2="15" />
                 </svg>
                 <span id="file1-name">Open File</span>
-                <input id="file1-input" type="file" accept="application/pdf,text/html,.html,text/markdown,.md" />
+                <input id="file1-input" type="file" accept="application/pdf,text/html,.html,text/markdown,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/json,.json" />
             </label>
             <label class="file-btn file-btn--secondary" id="file2-label" title="Load a second file to compare (PDF, HTML, Markdown)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -204,7 +204,7 @@
                     <line x1="8" y1="12" x2="16" y2="12" />
                 </svg>
                 <span id="file2-name">Compare File</span>
-                <input id="file2-input" type="file" accept="application/pdf,text/html,.html,text/markdown,.md" />
+                <input id="file2-input" type="file" accept="application/pdf,text/html,.html,text/markdown,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/json,.json" />
             </label>
 
             <!-- AI Open Core Premium Features UI -->
@@ -284,6 +284,9 @@
                     </button>
                     <button class="dropdown-item" data-format="doc">
                         <span class="item-icon"><iconify-icon icon="material-symbols:description-outline"></iconify-icon></span> Word Document (.doc)
+                    </button>
+                    <button class="dropdown-item" data-format="json">
+                        <span class="item-icon"><iconify-icon icon="material-symbols:data-object-outline"></iconify-icon></span> Structured JSON (.json)
                     </button>
                     <div class="dropdown-divider"></div>
                     <div class="dropdown-item gx-pro-locked" data-format="notion" style="position:relative">
