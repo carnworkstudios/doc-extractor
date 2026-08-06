@@ -17,7 +17,6 @@ const TOOL_ICONS = {
     rect: 'ann-tool-rect',
     ellipse: 'ann-tool-ellipse',
     arrow: 'ann-tool-arrow',
-    text: 'ann-tool-text',
     measure: 'ann-tool-measure',
 };
 
@@ -60,7 +59,7 @@ export function initAnnotationToolbar() {
         if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
         if (e.target.isContentEditable) return;
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        const map = { v: 'select', h: 'highlight', p: 'ink', r: 'rect', o: 'ellipse', a: 'arrow', t: 'text', m: 'measure' };
+        const map = { v: 'select', h: 'highlight', p: 'ink', r: 'rect', o: 'ellipse', a: 'arrow', m: 'measure' };
         const tool = map[e.key.toLowerCase()];
         if (tool) {
             e.preventDefault();

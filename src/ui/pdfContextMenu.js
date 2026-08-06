@@ -11,6 +11,7 @@ import * as annEngine from '../annotation/engine.js';
 import { renderLinksTab } from './navPanel.js';
 import { showToast } from './toast.js';
 import { getEffectiveActiveView } from './viewController.js';
+import { setTextEditMode, isTextEditMode } from './pdfTextEdit.js';
 
 let $popover = null;
 let currentSelection = null; // { text, page, rect, range }
@@ -31,8 +32,8 @@ function _createPopoverDOM() {
             <button class="pdf-ctx-btn" id="pdf-ctx-highlight" title="Highlight text">
                 <iconify-icon icon="material-symbols:format-ink-highlighter"></iconify-icon> Highlight
             </button>
-            <button class="pdf-ctx-btn" id="pdf-ctx-edit" title="Edit text">
-                <iconify-icon icon="material-symbols:edit-outline"></iconify-icon> Edit
+            <button class="pdf-ctx-btn" id="pdf-ctx-text" title="Edit this text in place">
+                <iconify-icon icon="material-symbols:text-fields"></iconify-icon> Text
             </button>
             <button class="pdf-ctx-btn del" id="pdf-ctx-remove" title="Remove link / annotation">
                 <iconify-icon icon="material-symbols:delete-outline"></iconify-icon> Clear
@@ -53,7 +54,7 @@ function _createPopoverDOM() {
         _highlightSelection();
     });
 
-    $popover.find('#pdf-ctx-edit').on('click', (e) => {
+    $popover.find('#pdf-ctx-text').on('click', (e) => {
         e.stopPropagation();
         _editSelectionText();
     });
@@ -78,6 +79,60 @@ function _bindSelectionListeners() {
     $(window).on('scroll resize', () => {
         hidePdfContextMenu();
     });
+}
+
+/**
+ * Convert a CLIENT rect (viewport px, scroll-dependent) into DISPLAY space —
+ * PDF points, origin at the page's top-left, y down.
+ *
+ * This is the conversion the whole annotation stack assumes and this file was
+ * skipping. `getClientRects()` returns browser-viewport coordinates; the
+ * annotation engine, the SVG overlay (viewBox "0 0 pageW pageH") and the PDF
+ * exporter all read display space. Storing one as the other put every
+ * selection-derived highlight and link at an offset that also moved with
+ * scroll position.
+ *
+ * Reading through the wrapper's own bounding rect means the page's render
+ * scale and the CSS `zoom` on .page-wrapper are both already accounted for.
+ */
+function _clientRectToDisplay(rect, wrapper) {
+    const wr = wrapper.getBoundingClientRect();
+    const pageW = parseFloat(wrapper.dataset.pageW) || wr.width;
+    const pageH = parseFloat(wrapper.dataset.pageH) || wr.height;
+    if (!wr.width || !wr.height) return null;
+    const sx = pageW / wr.width;
+    const sy = pageH / wr.height;
+    return {
+        x: (rect.left - wr.left) * sx,
+        y: (rect.top - wr.top) * sy,
+        w: rect.width * sx,
+        h: rect.height * sy,
+    };
+}
+
+/**
+ * Split a selection into one display-space rect PER LINE, each tagged with the
+ * page it fell on. getClientRects() yields a rect per line box, so a selection
+ * spanning three lines produces three rects. The old code took rects[0] and
+ * discarded the rest, so a multi-line highlight only ever marked its first line.
+ */
+function _selectionRectsByPage(range) {
+    const wrappers = [...document.querySelectorAll(
+        '#pdf-canvas-container .page-wrapper, #visual-diff-pdf .page-wrapper')];
+    const out = [];
+    for (const r of range.getClientRects()) {
+        if (r.width < 0.5 || r.height < 0.5) continue;
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const wrapper = wrappers.find(w => {
+            const b = w.getBoundingClientRect();
+            return cx >= b.left && cx <= b.right && cy >= b.top && cy <= b.bottom;
+        });
+        if (!wrapper) continue;
+        const disp = _clientRectToDisplay(r, wrapper);
+        if (disp) out.push({ page: parseInt(wrapper.dataset.page, 10) || 1, rect: disp });
+    }
+    return out;
 }
 
 function _checkTextSelection() {
@@ -123,6 +178,10 @@ function _checkTextSelection() {
             h: primaryRect.height,
         },
         clientRect: primaryRect,
+        // Display-space, one entry per line box. This is what annotations and
+        // links are built from; `rect` above stays client-space and is only
+        // used to position the popover.
+        displayRects: _selectionRectsByPage(range),
         range: range.cloneRange(),
     };
 
@@ -152,17 +211,24 @@ function _addLinkToSelection() {
         gxDoc.links = gxDoc.links || [];
 
         const isExternal = cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://') || cleanUrl.startsWith('mailto:');
-        const linkObj = {
-            id: `link_${Date.now()}`,
-            page: currentSelection.page,
+        const parts = currentSelection.displayRects || [];
+        if (!parts.length) {
+            showToast('Could not resolve that selection to a page position.', 'error');
+            hidePdfContextMenu();
+            return;
+        }
+        // A link spanning lines needs a clickable rect PER LINE — one union
+        // rect would make the whitespace between lines clickable too.
+        const baseId = `link_${Date.now()}`;
+        parts.forEach((p, i) => gxDoc.links.push({
+            id: parts.length > 1 ? `${baseId}_${i}` : baseId,
+            page: p.page,
             text: currentSelection.text,
             href: cleanUrl,
-            rect: currentSelection.rect,
-            isExternal: isExternal,
-            created: new Date().toISOString()
-        };
-
-        gxDoc.links.push(linkObj);
+            rect: p.rect,
+            isExternal,
+            created: new Date().toISOString(),
+        }));
 
         // Apply blue underline highlight on selected text node
         _applyStyleToRange(currentSelection.range, 'pdf-word-link');
@@ -178,14 +244,22 @@ function _addLinkToSelection() {
 function _highlightSelection() {
     if (!currentSelection) return;
 
-    // Apply vector highlight annotation
-    annEngine.addAnnotation({
+    // One highlight per line box, in DISPLAY space. A multi-line selection is
+    // several rects; a single union rect would also cover the page margins
+    // between the lines.
+    const parts = currentSelection.displayRects || [];
+    if (!parts.length) {
+        showToast('Could not resolve that selection to a page position.', 'error');
+        hidePdfContextMenu();
+        return;
+    }
+    parts.forEach(p => annEngine.addAnnotation({
         kind: 'highlight',
-        page: currentSelection.page,
-        rect: currentSelection.rect,
+        page: p.page,
+        rect: p.rect,
         style: { color: '#ffeb3b', opacity: 0.4 },
-        text: currentSelection.text
-    });
+        text: currentSelection.text,
+    }));
 
     _applyStyleToRange(currentSelection.range, 'pdf-word-highlight');
     showToast(`Highlighted "${currentSelection.text}"`, 'success');
@@ -194,23 +268,36 @@ function _highlightSelection() {
     window.getSelection().removeAllRanges();
 }
 
+/**
+ * Enter Edit Text mode and drop the caret into the run the user selected.
+ *
+ * This used to open a `prompt()` and splice a fresh <span> into the layer. That
+ * span had no `data-orig` and no geometry, so the export diff could not see it:
+ * the edit showed on screen and never reached the exported PDF. Routing through
+ * the real surface means one editing path, and every edit is exportable.
+ */
 function _editSelectionText() {
-    if (!currentSelection) return;
-
-    const newText = prompt('Edit PDF text:', currentSelection.text);
-    if (newText !== null && newText.trim() !== '') {
-        const span = document.createElement('span');
-        span.className = 'pdf-edited-text';
-        span.textContent = newText.trim();
-
-        currentSelection.range.deleteContents();
-        currentSelection.range.insertNode(span);
-
-        showToast('Text updated', 'success');
-    }
-
+    const sel = currentSelection;
     hidePdfContextMenu();
+    if (!sel) return;
+
+    if (!isTextEditMode()) setTextEditMode(true);
+
+    // Resolve the selection back to its owning span, then place the caret there.
+    const node = sel.range?.commonAncestorContainer;
+    const span = (node?.nodeType === 3 ? node.parentElement : node)?.closest?.('.pdf-text-span');
+
     window.getSelection().removeAllRanges();
+    if (!span) {
+        showToast('Edit Text mode on — click any text to edit it.', 'info');
+        return;
+    }
+    span.focus();
+    const r = document.createRange();
+    r.selectNodeContents(span);
+    const s2 = window.getSelection();
+    s2.removeAllRanges();
+    s2.addRange(r);
 }
 
 function _clearSelectionMarks() {

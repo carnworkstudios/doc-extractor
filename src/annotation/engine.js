@@ -35,8 +35,8 @@ export const MODES = ['text', 'annotate'];
 //   draw     — drag creates a new annotation (highlight/ink/rect/ellipse/arrow/measure)
 //   text     — click places a text note, inline edit commits
 //   select   — click/drag manipulates existing annotations
-export const TOOLS = ['select', 'highlight', 'ink', 'rect', 'ellipse', 'arrow', 'text', 'measure'];
-export const DRAW_TOOLS = new Set(['highlight', 'ink', 'rect', 'ellipse', 'arrow', 'text', 'measure']);
+export const TOOLS = ['select', 'highlight', 'ink', 'rect', 'ellipse', 'arrow', 'measure'];
+export const DRAW_TOOLS = new Set(['highlight', 'ink', 'rect', 'ellipse', 'arrow', 'measure']);
 
 const MIN_DIM = 3;          // minimum drag size for rect/ellipse/highlight
 const INK_MIN_DIST = 1.5;   // display-space px between ink samples
@@ -137,7 +137,7 @@ export function toggleToolLock() {
  */
 function _maybeRevertTool() {
     if (_toolLock) return;
-    if (_tool !== 'text' && DRAW_TOOLS.has(_tool)) setTool('select');
+    if (DRAW_TOOLS.has(_tool)) setTool('select');
 }
 
 // ── Sync with the gx-doc IR ──────────────────────────────────────────────────

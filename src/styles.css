@@ -556,19 +556,21 @@ body {
 /* ── PDF editable text layer — edit-mode styling ────────────────────────── */
 
 /* Layer container: invisible to mouse at rest (canvas shows through).
-   When focused, it captures keystrokes and becomes the execCommand target. */
+   Focus must NOT make the spans opaque — the canvas still has the original
+   glyphs under them, so painting a second copy on top reads as doubled text.
+   Use Edit Text mode for visible editing; there the canvas text is masked. */
 .editable-text-layer:focus-within .pdf-text-span,
 .editable-text-layer:focus .pdf-text-span {
-  color: rgba(0, 0, 0, 0.85) !important;
-  background: rgba(255, 255, 255, 0.88);
   border-radius: 2px;
   box-shadow: 0 0 0 1px rgba(79, 172, 254, 0.35);
 }
 
 /* Highlight on hover even without focus */
+/* Hover must NOT reveal the span's own glyphs. The canvas already has them
+   painted underneath, so any visible colour here renders the text twice,
+   slightly offset. Tint the background only. */
 .pdf-text-span:hover {
   background: rgba(79, 172, 254, 0.12);
-  color: rgba(0, 0, 0, 0.7) !important;
 }
 
 /* ── PDF edit-text mode ─────────────────────────────────────────────────────
@@ -579,13 +581,10 @@ body {
    reproduces (cover the original box, draw the new string). The structural
    document is extracted headlessly by the geometry worker, so hiding the
    raster here costs nothing. */
+/* The canvas STAYS VISIBLE — figures, rules and background art are still the
+   document. Only its text is masked, in JS, by pdfTextEdit.js. */
 .pdf-text-edit-mode .page-wrapper {
-  background: #ffffff;
   box-shadow: inset 0 0 0 1px var(--border-dark, #d6dae1);
-}
-
-.pdf-text-edit-mode .page-wrapper > canvas {
-  visibility: hidden;
 }
 
 .pdf-text-edit-mode .pdf-text-span,
@@ -602,6 +601,20 @@ body {
 }
 
 .pdf-text-edit-mode .editable-text-layer {
+  outline: none;
+}
+
+/* A run that could not be shrunk far enough to fit its slot. Flagged rather
+   than silently clipped or shrunk into illegibility. */
+.pdf-text-edit-mode .pdf-text-span--overflow {
+  background: rgba(239, 68, 68, 0.12);
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.55);
+}
+
+/* Each span is its own editable box in this mode, so give it a real caret
+   target and keep the browser from collapsing it when emptied. */
+.pdf-text-edit-mode .pdf-text-span {
+  min-width: 2px;
   outline: none;
 }
 
@@ -1027,7 +1040,6 @@ body.format-painter-active .editable-text-layer {
 }
 
 .editable-text-layer span:hover {
-  color: rgba(0, 0, 0, 0.05);
   background: rgba(79, 172, 254, 0.08);
 }
 

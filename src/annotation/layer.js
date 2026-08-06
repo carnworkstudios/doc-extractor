@@ -113,6 +113,11 @@ function syncEnvironment(handle) {
         const svg = wrapper.querySelector('.annotation-layer');
         if (svg) svg.style.pointerEvents = (!handle.readOnly && annotating) ? 'auto' : 'none';
         const textLayer = wrapper.querySelector('.editable-text-layer');
+        // Edit-text mode owns contenteditable placement (it moves the editing
+        // host down onto each span). Re-asserting it here would put the host
+        // back on the wrapper and break caret scoping.
+        const textEditing = wrapper.closest('.pdf-text-edit-mode') !== null;
+        if (textEditing) return;
         if (textLayer) textLayer.contentEditable = annotating ? 'false' : 'true';
         wrapper.contentEditable = annotating ? 'false' : 'true';
     });
