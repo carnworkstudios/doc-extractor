@@ -680,8 +680,13 @@ function exportToDoc(gxDoc, html) {
     showToast('Generating Word document…', 'info');
     const name = baseName();
     const body = gxDoc ? gxDocToHtml(gxDoc) : html;
+    downloadBlob(wrapAsWordDoc(body, name), 'application/msword', 'doc');
+    showToast('Word document exported', 'success');
+}
 
-    const doc = `
+/** The Office HTML envelope Word opens as a document. */
+export function wrapAsWordDoc(body, name) {
+    return `
 <html xmlns:o="urn:schemas-microsoft-com:office:office"
       xmlns:w="urn:schemas-microsoft-com:office:word"
       xmlns="http://www.w3.org/TR/REC-html40">
@@ -710,9 +715,80 @@ function exportToDoc(gxDoc, html) {
 ${body}
 </body>
 </html>`.trim();
+}
 
-    downloadBlob(doc, 'application/msword', 'doc');
-    showToast('Word document exported', 'success');
+// ── Pure render surface (used by the batch combined export) ───────────────────
+
+/**
+ * Render a gx-doc to a target format WITHOUT downloading it.
+ *
+ * The single-document exporters above own the download + toast + analytics.
+ * Batch needs the same emitters against a MERGED gx-doc under a different file
+ * name, so the string production is exposed here rather than duplicated. Every
+ * format below is gx-doc-first, which is the whole reason combined export is a
+ * merge problem and not six format-specific merge problems.
+ *
+ * @returns {{content: string, mime: string, ext: string}}
+ */
+export function renderGxDocAs(format, gxDoc, name = 'document') {
+    switch (format) {
+        case 'markdown':
+            return { content: gxDocToMarkdown(gxDoc), mime: 'text/markdown', ext: 'md' };
+        case 'xml':
+            return { content: gxDocToXml(gxDoc, name), mime: 'application/xml', ext: 'xml' };
+        case 'doc':
+            return { content: wrapAsWordDoc(gxDocToHtml(gxDoc), name), mime: 'application/msword', ext: 'doc' };
+        case 'json':
+            return { content: JSON.stringify(gxDoc, null, 2), mime: 'application/json', ext: 'json' };
+        case 'html':
+            return { content: wrapAsStandaloneHtml(gxDocToHtml(gxDoc), name), mime: 'text/html', ext: 'html' };
+        default:
+            throw new Error(`Unsupported render format: ${format}`);
+    }
+}
+
+/** Minimal self-contained HTML document around rendered gx-doc markup. */
+export function wrapAsStandaloneHtml(body, name) {
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${xmlEsc(name)}</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.6;
+         max-width: 900px; margin: 0 auto; padding: 40px 24px; color: #111; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  td, th { border: 1px solid #999; padding: 6px 10px; font-size: 14px; text-align: left; }
+  th { background: #f2f2f2; }
+  aside { border: 1px solid #888; padding: 8px 14px; margin: 12px 0; }
+  img { max-width: 100%; height: auto; }
+  hr { border: none; border-top: 1px solid #ccc; margin: 20px 0; }
+</style>
+</head>
+<body>
+${body}
+</body>
+</html>`;
+}
+
+/** Download a rendered payload under an explicit name (batch export path). */
+export function downloadRendered({ content, mime, ext }, fileName) {
+    try {
+        window.GxTrack?.('document_exported', {
+            tool: 'pdf-processor',
+            export_format: ext,
+            size_bytes: typeof content === 'string' ? content.length : null,
+            batch: true,
+        });
+    } catch (_) { /* analytics is never load-bearing */ }
+
+    const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${fileName}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(a.href);
 }
 
 // ── JSON export (gx-doc/1 IR) ─────────────────────────────────────────────────

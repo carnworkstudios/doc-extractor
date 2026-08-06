@@ -15,6 +15,11 @@ import { htmlToGxDoc } from '../ir/htmlToGxDoc.js';
 import { gxDocToHtml } from '../ir/gxDocToHtml.js';
 import { docxToGxDoc } from '../ir/docxToGxDoc.js';
 import { jsonToGxDoc } from '../ir/jsonToGxDoc.js';
+import { mergeGxDocs } from '../ir/mergeGxDocs.js';
+import { renderGxDocAs, downloadRendered } from './exportController.js';
+import { buildAnnotatedPdf } from '../annotation/exportPdf.js';
+import { syncTextEditsToGxDoc } from './pdfTextEdit.js';
+import { PDFDocument } from 'pdf-lib';
 
 export let batchQueue = null;
 export let workerPool = null;
@@ -135,14 +140,32 @@ function _renderBatchUI() {
                 <!-- BATCH TOOLBAR -->
                 <div class="nav-batch-toolbar" style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
                     <span id="nav-batch-count" style="font-size: 11px; font-weight: 600; color: #64748b;">${items.length} Documents</span>
-                    <div style="display: flex; gap: 6px;">
-                        <button id="nav-batch-export-btn" class="nav-action-btn" title="Export Batch JSON" style="font-size: 11px; padding: 3px 8px;">
+                    <button id="nav-batch-clear-btn" class="nav-action-btn" title="Clear Batch Queue" style="font-size: 11px; padding: 3px 6px;">
+                        <iconify-icon icon="material-symbols:delete-outline"></iconify-icon>
+                    </button>
+                </div>
+
+                <!-- EXPORT BAR -->
+                <div class="nav-batch-export" style="display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f8fafc;">
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <select id="nav-batch-format" style="flex: 1; font-size: 11px; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; color: #0f172a;">
+                            <option value="markdown">Markdown (.md)</option>
+                            <option value="html">HTML (.html)</option>
+                            <option value="json">gx-doc JSON (.json)</option>
+                            <option value="xml">XML (.xml)</option>
+                            <option value="doc">Word (.doc)</option>
+                            <option value="pdf">PDF (.pdf)</option>
+                            <option value="manifest">Batch manifest (.json)</option>
+                        </select>
+                        <button id="nav-batch-export-btn" class="nav-action-btn" title="Export the batch" style="font-size: 11px; padding: 3px 8px;">
                             <iconify-icon icon="material-symbols:download"></iconify-icon> Export
                         </button>
-                        <button id="nav-batch-clear-btn" class="nav-action-btn" title="Clear Batch Queue" style="font-size: 11px; padding: 3px 6px;">
-                            <iconify-icon icon="material-symbols:delete-outline"></iconify-icon>
-                        </button>
                     </div>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; cursor: pointer;">
+                        <input type="checkbox" id="nav-batch-combine" checked style="margin: 0;" />
+                        <span>Combine into one file</span>
+                    </label>
+                    <div id="nav-batch-export-hint" style="font-size: 10px; color: #94a3b8; line-height: 1.35;"></div>
                 </div>
 
                 <!-- BATCH ITEM LIST -->
@@ -153,6 +176,7 @@ function _renderBatchUI() {
         _wireDropzoneEvents();
     } else {
         $('#nav-batch-count').text(`${items.length} Documents`);
+        _updateExportHint();
     }
 
     _renderBatchItemList(items);
@@ -212,6 +236,40 @@ function _wireDropzoneEvents() {
     });
 
     $('#nav-batch-export-btn').on('click', exportBatchResults);
+    $('#nav-batch-format, #nav-batch-combine').on('change', _updateExportHint);
+    _updateExportHint();
+}
+
+/** Say what the current selection will actually produce, before it produces it. */
+function _updateExportHint() {
+    const $hint = $('#nav-batch-export-hint');
+    if (!$hint.length || !batchQueue) return;
+
+    const format = $('#nav-batch-format').val() || 'markdown';
+    const combine = $('#nav-batch-combine').is(':checked');
+    const done = batchQueue.getAllItems().filter(i => i.status === 'completed');
+
+    if (format === 'manifest') {
+        $('#nav-batch-combine').prop('disabled', true);
+        $hint.text(`One JSON holding every document's IR, HTML, text and lineage graph (${done.length} documents).`);
+        return;
+    }
+    $('#nav-batch-combine').prop('disabled', false);
+
+    if (format === 'pdf') {
+        const pdfs = done.filter(i => i.format === 'pdf' && i.bytes).length;
+        const skipped = done.length - pdfs;
+        $hint.text(combine
+            ? `Merges ${pdfs} PDF${pdfs !== 1 ? 's' : ''} into one file with annotations, links and bookmarks.${skipped ? ` ${skipped} non-PDF skipped.` : ''}`
+            : `${pdfs} separate annotated PDF${pdfs !== 1 ? 's' : ''}.${skipped ? ` ${skipped} non-PDF skipped.` : ''}`);
+        return;
+    }
+
+    const withIr = done.filter(i => i.gxDoc).length;
+    const skipped = done.length - withIr;
+    $hint.text(combine
+        ? `One ${format.toUpperCase()} file, documents in list order, each titled and bookmarked.${skipped ? ` ${skipped} skipped (no IR).` : ''}`
+        : `${withIr} separate ${format.toUpperCase()} files, downloaded one after another.${skipped ? ` ${skipped} skipped (no IR).` : ''}`);
 }
 
 function _renderBatchItemList(items) {
@@ -386,13 +444,140 @@ export async function focusBatchItem(itemId, slotNum = 1) {
     }
 }
 
-export function exportBatchResults() {
+/**
+ * Batch export.
+ *
+ * Combined export is a MERGE problem, not six format problems: every exporter is
+ * already gx-doc-first, so N documents are merged into one gx-doc and handed to
+ * the same emitters a single-document export uses. Only PDF is different —
+ * pages are real objects, so the source PDFs are concatenated with pdf-lib and
+ * the merged annotations/bookmarks/text-edits are drawn onto the result.
+ */
+export async function exportBatchResults() {
     const items = batchQueue.getAllItems().filter(i => i.status === 'completed');
     if (items.length === 0) {
         showToast('No completed batch items to export.', 'warning');
         return;
     }
 
+    // The focused document's text edits live in the DOM until harvested. Its
+    // gxDoc IS the batch item's gxDoc (same object), so this lands in the export.
+    syncTextEditsToGxDoc();
+
+    const format = $('#nav-batch-format').val() || 'markdown';
+    const combine = $('#nav-batch-combine').is(':checked');
+
+    if (format === 'manifest') return exportBatchManifest(items);
+    if (format === 'pdf') return exportBatchPdf(items, combine);
+
+    const withIr = items.filter(i => i.gxDoc);
+    const skipped = items.length - withIr.length;
+    if (!withIr.length) {
+        showToast('No documents have a structured IR to export. Re-run extraction.', 'error');
+        return;
+    }
+
+    try {
+        if (combine) {
+            const merged = mergeGxDocs(
+                withIr.map(i => ({ name: i.name, gxDoc: i.gxDoc })),
+                { title: `Batch of ${withIr.length} documents` },
+            );
+            const name = `batch_${withIr.length}-docs_${_stamp()}`;
+            downloadRendered(renderGxDocAs(format, merged, name), name);
+            showToast(
+                `Exported ${withIr.length} documents as one ${format.toUpperCase()} file` +
+                (skipped ? ` (${skipped} skipped — no IR)` : ''),
+                'success',
+            );
+        } else {
+            // Sequential downloads. There is no archiver dependency in this
+            // submodule, and adding one to a public forkable repo is an
+            // architecture decision, not an export detail.
+            for (const item of withIr) {
+                const name = item.name.replace(/\.[^.]+$/, '');
+                downloadRendered(renderGxDocAs(format, item.gxDoc, name), name);
+                await new Promise(r => setTimeout(r, 120)); // browsers throttle bursts
+            }
+            showToast(
+                `Exported ${withIr.length} separate ${format.toUpperCase()} files` +
+                (skipped ? ` (${skipped} skipped — no IR)` : ''),
+                'success',
+            );
+        }
+    } catch (err) {
+        console.error('[Batch] export failed:', err);
+        showToast(`Batch export failed: ${err.message}`, 'error', 6000);
+    }
+}
+
+/**
+ * Combined PDF: concatenate the source pages, then draw the MERGED gx-doc's
+ * annotations, links, bookmarks and text edits onto the result. Merging first
+ * and annotating second is what keeps page-keyed data pointing at the right
+ * pages — annotating each document separately then concatenating would lose the
+ * outline on the second merge.
+ */
+async function exportBatchPdf(items, combine) {
+    const pdfItems = items.filter(i => i.format === 'pdf' && i.bytes);
+    if (!pdfItems.length) {
+        showToast('No PDF documents in the batch to export as PDF.', 'error');
+        return;
+    }
+    const skipped = items.length - pdfItems.length;
+
+    try {
+        if (!combine) {
+            for (const item of pdfItems) {
+                const out = await buildAnnotatedPdf({ bytes: item.bytes.slice(), gxDoc: item.gxDoc || {} });
+                downloadRendered(
+                    { content: new Blob([out], { type: 'application/pdf' }), mime: 'application/pdf', ext: 'pdf' },
+                    item.name.replace(/\.pdf$/i, ''),
+                );
+                await new Promise(r => setTimeout(r, 120));
+            }
+            showToast(`Exported ${pdfItems.length} separate PDFs`, 'success');
+            return;
+        }
+
+        showToast(`Merging ${pdfItems.length} PDFs…`, 'info');
+        const out = await PDFDocument.create();
+        for (const item of pdfItems) {
+            const src = await PDFDocument.load(item.bytes.slice(), { ignoreEncryption: true });
+            const copied = await out.copyPages(src, src.getPageIndices());
+            copied.forEach(p => out.addPage(p));
+        }
+        const mergedBytes = await out.save();
+
+        // Only the PDF items contribute pages, so the gx-doc merge must use the
+        // same set in the same order or every page number would be off.
+        const mergedDoc = mergeGxDocs(
+            pdfItems.map(i => ({ name: i.name, gxDoc: i.gxDoc })),
+            { title: `Batch of ${pdfItems.length} PDFs` },
+        );
+
+        const final = await buildAnnotatedPdf({ bytes: mergedBytes, gxDoc: mergedDoc });
+        const name = `batch_${pdfItems.length}-pdfs_${_stamp()}`;
+        downloadRendered(
+            { content: new Blob([final], { type: 'application/pdf' }), mime: 'application/pdf', ext: 'pdf' },
+            name,
+        );
+        showToast(
+            `Merged ${pdfItems.length} PDFs into one file` + (skipped ? ` (${skipped} non-PDF skipped)` : ''),
+            'success',
+        );
+    } catch (err) {
+        console.error('[Batch] PDF export failed:', err);
+        showToast(`PDF export failed: ${err.message}`, 'error', 6000);
+    }
+}
+
+function _stamp() {
+    return new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+}
+
+/** The original all-in-one manifest: every document's IR plus its lineage. */
+function exportBatchManifest(items) {
     const exportData = {
         schema: 'ginexys-batch-export-v1',
         exportedAt: new Date().toISOString(),
