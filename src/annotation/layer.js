@@ -93,9 +93,11 @@ function createSvg(wrapper, readOnly) {
     const canvas = wrapper.querySelector('canvas');
     const pageW = parseFloat(wrapper.dataset.pageW) || ((canvas?.width || 0) / 1.5);
     const pageH = parseFloat(wrapper.dataset.pageH) || ((canvas?.height || 0) / 1.5);
+    const pageNum = wrapper.dataset.page || '1';
     const svg = el('svg', {
         class: 'annotation-layer',
         'data-annotation-layer': '1',
+        'data-page': pageNum,
         viewBox: `0 0 ${pageW} ${pageH}`,
         preserveAspectRatio: 'none',
     });
@@ -204,7 +206,7 @@ function renderAnnotation(svg, ann, selected) {
             }
             break;
         case 'text':
-            root('text', {}, [
+            root('textnote', {}, [
                 el('text', {
                     x: ann.rect.x, y: ann.rect.y + (st.fontSize || 14),
                     'font-size': st.fontSize || 14,
@@ -398,18 +400,23 @@ function startSelectGesture(e, wrapper, pageNum, pt) {
 
 function startMoveGesture(e, wrapper, ann, pt) {
     const svg = wrapper.querySelector('.annotation-layer');
+    const annId = ann.id;
     engine.beginGesture();
     const move = ev => {
         const p = toDisplay(svg, ev.clientX, ev.clientY);
         const dx = p.x - pt.x, dy = p.y - pt.y;
         pt = p;
-        const b = annotationBBox(ann);
+        // Re-read the annotation's current state from the engine to avoid
+        // accumulating drift from a stale captured reference.
+        const current = engine.getAnnotations().find(a => a.id === annId);
+        if (!current) return;
+        const b = annotationBBox(current);
         const patch = { rect: { x: b.x + dx, y: b.y + dy, w: b.w, h: b.h } };
-        if (ann.points) {
-            patch.points = ann.points.map(([x, y]) => [x + dx, y + dy]);
+        if (current.points) {
+            patch.points = current.points.map(([x, y]) => [x + dx, y + dy]);
             delete patch.rect;
         }
-        engine.updateAnnotationLive(ann.id, patch);
+        engine.updateAnnotationLive(annId, patch);
     };
     const up = () => {
         document.removeEventListener('mousemove', move);
@@ -420,14 +427,17 @@ function startMoveGesture(e, wrapper, ann, pt) {
     document.addEventListener('mouseup', up);
 }
 
-function startResizeGesture(e, wrapper, ann, b, handle, pt) {
+function startResizeGesture(e, wrapper, ann, b, handle, startPt) {
     const svg = wrapper.querySelector('.annotation-layer');
+    const annId = ann.id;
+    const origRect = { ...b };
     engine.beginGesture();
     const move = ev => {
         const p = toDisplay(svg, ev.clientX, ev.clientY);
-        const dx = p.x - pt.x, dy = p.y - pt.y;
-        pt = p;
-        engine.updateAnnotationLive(ann.id, { rect: resizeRect(b, handle, dx, dy) });
+        // Compute total delta from the drag start point (absolute, not incremental)
+        // so each frame applies a clean offset from the original rect snapshot.
+        const dx = p.x - startPt.x, dy = p.y - startPt.y;
+        engine.updateAnnotationLive(annId, { rect: resizeRect(origRect, handle, dx, dy) });
     };
     const up = () => {
         document.removeEventListener('mousemove', move);

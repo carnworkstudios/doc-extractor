@@ -8,6 +8,8 @@
 import $ from 'jquery';
 import * as engine from '../annotation/engine.js';
 
+import { showToast } from './toast.js';
+
 const TOOL_ICONS = {
     select: 'ann-tool-select',
     highlight: 'ann-tool-highlight',
@@ -41,6 +43,14 @@ export function initAnnotationToolbar() {
         if (undoBtn) { engine.undo(); return; }
         const redoBtn = e.target.closest('#btn-ann-redo');
         if (redoBtn) { engine.redo(); return; }
+        const clearBtn = e.target.closest('#btn-ann-clear');
+        if (clearBtn) {
+            if (confirm('Delete all annotations from this document?')) {
+                engine.clearAnnotations();
+                showToast('All annotations cleared', 'info');
+            }
+            return;
+        }
     });
 
     // Keyboard shortcuts: V select, H highlight, P pen, R rect, O ellipse,
@@ -80,8 +90,10 @@ function _refresh(root) {
 
     const undoBtn = root.querySelector('#btn-ann-undo');
     const redoBtn = root.querySelector('#btn-ann-redo');
+    const clearBtn = root.querySelector('#btn-ann-clear');
     if (undoBtn) undoBtn.disabled = !engine.canUndo();
     if (redoBtn) redoBtn.disabled = !engine.canRedo();
+    if (clearBtn) clearBtn.disabled = engine.getAnnotations().length === 0;
 
     let lockEl = root.querySelector('#ann-tool-lock');
     if (lock) {

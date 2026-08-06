@@ -20,6 +20,7 @@
 import { state } from '../state.js';
 import { initTableFeatures } from '../utils/tableLogic.js';
 import { getImageBlob } from '../utils/imageStore.js';
+import { rebindTableEditing } from './tableEditorInit.js';
 
 let _syncing = false;
 const _debouncers = new WeakMap();
@@ -51,6 +52,22 @@ function wirePreview(id) {
     });
 }
 
+export function stripTableRulers(html) {
+    if (!html || typeof html !== 'string') return html;
+    if (!html.includes('tafne-ruler-wrap')) return html;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    doc.querySelectorAll('.tafne-ruler-wrap').forEach(wrap => {
+        const table = wrap.querySelector('table');
+        if (table) {
+            wrap.replaceWith(table);
+        } else {
+            wrap.remove();
+        }
+    });
+    return doc.body.innerHTML;
+}
+
 /**
  * Write `html` to state, both preview surfaces, and Monaco.
  * @param {string} html
@@ -61,8 +78,9 @@ export function applyHtmlEverywhere(html, skipEl = null) {
     if (_syncing) return;
     _syncing = true;
     try {
-        state.pdf1.extractedHTML = html;
-        const clean = sanitize(html);
+        const cleanForState = stripTableRulers(html);
+        state.pdf1.extractedHTML = cleanForState;
+        const clean = sanitize(cleanForState);
 
         for (const id of SURFACE_IDS) {
             const el = document.getElementById(id);
@@ -71,13 +89,14 @@ export function applyHtmlEverywhere(html, skipEl = null) {
                 el.innerHTML = clean;
                 // Re-bind crosshair / VisualGridMapper to any tables inside.
                 initTableFeatures(el);
+                rebindTableEditing();
                 hydrateImages(el);
             }
         }
 
         const editor = state.monacoEditor;
-        if (editor && editor.getValue() !== html) {
-            editor.getModel()?.setValue(html);
+        if (editor && editor.getValue() !== cleanForState) {
+            editor.getModel()?.setValue(cleanForState);
         }
     } finally {
         _syncing = false;

@@ -1037,6 +1037,10 @@ export function registerPages(wrappers, total) {
     setupIntersectionObserver();
 }
 
+export function getCurrentPage() {
+    return _currentPage;
+}
+
 export function prevPage() {
     if (_currentPage > 1) scrollToPage(_currentPage - 1);
 }
@@ -1050,7 +1054,14 @@ export function jumpToPage(n) {
 }
 
 function scrollToPage(n) {
-    const wrapper = _pageWrappers[n - 1];
+    let wrapper = _pageWrappers[n - 1];
+    if (state.activeView === 'visual-diff') {
+        const vdWrapper = document.querySelector(`#visual-diff-pdf .page-wrapper[data-page="${n}"]`);
+        if (vdWrapper) wrapper = vdWrapper;
+    } else if (!wrapper || !document.body.contains(wrapper)) {
+        wrapper = document.querySelector(`.page-wrapper[data-page="${n}"], .pdf-page-content[data-page="${n}"]`);
+    }
+
     if (wrapper) {
         wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
         _currentPage = n;

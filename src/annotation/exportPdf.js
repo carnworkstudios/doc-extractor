@@ -13,9 +13,45 @@
  * Offline, deterministic, no print dialog.
  */
 
-import { PDFDocument, rgb, StandardFonts, BlendMode } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts, BlendMode, PDFString } from 'pdf-lib';
 import { viewportToUserSpace } from './geometry.js';
 import { annotationsFromGxDoc } from './annotations.js';
+
+/** Embed a native PDF link annotation (/Subtype /Link) via pdf-lib */
+function embedLinkAnnotation(out, outPage, link, rotation, mediaW, mediaH) {
+    if (!link.rect) return;
+    const r = rectToUser(link.rect, rotation, mediaW, mediaH);
+
+    let actionObj = null;
+    const href = String(link.href || '').trim();
+
+    if (link.isExternal || href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) {
+        actionObj = out.context.obj({
+            Type: 'Action',
+            S: 'URI',
+            URI: PDFString.of(href),
+        });
+    } else {
+        const match = href.match(/page[=\-]?(\d+)/i) || href.match(/(\d+)/);
+        const targetPageNum = match ? parseInt(match[1], 10) : 1;
+        actionObj = out.context.obj({
+            Type: 'Action',
+            S: 'GoTo',
+            D: PDFString.of(`page_${targetPageNum}`),
+        });
+    }
+
+    const linkAnnot = out.context.obj({
+        Type: 'Annot',
+        Subtype: 'Link',
+        Rect: [r.x, r.y, r.x + r.w, r.y + r.h],
+        Border: [0, 0, 0],
+        A: actionObj,
+    });
+
+    const linkAnnotRef = out.context.register(linkAnnot);
+    outPage.node.addAnnot(linkAnnotRef);
+}
 
 /** '#rrggbb' → {r,g,b} in [0,1]. Unknown/empty → black. */
 function hexToRgb(hex) {
@@ -124,7 +160,11 @@ function drawAnnotation(page, ann, rotation, mediaW, mediaH, font) {
         case 'text': {
             const { col, opacity } = color(st.color || '#111111', st.opacity ?? 1);
             const fs = st.fontSize || 14;
-            const anchor = toUser({ x: ann.rect.x, y: ann.rect.y + fs * 0.8 });
+            // Baseline offset applied in display space (y-down) BEFORE the
+            // coordinate transform, so the y-flip handles direction correctly
+            // regardless of page rotation.
+            const baselineY = ann.rect.y + fs * 0.8;
+            const anchor = toUser({ x: ann.rect.x, y: baselineY });
             page.drawText(String(ann.text || ''), {
                 x: anchor.x, y: anchor.y, size: fs, font, color: col, opacity,
             });
@@ -166,10 +206,20 @@ export async function buildAnnotatedPdf({ bytes, gxDoc, onPage }) {
         byPage.get(ann.page).push(ann);
     }
 
+    const linksByPage = new Map();
+    if (Array.isArray(gxDoc?.links)) {
+        for (const link of gxDoc.links) {
+            const p = link.page || 1;
+            if (!linksByPage.has(p)) linksByPage.set(p, []);
+            linksByPage.get(p).push(link);
+        }
+    }
+
     for (let i = 0; i < src.getPageCount(); i++) {
         if (onPage) onPage(i + 1, src.getPageCount());
         const [page] = await out.copyPages(src, [i]);
         const outPage = out.addPage(page);
+
         const list = byPage.get(i + 1);
         if (list && list.length) {
             const size = outPage.getSize();       // unrotated MediaBox dims
@@ -179,6 +229,19 @@ export async function buildAnnotatedPdf({ bytes, gxDoc, onPage }) {
                     drawAnnotation(outPage, ann, rotation, size.width, size.height, font);
                 } catch (err) {
                     console.warn('[exportPdf] skipped annotation', ann.id, err.message);
+                }
+            }
+        }
+
+        const pageLinks = linksByPage.get(i + 1);
+        if (pageLinks && pageLinks.length) {
+            const size = outPage.getSize();
+            const rotation = outPage.getRotation().angle;
+            for (const link of pageLinks) {
+                try {
+                    embedLinkAnnotation(out, outPage, link, rotation, size.width, size.height);
+                } catch (err) {
+                    console.warn('[exportPdf] skipped link annotation', link.id, err.message);
                 }
             }
         }

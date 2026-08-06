@@ -6,6 +6,7 @@
 import $ from 'jquery';
 import { state } from '../state.js';
 import { deactivateSelectionMode } from './selectionMode.js';
+import { renderNavPanel } from './navPanel.js';
 
 const VIEWS = ['analyze', 'pdf', 'html', 'editor', 'visual-diff', 'diff'];
 
@@ -43,6 +44,17 @@ export async function switchView(viewName) {
     }
 
     syncToolbarToView(viewName);
+    renderNavPanel();
+}
+
+import { getVisualDiffFocusedPane } from './visualDiff.js';
+
+/** Returns active view, respecting visual-diff pane focus if active. */
+export function getEffectiveActiveView() {
+    if (state.activeView === 'visual-diff') {
+        return getVisualDiffFocusedPane();
+    }
+    return state.activeView || 'pdf';
 }
 
 /**
@@ -55,7 +67,10 @@ export function syncToolbarToView(viewName) {
     const $bar = $('#format-toolbar');
     if (!$bar.length) return;
 
-    if (TOOLBAR_HIDDEN_VIEWS.has(viewName)) {
+    const currentView = viewName || state.activeView || 'pdf';
+    const targetCtx = currentView === 'visual-diff' ? getVisualDiffFocusedPane() : currentView;
+
+    if (TOOLBAR_HIDDEN_VIEWS.has(targetCtx)) {
         $bar.addClass('toolbar-bar--hidden');
         return;
     }
@@ -64,7 +79,7 @@ export function syncToolbarToView(viewName) {
     // Show/hide each group and separator based on ctx list
     $bar.find('[data-toolbar-ctx]').each(function() {
         const ctxList = $(this).attr('data-toolbar-ctx').split(' ');
-        $(this).toggleClass('toolbar-ctx--hidden', !ctxList.includes(viewName));
+        $(this).toggleClass('toolbar-ctx--hidden', !ctxList.includes(targetCtx));
     });
 }
 

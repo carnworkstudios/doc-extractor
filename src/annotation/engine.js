@@ -135,7 +135,7 @@ export function toggleToolLock() {
  * After a draw commit, revert to Select unless the tool is locked (Q).
  * Text stays on text so the user can place several notes.
  */
-export function _maybeRevertTool() {
+function _maybeRevertTool() {
     if (_toolLock) return;
     if (_tool !== 'text' && DRAW_TOOLS.has(_tool)) setTool('select');
 }
@@ -249,6 +249,15 @@ export function removeAnnotation(id) {
     _pushUndo();
     _annotations = _annotations.filter(a => a.id !== id);
     if (_selectedId === id) _selectedId = null;
+    syncToGxDoc();
+    _notify({ type: 'remove' });
+}
+
+export function clearAnnotations() {
+    if (!_annotations.length) return;
+    _pushUndo();
+    _annotations = [];
+    _selectedId = null;
     syncToGxDoc();
     _notify({ type: 'remove' });
 }

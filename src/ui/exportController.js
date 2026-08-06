@@ -109,10 +109,10 @@ async function exportToPdf() {
     }
     const hasAnn = Array.isArray(gxDoc?.annotations) && gxDoc.annotations.length > 0;
     if (!hasAnn) {
-        showToast('No annotations to export. Annotate the PDF first.', 'info');
-        return;
+        showToast('Exporting original PDF (no annotations present)…', 'info');
+    } else {
+        showToast('Building vector PDF with annotations…', 'info');
     }
-    showToast('Building vector PDF…', 'info');
     const fileName = `${(file?.name || 'annotated').replace(/\.pdf$/i, '')}-annotated.pdf`;
     try {
         await exportAnnotatedPdf({ bytes, gxDoc, fileName, onStatus: showToast });

@@ -72,9 +72,8 @@ export function annotationBBox(ann) {
         }
         if (Number.isFinite(minX)) return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
     }
-    if (ann.kind === 'text') {
-        const fs = ann.style?.fontSize || 14;
-        return { x: ann.x ?? 0, y: ann.y ?? 0, w: ann.w ?? 40, h: fs * 1.4 };
+    if (ann.kind === 'text' && ann.rect) {
+        return { x: ann.rect.x, y: ann.rect.y, w: ann.rect.w || 40, h: ann.rect.h || (ann.style?.fontSize || 14) * 1.4 };
     }
     return { x: 0, y: 0, w: 0, h: 0 };
 }

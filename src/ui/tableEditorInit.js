@@ -10,19 +10,27 @@ let _fab = null;
 let _popover = null;
 let _activeTable = null;
 let _editModeActive = false;
-let _observer = null;
+let _observers = [];
 let _popoverWired = false;
 
 export function initTableEditing() {
     _preview = document.getElementById('html-preview');
-    if (!_preview) return;
 
     _createFab();
     _createPopover();
     _wireMainToolbar();
 
-    _observer = new MutationObserver(() => _rebind());
-    _observer.observe(_preview, { childList: true, subtree: true, characterData: false });
+    _observers.forEach(obs => obs.disconnect());
+    _observers = [];
+
+    ['html-preview', 'visual-diff-html'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            const obs = new MutationObserver(() => _rebind());
+            obs.observe(el, { childList: true, subtree: true, characterData: false });
+            _observers.push(obs);
+        }
+    });
 
     _rebind();
 
@@ -46,7 +54,13 @@ export function initTableEditing() {
 function _createFab() {
     _fab = document.createElement('div');
     _fab.className = 'tbl-fab';
-    _fab.textContent = '\u229E';
+    _fab.title = 'Edit Table';
+    _fab.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="12" height="12" rx="1.5"/>
+            <line x1="2" y1="7" x2="14" y2="7"/>
+            <line x1="7" y1="2" x2="7" y2="14"/>
+        </svg>`;
     _fab.style.display = 'none';
     _fab.addEventListener('click', (e) => { e.stopPropagation(); _toggleEditMode(); });
     document.body.appendChild(_fab);
@@ -61,20 +75,64 @@ function _createPopover() {
     _popover.addEventListener('click', (e) => e.stopPropagation());
     _popover.innerHTML = `
         <div class="tbl-pop-header">
-            <span>Table</span>
-            <button class="tbl-pop-toggle" id="tbl-pop-toggle">Select</button>
+            <span>Table Options</span>
+            <button class="tbl-pop-toggle" id="tbl-pop-toggle" title="Exit table edit mode">Done</button>
         </div>
         <div class="tbl-pop-row">
-            <button class="tbl-pop-btn" id="tbl-pop-add-row" title="Add row">\u23F4</button>
-            <button class="tbl-pop-btn" id="tbl-pop-add-col" title="Add column">\u23F5</button>
-            <button class="tbl-pop-btn" id="tbl-pop-del-row" title="Delete row">\u23F8</button>
-            <button class="tbl-pop-btn" id="tbl-pop-del-col" title="Delete column">\u23F9</button>
+            <button class="tbl-pop-btn" id="tbl-pop-add-row" title="Add Row Below">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2.5" y="2.5" width="11" height="5" rx="1"/>
+                    <line x1="2.5" y1="5.5" x2="13.5" y2="5.5"/>
+                    <path d="M8 10v4M6 12h4"/>
+                </svg>
+            </button>
+            <button class="tbl-pop-btn" id="tbl-pop-add-col" title="Add Column Right">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2.5" y="2.5" width="5" height="11" rx="1"/>
+                    <line x1="5.5" y1="2.5" x2="5.5" y2="13.5"/>
+                    <path d="M10 8h4M12 6v4"/>
+                </svg>
+            </button>
+            <button class="tbl-pop-btn" id="tbl-pop-del-row" title="Delete Row">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2.5" y="2.5" width="11" height="5" rx="1"/>
+                    <line x1="2.5" y1="5.5" x2="13.5" y2="5.5"/>
+                    <line x1="6" y1="12" x2="10" y2="12" stroke="#ef4444"/>
+                </svg>
+            </button>
+            <button class="tbl-pop-btn" id="tbl-pop-del-col" title="Delete Column">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2.5" y="2.5" width="5" height="11" rx="1"/>
+                    <line x1="5.5" y1="2.5" x2="5.5" y2="13.5"/>
+                    <line x1="10" y1="8" x2="14" y2="8" stroke="#ef4444"/>
+                </svg>
+            </button>
         </div>
         <div class="tbl-pop-row">
-            <button class="tbl-pop-btn" id="tbl-pop-merge" title="Merge cells">\u25A3</button>
-            <button class="tbl-pop-btn" id="tbl-pop-undo" title="Undo">\u21A9</button>
-            <button class="tbl-pop-btn" id="tbl-pop-redo" title="Redo">\u21AA</button>
-            <button class="tbl-pop-btn" id="tbl-pop-dup" title="Duplicate">\u229E</button>
+            <button class="tbl-pop-btn" id="tbl-pop-merge" title="Merge Cells">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="12" height="10" rx="1.5"/>
+                    <path d="M5.5 8h5M4 8l2-2M4 8l2 2M12 8l-2-2M12 8l-2 2"/>
+                </svg>
+            </button>
+            <button class="tbl-pop-btn" id="tbl-pop-dup" title="Duplicate Selection">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="5.5" y="5.5" width="8" height="8" rx="1"/>
+                    <path d="M3.5 10.5h-1a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v1"/>
+                </svg>
+            </button>
+            <button class="tbl-pop-btn" id="tbl-pop-undo" title="Undo Table Edit">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3.5 6.5h7a3 3 0 0 1 3 3v0.5a3 3 0 0 1-3 3H9"/>
+                    <path d="M6.5 3.5L3.5 6.5l3 3"/>
+                </svg>
+            </button>
+            <button class="tbl-pop-btn" id="tbl-pop-redo" title="Redo Table Edit">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12.5 6.5h-7a3 3 0 0 0-3 3v0.5a3 3 0 0 0 3 3H7"/>
+                    <path d="M9.5 3.5l3 3-3 3"/>
+                </svg>
+            </button>
         </div>
     `;
     document.body.appendChild(_popover);
@@ -98,11 +156,13 @@ function _wirePopover() {
 
     _popover.querySelector('#tbl-pop-undo')?.addEventListener('click', () => {
         if (!_editor) return; pushSnapshot(); _editor.history.undo(); _syncPopoverBtns();
-        if (_preview) applyHtmlEverywhere(_preview.innerHTML, _preview);
+        const container = _activeTable?.closest('#html-preview, #visual-diff-html') || document.getElementById('html-preview');
+        if (container) applyHtmlEverywhere(container.innerHTML, container);
     });
     _popover.querySelector('#tbl-pop-redo')?.addEventListener('click', () => {
         if (!_editor) return; pushSnapshot(); _editor.history.redo(); _syncPopoverBtns();
-        if (_preview) applyHtmlEverywhere(_preview.innerHTML, _preview);
+        const container = _activeTable?.closest('#html-preview, #visual-diff-html') || document.getElementById('html-preview');
+        if (container) applyHtmlEverywhere(container.innerHTML, container);
     });
     _popover.querySelector('#tbl-pop-toggle')?.addEventListener('click', () => _exitEditMode());
 }
@@ -136,9 +196,13 @@ function _repositionUI() {
 
 // ── Rebind table hover events ──────────────────────────────────────────────
 
+export function rebindTableEditing() {
+    _rebind();
+}
+
 function _rebind() {
-    if (!_preview) return;
-    _preview.querySelectorAll('table').forEach(t => {
+    const tables = document.querySelectorAll('#html-preview table, #visual-diff-html table');
+    tables.forEach(t => {
         if (t._fabWired) return;
         t._fabWired = true;
         t.addEventListener('mouseenter', () => {
@@ -199,8 +263,9 @@ function _enterEditMode() {
     _activeTable.contentEditable = 'false';
     _editor = new TableEditor(_activeTable, { ruler: true });
 
+    const container = _activeTable.closest('#html-preview, #visual-diff-html') || document.getElementById('html-preview');
     _editor.on('change', () => {
-        if (_preview) applyHtmlEverywhere(_preview.innerHTML, _preview);
+        if (container) applyHtmlEverywhere(container.innerHTML, container);
     });
     _editor.on('select', () => _syncPopoverBtns());
     _editor.on('error', (d) => showToast(d.message, 'warning'));
@@ -258,6 +323,8 @@ function _onCellDblClick(e) {
 
 function _exitEditMode() {
     if (!_editor) return;
+    const container = _activeTable?.closest('#html-preview, #visual-diff-html') || document.getElementById('html-preview');
+
     _editModeActive = false;
     _fab.classList.remove('tbl-fab--active');
 
@@ -271,6 +338,7 @@ function _exitEditMode() {
     _popover.style.display = 'none';
     _fab.style.display = 'none';
     _enableToolbarBtns(false);
+    if (container) applyHtmlEverywhere(container.innerHTML, null);
 }
 
 // ── Main toolbar ────────────────────────────────────────────────────────────

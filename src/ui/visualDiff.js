@@ -8,12 +8,28 @@ import { state } from '../state.js';
 import { renderPDFToCanvas } from './pdfCanvas.js';
 import { registerPages } from './pageNav.js';
 import { mountLayers as mountAnnotationLayers, unmountLayers as unmountAnnotationLayers } from '../annotation/layer.js';
+import { initTableFeatures } from '../utils/tableLogic.js';
+import { rebindTableEditing } from './tableEditorInit.js';
 
 let _rendered = false;
 
 // 'pdf' = left pane (PDF overlay), 'html' = right pane (extracted HTML)
-// Defaults to 'html' — matches prior behaviour before any click.
-let _focusedPane = 'html';
+// Defaults to 'pdf' — matches initial view focus.
+let _focusedPane = 'pdf';
+
+export function getVisualDiffFocusedPane() {
+    return _focusedPane;
+}
+
+export function setVisualDiffFocusedPane(pane) {
+    if (_focusedPane === pane) return;
+    _focusedPane = pane;
+    _updatePaneActiveClass();
+
+    // Dynamically update toolbar context and nav panel
+    import('./viewController.js').then(m => m.syncToolbarToView('visual-diff'));
+    import('./navPanel.js').then(m => m.renderNavPanel());
+}
 
 /**
  * Returns the currently focused pane's editable element for execCommand routing.
@@ -53,7 +69,11 @@ export async function activateVisualDiff() {
         const clean = typeof DOMPurify !== 'undefined'
             ? DOMPurify.sanitize(state.pdf1.extractedHTML, { ADD_TAGS: ['img'], ALLOW_DATA_ATTR: true })
             : state.pdf1.extractedHTML;
-        if (rightPane.innerHTML !== clean) rightPane.innerHTML = clean;
+        if (rightPane.innerHTML !== clean) {
+            rightPane.innerHTML = clean;
+            initTableFeatures(rightPane);
+            rebindTableEditing();
+        }
     }
 
     const wrappers = $('#visual-diff-pdf .page-wrapper').toArray();
@@ -61,37 +81,29 @@ export async function activateVisualDiff() {
 
     setupScrollSync();
     _attachPaneFocusListeners();
+    _updatePaneActiveClass();
 }
 
 /**
- * Wire focusin on both vd-pane containers to track which pane the user
- * is editing. Idempotent — adding the same listener type twice is harmless
- * since we use a named function reference.
+ * Wire focusin and click on both vd-pane containers and vd-pane-header to track
+ * which pane the user is interacting with.
  */
 function _attachPaneFocusListeners() {
-    const pdfPane  = document.getElementById('visual-diff-pdf');
-    const htmlPane = document.getElementById('visual-diff-html');
-    if (!pdfPane || !htmlPane) return;
+    const $panes = $('.vd-pane');
+    if (!$panes.length) return;
 
-    pdfPane.addEventListener('focusin',  _onPDFPaneFocus,  true);
-    htmlPane.addEventListener('focusin', _onHTMLPaneFocus, true);
-}
-
-function _onPDFPaneFocus() {
-    _focusedPane = 'pdf';
-    _updatePaneActiveClass();
-}
-
-function _onHTMLPaneFocus() {
-    _focusedPane = 'html';
-    _updatePaneActiveClass();
+    $panes.off('click.vdfocus focusin.vdfocus mousedown.vdfocus').on('click.vdfocus focusin.vdfocus mousedown.vdfocus', function () {
+        const isPdf = $(this).find('#visual-diff-pdf').length > 0;
+        setVisualDiffFocusedPane(isPdf ? 'pdf' : 'html');
+    });
 }
 
 function _updatePaneActiveClass() {
-    const $panes = $('.vd-pane');
-    $panes.each(function(i) {
-        const isPdf = i === 0; // left pane is always PDF
-        $(this).toggleClass('vd-pane--active', _focusedPane === (isPdf ? 'pdf' : 'html'));
+    $('.vd-pane').each(function () {
+        const isPdf = $(this).find('#visual-diff-pdf').length > 0;
+        const isActive = _focusedPane === (isPdf ? 'pdf' : 'html');
+        $(this).toggleClass('vd-pane--active', isActive);
+        $(this).find('.vd-pane-header').toggleClass('vd-pane-header--active', isActive);
     });
 }
 

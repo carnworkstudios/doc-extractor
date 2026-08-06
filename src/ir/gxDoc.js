@@ -26,6 +26,9 @@ export function createDoc(meta = {}) {
             pageCount: meta.pageCount ?? null,
         },
         pages: [],
+        links: [],
+        bookmarks: [],
+        annotations: [],
     };
 }
 
@@ -66,12 +69,15 @@ export function validateDoc(doc) {
     if (doc.schema !== GX_DOC_SCHEMA) {
         errors.push(`schema must be "${GX_DOC_SCHEMA}"`);
     }
-    // Optional top-level annotations collection (spatial-path edits). Only the
-    // array SHAPE is enforced here; per-annotation validity is filtered
-    // leniently at consumption (annotations.js normalizeAnnotations) so an
-    // unknown annotation kind never bricks a round-trip import.
+    // Optional top-level collections (annotations, bookmarks, links).
     if (doc.annotations != null && !Array.isArray(doc.annotations)) {
         errors.push('annotations must be an array');
+    }
+    if (doc.bookmarks != null && !Array.isArray(doc.bookmarks)) {
+        errors.push('bookmarks must be an array');
+    }
+    if (doc.links != null && !Array.isArray(doc.links)) {
+        errors.push('links must be an array');
     }
     if (!Array.isArray(doc.pages)) {
         errors.push('pages must be an array');
