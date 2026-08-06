@@ -27,6 +27,8 @@ import { htmlToGxDoc } from '../ir/htmlToGxDoc.js';
 import { gxDocToHtml } from '../ir/gxDocToHtml.js';
 import { docxToGxDoc } from '../ir/docxToGxDoc.js';
 import { jsonToGxDoc } from '../ir/jsonToGxDoc.js';
+import * as annotationEngine from '../annotation/engine.js';
+import { mountLayers as mountAnnotationLayers, unmountLayers as unmountAnnotationLayers } from '../annotation/layer.js';
 // analyzePanel.js is injected by os-shell.js into this iframe at runtime.
 // All calls are proxied through window.__GX_PDF_CORE__ dispatchers set up in app.js.
 const _core = () => window.__GX_PDF_CORE__;
@@ -935,6 +937,7 @@ async function handleJsonFile(file, slot = 1) {
             scannedPageCount: null,
             isScanned: false,
         };
+        if (slot === 1) annotationEngine.loadFromGxDoc(gxDoc);
         $(`#${label}-name`).text(file.name);
         $(`#${label}-input`).closest('.file-btn').addClass('loaded');
 
@@ -999,6 +1002,8 @@ async function handleFile(file, pdfIndex) {
             const { wrappers, numPages } = await renderPDFToCanvas(bytesForCanvas, 'pdf-canvas-container');
             registerPages(wrappers, numPages);
             registerPDFLayers(document.getElementById('pdf-canvas-container'));
+            unmountAnnotationLayers(document.getElementById('pdf-canvas-container'));
+            mountAnnotationLayers(document.getElementById('pdf-canvas-container'));
             const bytesForAnalysis = pdfState.bytes.slice();
 
             // Unconditionally initialize geometry worker and give analyzePanel its reference
@@ -1149,6 +1154,7 @@ async function handleFile(file, pdfIndex) {
             title: file.name,
             pageCount: data.pages?.length ?? null,
         });
+        if (pdfIndex === 1) annotationEngine.loadFromGxDoc(pdfState.gxDoc);
         // Extraction facts the DOM cannot carry — which engine ran, how many
         // pages it saw, and whether the pre-flight classified the document as
         // scanned. The structured MCP reply reports these rather than guessing.
@@ -1311,10 +1317,4 @@ export async function downloadExtractedHTML() {
     a.click();
     URL.revokeObjectURL(a.href);
     showToast('Download complete', 'success');
-}
-
-export function exportExtractedPDF() {
-    const preview = document.getElementById('html-preview');
-    if (!preview?.innerHTML?.trim()) { showToast('No content to export', 'error'); return; }
-    window.print();
 }

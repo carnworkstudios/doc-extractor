@@ -17,7 +17,8 @@
 import $ from 'jquery';
 import { state } from '../state.js';
 import { showToast } from './toast.js';
-import { downloadExtractedHTML, exportExtractedPDF, isProUser, integrationBackendUrl } from './fileUpload.js';
+import { downloadExtractedHTML, isProUser, integrationBackendUrl } from './fileUpload.js';
+import { exportAnnotatedPdf } from '../annotation/exportPdf.js';
 import { _waitForToolReady } from './analyzePanel.js';
 import { gxDocToHtml } from '../ir/gxDocToHtml.js';
 
@@ -76,7 +77,7 @@ async function handleExport(format) {
             downloadExtractedHTML();
             break;
         case 'pdf':
-            exportExtractedPDF();
+            await exportToPdf();
             break;
         case 'markdown':
             await exportToMarkdown(gxDoc ?? null, html);
@@ -94,6 +95,30 @@ async function handleExport(format) {
         case 'sheets':
             await exportToIntegration(format, html);
             break;
+    }
+}
+
+// ── PDF export (vector: original pages + annotations) ─────────────────────────
+
+/** Vector PDF export — copies the original PDF and overlays annotations. */
+async function exportToPdf() {
+    const { bytes, gxDoc, file } = state.pdf1;
+    if (!bytes) {
+        showToast('No PDF loaded to export.', 'error');
+        return;
+    }
+    const hasAnn = Array.isArray(gxDoc?.annotations) && gxDoc.annotations.length > 0;
+    if (!hasAnn) {
+        showToast('No annotations to export. Annotate the PDF first.', 'info');
+        return;
+    }
+    showToast('Building vector PDF…', 'info');
+    const fileName = `${(file?.name || 'annotated').replace(/\.pdf$/i, '')}-annotated.pdf`;
+    try {
+        await exportAnnotatedPdf({ bytes, gxDoc, fileName, onStatus: showToast });
+        showToast('Vector PDF exported', 'success');
+    } catch (err) {
+        showToast(`PDF export failed: ${err.message}`, 'error', 5000);
     }
 }
 

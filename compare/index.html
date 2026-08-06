@@ -254,6 +254,24 @@
                 <button class="tool-btn" id="btn-bold" title="Bold (Ctrl+B)"><iconify-icon icon="material-symbols:format-bold"></iconify-icon></button>
                 <button class="tool-btn" id="btn-italic" title="Italic (Ctrl+I)"><iconify-icon icon="material-symbols:format-italic"></iconify-icon></button>
                 <button class="tool-btn" id="btn-underline" title="Underline (Ctrl+U)"><iconify-icon icon="material-symbols:format-underlined"></iconify-icon></button>
+                <button class="tool-btn" id="btn-superscript" title="Superscript (Ctrl+Shift+=)"><iconify-icon icon="material-symbols:superscript"></iconify-icon></button>
+                <button class="tool-btn" id="btn-subscript" title="Subscript (Ctrl+=)"><iconify-icon icon="material-symbols:subscript"></iconify-icon></button>
+                <span class="ribbon-btn-sep"></span>
+                <div class="split-btn dropdown" id="dd-highlight">
+                    <button class="tool-btn" id="btn-highlight" title="Highlight color"><iconify-icon icon="material-symbols:format-ink-highlighter"></iconify-icon></button>
+                    <button class="tool-btn split-btn-caret" title="Highlight colors"><iconify-icon icon="material-symbols:arrow-drop-down"></iconify-icon></button>
+                    <div class="dropdown-menu split-menu color-menu" data-color-menu="highlight">
+                        <div class="color-swatch-grid" data-color-grid="hiliteColor"></div>
+                        <button class="dropdown-item" data-clear-highlight><span class="item-icon"><iconify-icon icon="material-symbols:format-color-reset"></iconify-icon></span> Remove Highlight</button>
+                    </div>
+                </div>
+                <div class="split-btn dropdown" id="dd-font-color">
+                    <button class="tool-btn" id="btn-font-color" title="Font color"><iconify-icon icon="material-symbols:format-color-text"></iconify-icon></button>
+                    <button class="tool-btn split-btn-caret" title="Font colors"><iconify-icon icon="material-symbols:arrow-drop-down"></iconify-icon></button>
+                    <div class="dropdown-menu split-menu color-menu" data-color-menu="font">
+                        <div class="color-swatch-grid" data-color-grid="foreColor"></div>
+                    </div>
+                </div>
             </div>
             <span class="ribbon-group-label">Font</span>
         </div>
@@ -307,6 +325,8 @@
                         <button class="dropdown-item" data-cols="1"><span class="item-icon"><iconify-icon icon="material-symbols:view-agenda-outline"></iconify-icon></span> Remove Columns</button>
                     </div>
                 </div>
+                <span class="ribbon-btn-sep"></span>
+                <button class="tool-btn" id="btn-border" title="Toggle paragraph / box border"><iconify-icon icon="material-symbols:border-outer"></iconify-icon></button>
             </div>
             <span class="ribbon-group-label">Paragraph</span>
         </div>
@@ -350,6 +370,27 @@
             <span class="ribbon-group-label">Zoom</span>
         </div>
         <div class="toolbar-sep" data-toolbar-ctx="pdf html visual-diff"></div>
+
+        <!-- Annotate: pdf only -->
+        <div class="toolbar-sep" data-toolbar-ctx="pdf"></div>
+        <div class="ribbon-group" id="annotate-group" data-toolbar-ctx="pdf">
+            <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+                <button class="tool-btn" id="btn-ann-mode" title="Toggle Text / Annotate mode (Annotate lets you draw on the page)"><iconify-icon icon="material-symbols:edit-note-outline"></iconify-icon></button>
+                <span class="ribbon-btn-sep"></span>
+                <button class="tool-btn" id="ann-tool-select" data-ann-tool="select" title="Select (V)"><iconify-icon icon="material-symbols:cursor"></iconify-icon></button>
+                <button class="tool-btn" id="ann-tool-highlight" data-ann-tool="highlight" title="Highlight (H)"><iconify-icon icon="material-symbols:format-ink-highlighter"></iconify-icon></button>
+                <button class="tool-btn" id="ann-tool-ink" data-ann-tool="ink" title="Freehand pen (P)"><iconify-icon icon="material-symbols:ink-pen"></iconify-icon></button>
+                <button class="tool-btn" id="ann-tool-rect" data-ann-tool="rect" title="Rectangle (R)"><iconify-icon icon="material-symbols:crop-square"></iconify-icon></button>
+                <button class="tool-btn" id="ann-tool-ellipse" data-ann-tool="ellipse" title="Ellipse (O)"><iconify-icon icon="material-symbols:circle-outline"></iconify-icon></button>
+                <button class="tool-btn" id="ann-tool-arrow" data-ann-tool="arrow" title="Arrow (A)"><iconify-icon icon="material-symbols:trending-flat"></iconify-icon></button>
+                <button class="tool-btn" id="ann-tool-text" data-ann-tool="text" title="Text note (T)"><iconify-icon icon="material-symbols:text-fields"></iconify-icon></button>
+                <button class="tool-btn" id="ann-tool-measure" data-ann-tool="measure" title="Measure (M)"><iconify-icon icon="material-symbols:straighten"></iconify-icon></button>
+                <span class="ribbon-btn-sep"></span>
+                <button class="tool-btn" id="btn-ann-undo" title="Undo annotation" disabled><iconify-icon icon="material-symbols:undo"></iconify-icon></button>
+                <button class="tool-btn" id="btn-ann-redo" title="Redo annotation" disabled><iconify-icon icon="material-symbols:redo"></iconify-icon></button>
+            </div>
+            <span class="ribbon-group-label">Annotate</span>
+        </div>
 
         <!-- Selection Mode: pdf, html, visual-diff -->
         <div class="ribbon-group" data-toolbar-ctx="pdf html visual-diff">

@@ -9,6 +9,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 // but just in case, it should be available.
 
 const SCALE = 1.5;
+export { SCALE };
 
 // Zoom is applied as a CSS transform on rendered .page-wrapper elements;
 // the canvas keeps its rendered resolution, transform handles visual scaling.
@@ -60,6 +61,8 @@ export async function renderPDFToCanvas(bytes, containerId = 'pdf-canvas-contain
                 class: 'page-wrapper',
                 css: { width: viewport.width, height: viewport.height, position: 'relative', overflow: 'hidden', marginBottom: '20px' },
                 'data-page': pageNum,
+                'data-page-w': viewport.width / SCALE,
+                'data-page-h': viewport.height / SCALE,
                 contentEditable: 'true'
             });
 

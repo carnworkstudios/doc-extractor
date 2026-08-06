@@ -7,6 +7,7 @@ import $ from 'jquery';
 import { state } from '../state.js';
 import { renderPDFToCanvas } from './pdfCanvas.js';
 import { registerPages } from './pageNav.js';
+import { mountLayers as mountAnnotationLayers, unmountLayers as unmountAnnotationLayers } from '../annotation/layer.js';
 
 let _rendered = false;
 
@@ -39,6 +40,8 @@ export async function activateVisualDiff() {
         await renderPDFToCanvas(state.pdf1.bytes, 'visual-diff-pdf');
         _rendered = true;
         state.pdf1._diffDirty = false;
+        unmountAnnotationLayers(document.getElementById('visual-diff-pdf'));
+        mountAnnotationLayers(document.getElementById('visual-diff-pdf'), { readOnly: true });
     }
 
     // Only re-fill the HTML pane when state has actually moved on. Edits the

@@ -18,6 +18,7 @@ import { initSelectionMode } from './ui/selectionMode.js';
 import { initViewCode } from './ui/viewCode.js';
 import { initPDFEditMode } from './ui/pdfEditMode.js';
 import { initHistoryController } from './ui/historyController.js';
+import { initAnnotationToolbar } from './ui/annotationToolbar.js';
 import { analyzePDF } from './extraction/vector/pdfAnalyzer.js';
 import { showToast } from './ui/toast.js';
 
@@ -155,6 +156,7 @@ $(() => {
     initViewCode();
     initPDFEditMode();
     initHistoryController();
+    initAnnotationToolbar();
     _tryInjectAnalyzePanel();
     _initMcpPill();
 

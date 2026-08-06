@@ -16,11 +16,34 @@ let _totalPages = 0;
 let _currentPage = 1;
 let _pageWrappers = [];
 let _paintedStyle = null;
+let _hiliteColor = '#ffff00';
+let _fontColor = '#111111';
+
+// Word-style highlight palette (16) and a text color palette (18, 6-col grid).
+const HIGHLIGHT_COLORS = [
+    '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#0000ff', '#ff0000',
+    '#008000', '#ffa500', '#800080', '#000080', '#808000', '#66ccff',
+    '#7f7f7f', '#cccccc', '#ffe0b3', '#f4cccc'
+];
+const FONT_COLORS = [
+    '#111111', '#333333', '#555555', '#777777', '#999999', '#bbbbbb',
+    '#dddddd', '#ffffff', '#cc0000', '#ff4d00', '#ffaa00', '#ffd400',
+    '#4caf50', '#00bcd4', '#1565c0', '#7b1fa2', '#d81b60', '#8d6e63'
+];
 
 export function initToolbar() {
     $('#btn-bold').on('click', () => fmt('bold'));
     $('#btn-italic').on('click', () => fmt('italic'));
     $('#btn-underline').on('click', () => fmt('underline'));
+    $('#btn-superscript').on('click', () => fmt('superscript'));
+    $('#btn-subscript').on('click', () => fmt('subscript'));
+    $('#btn-highlight').on('click', () => fmtColor('hiliteColor', _hiliteColor));
+    $('#btn-font-color').on('click', () => fmtColor('foreColor', _fontColor));
+    $('#btn-border').on('click', toggleParagraphBorder);
+
+    initColorSplitDropdown('#dd-highlight', 'hiliteColor');
+    initColorSplitDropdown('#dd-font-color', 'foreColor');
+    buildColorMenus();
     $('#btn-ul').on('click', () => fmt('insertUnorderedList'));
     $('#btn-ol').on('click', () => fmt('insertOrderedList'));
     $('#btn-dl').on('click', insertDefinitionList);
@@ -111,7 +134,8 @@ function syncToolbarToSelection() {
 
     const surface = node?.closest?.(EDITABLE_SURFACE_SEL);
     if (!surface) {
-        $('#btn-bold, #btn-italic, #btn-underline').removeClass('active');
+        $('#btn-bold, #btn-italic, #btn-underline, #btn-superscript, #btn-subscript').removeClass('active');
+        $('#btn-highlight, #btn-font-color, #btn-border').removeClass('active');
         setActiveAlign('left');
         return;
     }
@@ -119,6 +143,30 @@ function syncToolbarToSelection() {
     $('#btn-bold').toggleClass('active', document.queryCommandState('bold'));
     $('#btn-italic').toggleClass('active', document.queryCommandState('italic'));
     $('#btn-underline').toggleClass('active', document.queryCommandState('underline'));
+    $('#btn-superscript').toggleClass('active', document.queryCommandState('superscript'));
+    $('#btn-subscript').toggleClass('active', document.queryCommandState('subscript'));
+
+    // Highlight / font color / border are read by walking the inline ancestors
+    // of the caret — computed style on a bare <p> is transparent by default,
+    // so a non-transparent background-color or a non-default color on any
+    // inline element counts as "formatted". queryCommandState can't see these.
+    const defaultColor = (getComputedStyle(document.body).color || '').toLowerCase();
+    let highlighted = false;
+    let colored = false;
+    let el = node;
+    while (el && el !== surface) {
+        const tag = el.tagName?.toLowerCase();
+        if (['span', 'mark', 'b', 'strong', 'i', 'em', 'u', 'a', 'sup', 'sub'].includes(tag)) {
+            const inline = getComputedStyle(el);
+            if (!isTransparent(inline.backgroundColor)) highlighted = true;
+            if ((inline.color || '').toLowerCase() !== defaultColor) colored = true;
+            if (highlighted && colored) break;
+        }
+        el = el.parentElement;
+    }
+    $('#btn-highlight').toggleClass('active', highlighted);
+    $('#btn-font-color').toggleClass('active', colored);
+    $('#btn-border').toggleClass('active', !!node.closest?.('[data-par-border]'));
 
     if (document.queryCommandState('justifyCenter')) {
         setActiveAlign('center');
@@ -179,6 +227,224 @@ function fmt(cmd, val) {
         if (target) target.focus();
     }
     document.execCommand(cmd, false, val || null);
+}
+
+/**
+ * Apply a text color / highlight via execCommand, forcing inline styles.
+ * styleWithCSS makes foreColor/hiliteColor emit `color:`/`background-color:`
+ * styles instead of <font> tags; it is toggled back right away so bold/italic
+ * keep producing <strong>/<em>, which the gx-doc IR reads (htmlToGxDoc).
+ */
+function fmtColor(cmd, color) {
+    const view = state.activeView;
+    if (view === 'pdf') {
+        const target = getActivePDFTarget();
+        if (target) target.focus();
+    } else if (view === 'visual-diff') {
+        const target = getVisualDiffFocusedTarget();
+        if (target) target.focus();
+    }
+    document.execCommand('styleWithCSS', false, true);
+    document.execCommand(cmd, false, color);
+    document.execCommand('styleWithCSS', false, false);
+}
+
+/**
+ * Fill the color swatch grids declared in the toolbar markup
+ * (<div class="color-swatch-grid" data-color-grid="hiliteColor|foreColor">).
+ * The palette lives here, in one place, not in four index.html copies.
+ */
+function buildColorMenus() {
+    document.querySelectorAll('.color-swatch-grid[data-color-grid]').forEach(grid => {
+        const cmd = grid.dataset.colorGrid;
+        const palette = cmd === 'hiliteColor' ? HIGHLIGHT_COLORS : FONT_COLORS;
+        const frag = document.createDocumentFragment();
+        palette.forEach(hex => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'color-swatch';
+            b.dataset.color = hex;
+            b.style.background = hex;
+            b.title = hex;
+            frag.appendChild(b);
+        });
+        const custom = document.createElement('label');
+        custom.className = 'color-swatch color-swatch--custom';
+        custom.title = 'Custom color\u2026';
+        const input = document.createElement('input');
+        input.type = 'color';
+        input.value = cmd === 'hiliteColor' ? _hiliteColor : _fontColor;
+        custom.appendChild(input);
+        frag.appendChild(custom);
+        grid.appendChild(frag);
+    });
+}
+
+/**
+ * Wire a color split-button (highlight / font color). Same positioning
+ * strategy as initSplitDropdown — the menu is positioned fixed on open so it
+ * escapes the ribbon's horizontal scroll clipping.
+ */
+function initColorSplitDropdown(rootSelector, cmd) {
+    const $root = $(rootSelector);
+    const $caret = $root.find('.split-btn-caret');
+    const $menu = $root.find('.dropdown-menu');
+    if (!$root.length || !$caret.length || !$menu.length) return;
+
+    $caret.on('click', (e) => {
+        e.stopPropagation();
+        const isOpen = $root.hasClass('open');
+        $('.dropdown.open').removeClass('open');
+        if (!isOpen) {
+            const rect = $caret[0].getBoundingClientRect();
+            $menu.css({ top: rect.bottom + 4 + 'px', left: rect.left + 'px' });
+            $root.addClass('open');
+        }
+    });
+
+    $(document).on('click', () => $root.removeClass('open'));
+
+    $menu.on('click', '.color-swatch', function(e) {
+        e.stopPropagation();
+        const hex = $(this).data('color');
+        if (hex) {
+            if (cmd === 'hiliteColor') _hiliteColor = hex;
+            else _fontColor = hex;
+            fmtColor(cmd, hex);
+        }
+        $root.removeClass('open');
+    });
+
+    $menu.on('change', 'input[type="color"]', function(e) {
+        e.stopPropagation();
+        const hex = this.value;
+        if (cmd === 'hiliteColor') _hiliteColor = hex;
+        else _fontColor = hex;
+        fmtColor(cmd, hex);
+        $root.removeClass('open');
+    });
+
+    if (cmd === 'hiliteColor') {
+        $menu.on('click', '[data-clear-highlight]', (e) => {
+            e.stopPropagation();
+            removeHighlight();
+            $root.removeClass('open');
+        });
+    }
+}
+
+/**
+ * Remove highlight from the selection. execCommand('hiliteColor','transparent')
+ * clears the marker but leaves `background-color: transparent` inline spans in
+ * Chromium — strip those so the DOM stays clean for the IR/exporters.
+ */
+function removeHighlight() {
+    const view = state.activeView;
+    let target = null;
+    if (view === 'pdf') target = getActivePDFTarget();
+    else if (view === 'visual-diff') target = getVisualDiffFocusedTarget();
+    if (target) target.focus();
+
+    document.execCommand('styleWithCSS', false, true);
+    document.execCommand('hiliteColor', false, 'transparent');
+    document.execCommand('styleWithCSS', false, false);
+
+    const sel = window.getSelection();
+    if (sel?.rangeCount) {
+        let root = sel.getRangeAt(0).commonAncestorContainer;
+        if (root.nodeType === Node.TEXT_NODE) root = root.parentElement;
+        const scope = root?.closest?.(EDITABLE_SURFACE_SEL) || root;
+        scope?.querySelectorAll?.('[style]').forEach(el => {
+            const bg = (el.style && el.style.backgroundColor) || '';
+            if (/^(transparent|rgba?\(\s*0,\s*0,\s*0,\s*0\s*\))$/i.test(bg)) {
+                el.style.removeProperty('background-color');
+            }
+            if (el.getAttribute && !el.getAttribute('style')) el.removeAttribute('style');
+        });
+        syncStructuralEditFromSurface(scope);
+    }
+}
+
+const BLOCK_TAGS = new Set(['p', 'li', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'aside', 'dl', 'dt', 'dd']);
+const BORDER_SKIP = '.prose-area, .pdf-doc, .pdf-page-content, .pdf-page-row, .pdf-col, .pdf-table-wrap, .pdf-list-wrap, .pdf-col-split, .pdf-region, .f1, .f2, .ta-l, .ta-c, .ta-r, .ta-j';
+
+/** Nearest block worth drawing a border around (paragraph, heading, list item, callout/box, bare div). */
+function nearestBorderBlock(node) {
+    let el = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    const surface = el?.closest?.(EDITABLE_SURFACE_SEL) || null;
+
+    while (el && el !== document.body) {
+        const tag = el.tagName?.toLowerCase();
+        if (BLOCK_TAGS.has(tag)) return el;
+        if (tag === 'div' && !el.matches?.(BORDER_SKIP)) return el;
+        // A full-document selection puts the common ancestor on the surface
+        // itself (or on a structural wrapper like .pdf-page-content). Climbing
+        // past the surface means "nothing to border", so instead descend to
+        // the first real block inside it.
+        if (el === surface && surface) {
+            return surface.querySelector('p, li, h1, h2, h3, h4, h5, h6, aside, blockquote, dl, dt, dd') || null;
+        }
+        el = el.parentElement;
+    }
+    return null;
+}
+
+/**
+ * Word-style paragraph / box border: draw a border box around the closest
+ * block of the selection; clicking again removes it. Uses inline styles so it
+ * travels with HTML/DOC export, and a data-par-border marker for the toggle
+ * state + toolbar active state.
+ */
+function toggleParagraphBorder() {
+    const sel = window.getSelection();
+    let node = sel?.rangeCount ? sel.getRangeAt(0).commonAncestorContainer : null;
+    if (node?.nodeType === Node.TEXT_NODE) node = node.parentElement;
+
+    const surface = node?.closest?.(EDITABLE_SURFACE_SEL);
+    if (!surface) {
+        showToast('Place the cursor in a paragraph or box to add a border.', 'error');
+        return;
+    }
+    const block = nearestBorderBlock(node);
+    if (!block) {
+        showToast('Nothing to border here.', 'error');
+        return;
+    }
+
+    pushSnapshot();
+
+    if (block.dataset.parBorder === '1') {
+        block.style.border = '';
+        block.style.padding = '';
+        block.style.borderRadius = '';
+        delete block.dataset.parBorder;
+    } else {
+        block.style.border = '1.5px solid #666';
+        block.style.padding = '6px 10px';
+        block.style.borderRadius = '3px';
+        block.dataset.parBorder = '1';
+    }
+
+    syncStructuralEditFromSurface(surface);
+    syncUndoRedoUI();
+}
+
+/**
+ * Push a manual DOM edit to state + every surface. Only the real document
+ * surfaces (#html-preview / #visual-diff-html) may be pushed — .editable-text-
+ * layer is a per-page PDF overlay, not the document, and its innerHTML has no
+ * page structure, so pushing it would corrupt state.pdf1.extractedHTML.
+ */
+function syncStructuralEditFromSurface(surface) {
+    if (surface && surface.matches('#html-preview, #visual-diff-html')) {
+        applyHtmlEverywhere(surface.innerHTML, surface);
+    }
+}
+
+/** True when a computed color string means "no background set". */
+function isTransparent(color) {
+    if (!color) return true;
+    return /^(transparent|rgba?\(\s*0,\s*0,\s*0,\s*0\s*\)|initial|inherit)$/i.test(color.trim());
 }
 
 /**
@@ -549,7 +815,11 @@ function toggleFormatPainter() {
         textDecorationLine: cs.textDecorationLine,
         fontFamily: cs.fontFamily,
         fontSize: cs.fontSize,
-        textAlign: cs.textAlign
+        textAlign: cs.textAlign,
+        color: cs.color,
+        backgroundColor: cs.backgroundColor,
+        superscript: !!node.closest('sup'),
+        subscript: !!node.closest('sub')
     };
 
     $btn.addClass('painting');
@@ -573,6 +843,10 @@ function applyFormatPainterOnce() {
     span.style.textDecorationLine = _paintedStyle.textDecorationLine;
     span.style.fontFamily = _paintedStyle.fontFamily;
     span.style.fontSize = _paintedStyle.fontSize;
+    span.style.color = _paintedStyle.color;
+    if (!isTransparent(_paintedStyle.backgroundColor)) {
+        span.style.backgroundColor = _paintedStyle.backgroundColor;
+    }
     try {
         range.surroundContents(span);
     } catch {
@@ -583,7 +857,17 @@ function applyFormatPainterOnce() {
     let block = span.closest('p, div, li, h1, h2, h3, h4, h5, h6');
     if (block) block.style.textAlign = _paintedStyle.textAlign;
 
-    syncStructuralEdit();
+    if (_paintedStyle.superscript) {
+        const sup = document.createElement('sup');
+        span.parentNode.insertBefore(sup, span);
+        sup.appendChild(span);
+    } else if (_paintedStyle.subscript) {
+        const sub = document.createElement('sub');
+        span.parentNode.insertBefore(sub, span);
+        sub.appendChild(span);
+    }
+
+    syncStructuralEditFromSurface(span.closest(EDITABLE_SURFACE_SEL));
     disarmFormatPainter();
 }
 
