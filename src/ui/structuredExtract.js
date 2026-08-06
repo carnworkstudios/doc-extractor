@@ -1,9 +1,8 @@
 /**
  * structuredExtract.js
  *
- * Builds the STRUCTURED extraction payload for the headless MCP contract
- * (`architecture/headless-extraction-contract.md`, request
- * `ginexys:mcp-extract-structured`).
+ * Builds the STRUCTURED extraction payload for the headless extraction
+ * request `ginexys:mcp-extract-structured`.
  *
  * A plain text blob is a commodity — pdfplumber returns one for free. What it
  * cannot return is whether the extraction is trustworthy. This module reports
@@ -214,9 +213,8 @@ export function buildStructuredPayload() {
     // through the OCR pipeline in the first place.
     if (meta?.isScanned) docFlags.push(FLAGS.SCANNED_DOCUMENT);
 
-    // Provenance assembly is intelligence-layer POLICY and lives in root
-    // assets/os/provenance.js, injected by the shell. Presence-guarded so a
-    // forked standalone build still answers, just without a lineage.
+    // Lineage assembly is an optional host-provided capability. Presence-
+    // guarded so a standalone build still answers, just without a lineage.
     const provenance = window.GxProvenance
         ? window.GxProvenance.build(
             'pdf-processor',

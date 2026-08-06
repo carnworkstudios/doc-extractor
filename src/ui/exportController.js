@@ -20,7 +20,7 @@ import { showToast } from './toast.js';
 import { downloadExtractedHTML, isProUser, integrationBackendUrl } from './fileUpload.js';
 import { exportAnnotatedPdf } from '../annotation/exportPdf.js';
 import { syncTextEditsToGxDoc } from './pdfTextEdit.js';
-import { _waitForToolReady } from './analyzePanel.js';
+import { waitForToolReady } from '../utils/toolReady.js';
 import { gxDocToHtml } from '../ir/gxDocToHtml.js';
 
 export function initExportSystem() {
@@ -248,15 +248,14 @@ async function sendTablesToTafne() {
 
     try {
         window.CwsBridge.send('cws:tool:launch', { toolId: 'tifany', focusAfterLaunch: true }, 'os');
-        await _waitForToolReady('tifany', 8000);
+        await waitForToolReady('tifany', 8000);
         // meta.candidate flags the whole handoff as extracted-uncertain, so the
         // receiver (TAFNE) knows to route it through its validate/trust stage.
         const payload = { schema: 'gx-tables-v1', tables, meta: { source: 'pdf-processor', title: baseName(), candidate: true } };
-        // Provenance assembly is intelligence-layer POLICY (shell-provided
-        // GxProvenance module, assets/os/provenance.js) — NOT in this forkable
-        // tool. Standalone/forked builds have no GxProvenance → no lineage sent,
-        // tool still works. PDF is the pipeline SOURCE, so there is nothing
-        // incoming to inherit; build() just returns this tool's extraction record.
+        // Lineage assembly is an optional host-provided capability. When
+        // window.GxProvenance is absent no lineage is sent and the tool works
+        // exactly as before. This tool is a pipeline SOURCE, so there is nothing
+        // incoming to inherit; build() returns its own extraction record.
         // Aggregate extraction confidence across the candidate tables → the
         // extraction-stage score on the lineage spine.
         const avgScore = tables.reduce((s, t) => s + (t.extractionScore || 0), 0) / tables.length;

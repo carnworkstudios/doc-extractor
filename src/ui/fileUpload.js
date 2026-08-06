@@ -29,7 +29,7 @@ import { docxToGxDoc } from '../ir/docxToGxDoc.js';
 import { jsonToGxDoc } from '../ir/jsonToGxDoc.js';
 import * as annotationEngine from '../annotation/engine.js';
 import { mountLayers as mountAnnotationLayers, unmountLayers as unmountAnnotationLayers } from '../annotation/layer.js';
-// analyzePanel.js is injected by os-shell.js into this iframe at runtime.
+// The analyze panel is an optional add-on loaded at runtime by the host.
 // All calls are proxied through window.__GX_PDF_CORE__ dispatchers set up in app.js.
 const _core = () => window.__GX_PDF_CORE__;
 
@@ -107,16 +107,12 @@ const DEFAULT_SCALE_OVERRIDES = {
     R_Y_BAND: 0.45, R_PARA_GAP: 1.80, R_COL_GAP_MIN: 1.50, STREAM_CONFIDENCE: 0.60,
 };
 
-// Best-effort product-analytics capture. window.posthog is initialised in
-// index.html (assets/js/posthog-init.js); guard it so standalone/forked builds
-// without the snippet don't throw. Frontend AI-funnel events land under the
-// same project as the backend; the distinct_id stitching work (see
-// project_analytics_baseline) is what will chain them end-to-end.
+// Best-effort product-analytics capture. window.posthog is initialised by the
+// host page; guard it so a standalone build without the snippet doesn't throw.
 function _phCapture(event, props) {
-    // GxTrack (assets/js/gx-track.js) picks the working transport: window.posthog
-    // on the web, the extension-host bridge inside a VS Code webview where the
-    // CSP blocks PostHog entirely. Falls back to posthog directly so a
-    // standalone/forked build without the shim still reports.
+    // GxTrack, when present, picks the working transport: window.posthog on the
+    // web, or the extension-host bridge inside a VS Code webview where the CSP
+    // blocks PostHog entirely. Falls back to posthog directly.
     try {
         if (window.GxTrack) window.GxTrack(event, { tool: 'pdf-processor', ...props });
         else window.posthog?.capture?.(event, { tool: 'pdf-processor', ...props });
@@ -312,9 +308,8 @@ let brokerReady = false;
 // Lazily created geometry worker for local (offline) table extraction
 let _geoWorker = null;
 
-// Pro tier check — gates Advance Extraction (Docling/OpenRouter backend path) and
-// the Analyze tab pipeline. Mirrors the architecture in pro-gate-system.md §7C.
-// Embedded: ask the OS shell for the current user's tier. Standalone: default to free.
+// Tier check — gates Advance Extraction (the hosted AI-assisted path).
+// Embedded: ask the host for the current user's tier. Standalone: default to free.
 // Until auth Phase 7 wires real tier detection, this always returns false.
 export function isProUser() { return _isProUser(); }
 

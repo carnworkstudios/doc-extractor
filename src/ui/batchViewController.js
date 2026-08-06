@@ -19,6 +19,7 @@ import { mergeGxDocs } from '../ir/mergeGxDocs.js';
 import { renderGxDocAs, downloadRendered } from './exportController.js';
 import { buildAnnotatedPdf } from '../annotation/exportPdf.js';
 import { syncTextEditsToGxDoc } from './pdfTextEdit.js';
+import { requireSignIn, refreshGates } from './authGate.js';
 import { PDFDocument } from 'pdf-lib';
 
 export let batchQueue = null;
@@ -66,9 +67,9 @@ function _htmlToPlain(html) {
 }
 
 export function initBatchViewController() {
-    // The pool owns scheduling; the TOOL owns the extraction worker. Passing the
-    // factory in keeps the deterministic engine in this repo and lets the pool
-    // stay a platform asset with no reach into the submodule.
+    // The pool owns scheduling; this tool owns the extraction worker. Passing
+    // the factory in keeps the two independent — the pool never needs to know
+    // where the engine lives.
     workerPool = new WorkerPool({
         workerFactory: () => new Worker(
             new URL('../workers/geometryWorker.js', import.meta.url),
@@ -180,6 +181,9 @@ function _renderBatchUI() {
     }
 
     _renderBatchItemList(items);
+    // The panel HTML above replaces #nav-view-batch's children, taking the
+    // gate overlay with it. Re-apply after every rebuild.
+    refreshGates();
 }
 
 function _wireDropzoneEvents() {
@@ -198,6 +202,9 @@ function _wireDropzoneEvents() {
 
     $input.on('change', (e) => {
         if (e.target.files && e.target.files.length > 0) {
+            // The overlay is a picture; this is the check. Guard the ENTRY
+            // POINT so a signed-out user cannot start work by any route.
+            if (!requireSignIn('pdf-batch-signin')) { e.target.value = ''; return; }
             const added = batchQueue.enqueueMany(e.target.files);
             e.target.value = '';
             if (added.length > 0) {
@@ -220,6 +227,7 @@ function _wireDropzoneEvents() {
     $dropzone.on('drop', (e) => {
         const dt = e.originalEvent.dataTransfer;
         if (dt && dt.files && dt.files.length > 0) {
+            if (!requireSignIn('pdf-batch-signin')) return;
             const added = batchQueue.enqueueMany(dt.files);
             if (added.length > 0) {
                 focusBatchItem(added[0].id, 1);
@@ -387,6 +395,7 @@ function _renderBatchItemList(items) {
 }
 
 export async function focusBatchItem(itemId, slotNum = 1) {
+    if (!requireSignIn('pdf-batch-signin')) return;
     const item = batchQueue.getItem(itemId);
     if (!item) return;
 
@@ -454,6 +463,7 @@ export async function focusBatchItem(itemId, slotNum = 1) {
  * the merged annotations/bookmarks/text-edits are drawn onto the result.
  */
 export async function exportBatchResults() {
+    if (!requireSignIn('pdf-batch-signin')) return;
     const items = batchQueue.getAllItems().filter(i => i.status === 'completed');
     if (items.length === 0) {
         showToast('No completed batch items to export.', 'warning');
@@ -491,9 +501,8 @@ export async function exportBatchResults() {
                 'success',
             );
         } else {
-            // Sequential downloads. There is no archiver dependency in this
-            // submodule, and adding one to a public forkable repo is an
-            // architecture decision, not an export detail.
+            // Sequential downloads — there is no archiver dependency here, and
+            // adding one is an architecture decision, not an export detail.
             for (const item of withIr) {
                 const name = item.name.replace(/\.[^.]+$/, '');
                 downloadRendered(renderGxDocAs(format, item.gxDoc, name), name);

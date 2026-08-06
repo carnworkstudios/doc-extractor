@@ -14,7 +14,7 @@
 // trivially true for single-line fragments, so it only counts alongside font
 // continuity. A trailing hyphen is conclusive on its own (blockers still apply).
 //
-// See architecture/responsive-layout-tree.md §20–21.
+// See the layout-tree notes in layoutTreeBuilder.js.
 
 import { RegionType } from './regionTypes.js';
 import { BULLET_RE, ORDERED_RE } from './listDetector.js';

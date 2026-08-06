@@ -3,7 +3,7 @@
  * Core `gx-doc/1` intermediate representation.
  *
  * The IR is the typed, serializable pivot every importer produces and every
- * exporter consumes (see architecture/import-export-gateway.md). It is
+ * exporter consumes. It is
  * zone-aware: it preserves the multi-column layout, alignment, typography, and
  * spatial metadata from the original extraction so gxDocToHtml() can rebuild
  * the CSS Grid layout.

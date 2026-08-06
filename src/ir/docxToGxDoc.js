@@ -7,7 +7,7 @@
  * DataView + DecompressionStream, then maps WordprocessingML to typed blocks.
  *
  * Binary `.doc` (Word 97-2003 CFB) is a different format and NOT supported —
- * see architecture/import-export-gateway.md.
+ * see the gx-doc IR definition in gxDoc.js.
  *
  * DOCX has no multi-column geometry, so every block gets colIdx: -1 (a single
  * full-width column). Merged table cells (w:vMerge / w:gridSpan) are flattened

@@ -611,6 +611,81 @@ body {
   box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.5);
 }
 
+/* ── Sign-in gate (Analyze + Batch) ─────────────────────────────────────────
+   The surface stays VISIBLE under the overlay. A hidden tab converts nobody:
+   the user has to see what they would get before being asked to sign in. */
+.gx-gated-panel {
+  position: relative;
+}
+
+.gx-signin-gate {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  cursor: pointer;
+  background: rgba(248, 250, 252, 0.72);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.gx-signin-gate-card {
+  max-width: 320px;
+  padding: 22px 24px;
+  text-align: center;
+  border: 1px solid var(--border-dark, #d6dae1);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
+}
+
+.gx-signin-gate-icon {
+  font-size: 28px;
+  color: var(--accent, #4facfe);
+}
+
+.gx-signin-gate-title {
+  margin: 8px 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text, #0f172a);
+}
+
+.gx-signin-gate-blurb {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.gx-signin-gate-btn {
+  margin-top: 14px;
+  padding: 6px 18px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  background: var(--accent-dark, #0066cc);
+  border: none;
+  border-radius: 6px;
+}
+
+.gx-signin-gate-btn:hover {
+  filter: brightness(1.08);
+}
+
+/* Lock affordance on the tab itself, so the state reads before the click. */
+.tab-btn[data-gx-gated="true"]::after,
+.nav-tab-btn[data-gx-gated="true"]::after {
+  content: "🔒";
+  margin-left: 4px;
+  font-size: 9px;
+  opacity: 0.75;
+}
+
 #btn-pdf-text-edit.active {
   background: var(--accent-dim);
   border-color: rgba(79, 172, 254, 0.4);

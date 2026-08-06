@@ -18,6 +18,7 @@ import { initSelectionMode } from './ui/selectionMode.js';
 import { initViewCode } from './ui/viewCode.js';
 import { initPDFEditMode } from './ui/pdfEditMode.js';
 import { initPDFTextEdit } from './ui/pdfTextEdit.js';
+import { initAuthGate } from './ui/authGate.js';
 import { initHistoryController } from './ui/historyController.js';
 import { initAnnotationToolbar } from './ui/annotationToolbar.js';
 import { initNavPanel } from './ui/navPanel.js';
@@ -33,9 +34,9 @@ window.DOMPurify = DOMPurify;
 // without a circular import (analyzePanel → htmlSync → state → analyzePanel).
 window._patchPageHtml = patchPageHtml;
 
-// ── __GX_PDF_CORE__ — stable hook surface for the injected analyzePanel.js ──
-// os-shell.js injects /assets/pdf-processor/ui/analyzePanel.js into this iframe
-// after load. That script reads this object instead of using static imports.
+// ── __GX_PDF_CORE__ — stable hook surface for the analyze panel ─────────────
+// The panel is an optional add-on loaded at runtime by the host, not a static
+// import. It reads this object; the tool works fully without it.
 //
 // Each on* registration replays the last known value immediately if it arrived
 // before analyzePanel.js booted. This closes the race where file extraction
@@ -105,12 +106,12 @@ window.__GX_PDF_CORE__ = {
 
 function _tryInjectAnalyzePanel() {
     if (window.parent !== window) {
-        // Inside OS shell — shell will inject the closed-source script via _injectAnalyzePanel().
-        // Nothing to do here; the shell fires on iframe 'load'.
+        // Hosted — the host supplies the panel once the frame has loaded.
+        // Nothing to do here.
         return;
     }
     if (window.CwsBridge && window.CwsBridge.isEmbedded) {
-        // Inside VS Code webview — PdfEditorProvider injects analyzePanel.js via vsc-bridge.js.
+        // VS Code webview — the extension supplies the panel.
         return;
     }
     // Standalone direct navigation — show a CTA card on the Analyze tab.
@@ -160,6 +161,7 @@ $(() => {
     initViewCode();
     initPDFEditMode();
     initPDFTextEdit();
+    initAuthGate();
     initHistoryController();
     initAnnotationToolbar();
     initNavPanel();
