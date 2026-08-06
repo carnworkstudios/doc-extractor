@@ -4,7 +4,8 @@
  * annotation layer, drawn as vector graphics via pdf-lib.
  *
  * The original pages are copied with pdf-lib's copyPages, so the output keeps
- * the native text layer, bookmarks and structure. Annotations are drawn on
+ * the native text layer and page structure. copyPages does NOT carry the
+ * outline, so bookmarks are rebuilt from gxDoc.bookmarks. Annotations are drawn on
  * top in PDF user space (bottom-left origin, y up). Annotation coordinates
  * are stored in display space (top-left, y down), so every point is mapped
  * through geometry.viewportToUserSpace, which is rotation-aware and verified
@@ -13,9 +14,57 @@
  * Offline, deterministic, no print dialog.
  */
 
-import { PDFDocument, rgb, StandardFonts, BlendMode, PDFString } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts, BlendMode, PDFString, PDFName } from 'pdf-lib';
 import { viewportToUserSpace } from './geometry.js';
 import { annotationsFromGxDoc } from './annotations.js';
+
+/**
+ * Write gxDoc.bookmarks as a real PDF outline (/Outlines tree).
+ *
+ * pdf-lib's copyPages copies PAGE objects. It does NOT carry the source
+ * document's outline, and it has no outline API, so the tree is built by hand
+ * from the gx-doc bookmarks — which is the right source anyway, since the user
+ * edits those in the Bookmarks panel.
+ *
+ * Each entry is a /GoTo destination onto the page it names: [pageRef /XYZ 0 h 0]
+ * (top-left of the page, inherit zoom).
+ */
+function embedOutline(out, bookmarks, pages) {
+    const entries = bookmarks
+        .map(bm => ({
+            title: String(bm.label || `Page ${bm.page || 1}`),
+            pageIndex: Math.max(0, Math.min(pages.length - 1, (bm.page || 1) - 1)),
+        }))
+        .filter(e => pages[e.pageIndex]);
+    if (!entries.length) return;
+
+    const rootRef = out.context.nextRef();
+    const itemRefs = entries.map(() => out.context.nextRef());
+
+    entries.forEach((entry, i) => {
+        const page = pages[entry.pageIndex];
+        const { height } = page.getSize();
+        const dict = {
+            Title: PDFString.of(entry.title),
+            Parent: rootRef,
+            Dest: out.context.obj([page.ref, 'XYZ', 0, height, 0]),
+        };
+        if (i > 0) dict.Prev = itemRefs[i - 1];
+        if (i < entries.length - 1) dict.Next = itemRefs[i + 1];
+        out.context.assign(itemRefs[i], out.context.obj(dict));
+    });
+
+    out.context.assign(rootRef, out.context.obj({
+        Type: 'Outlines',
+        First: itemRefs[0],
+        Last: itemRefs[itemRefs.length - 1],
+        Count: itemRefs.length,
+    }));
+    out.catalog.set(PDFName.of('Outlines'), rootRef);
+    // Ask viewers to open with the bookmark pane showing — otherwise a user who
+    // exported bookmarks sees no evidence they survived.
+    out.catalog.set(PDFName.of('PageMode'), PDFName.of('UseOutlines'));
+}
 
 /** Embed a native PDF link annotation (/Subtype /Link) via pdf-lib */
 function embedLinkAnnotation(out, outPage, link, rotation, mediaW, mediaH) {
@@ -188,10 +237,43 @@ function drawAnnotation(page, ann, rotation, mediaW, mediaH, font) {
 }
 
 /**
+ * Replay one text edit from the edit-text surface.
+ *
+ * pdf-lib cannot rewrite a glyph run in place, so an edit is cover-then-draw:
+ * paint the original box out in the page background colour, then draw the new
+ * string at the original baseline. The box comes from pdf.js's own text-item
+ * geometry (see pdfTextEdit.js), so it covers exactly what was there.
+ *
+ * `to === ''` is a deletion — cover only, draw nothing.
+ */
+function drawTextEdit(page, edit, rotation, mediaW, mediaH, font, bg) {
+    const fs = edit.fontSize || edit.h || 12;
+    const pad = fs * 0.25;
+    const box = {
+        x: edit.x - pad,
+        y: edit.y - pad,
+        w: Math.max(edit.w, fs * 0.5) + pad * 2,
+        h: (edit.h || fs) + pad * 2,
+    };
+    const r = rectToUser(box, rotation, mediaW, mediaH);
+    page.drawRectangle({ x: r.x, y: r.y, width: r.w, height: r.h, color: bg });
+
+    const text = String(edit.to ?? '');
+    if (!text) return;
+
+    // Baseline offset applied in display space (y-down) BEFORE the transform,
+    // so the y-flip handles direction correctly under any page rotation.
+    const anchor = viewportToUserSpace(
+        { x: edit.x, y: edit.y + fs * 0.8 }, rotation, mediaW, mediaH,
+    );
+    page.drawText(text, { x: anchor.x, y: anchor.y, size: fs, font, color: rgb(0, 0, 0) });
+}
+
+/**
  * Export the annotated spatial document as a new PDF.
  * @param {object} opts
  *   bytes — Uint8Array of the original PDF file
- *   gxDoc — gx-doc/1 document carrying `annotations`
+ *   gxDoc — gx-doc/1 document carrying `annotations` and `textEdits`
  *   fileName — download name
  * @returns {Promise<Uint8Array>} the exported PDF bytes
  */
@@ -206,6 +288,18 @@ export async function buildAnnotatedPdf({ bytes, gxDoc, onPage }) {
         byPage.get(ann.page).push(ann);
     }
 
+    // Text edits are replayed BEFORE annotations so a highlight drawn over an
+    // edited word still lands on top of the replacement, not under the cover.
+    const editsByPage = new Map();
+    if (Array.isArray(gxDoc?.textEdits)) {
+        for (const edit of gxDoc.textEdits) {
+            const p = edit.page || 1;
+            if (!editsByPage.has(p)) editsByPage.set(p, []);
+            editsByPage.get(p).push(edit);
+        }
+    }
+    const editBg = rgb(1, 1, 1);
+
     const linksByPage = new Map();
     if (Array.isArray(gxDoc?.links)) {
         for (const link of gxDoc.links) {
@@ -219,6 +313,19 @@ export async function buildAnnotatedPdf({ bytes, gxDoc, onPage }) {
         if (onPage) onPage(i + 1, src.getPageCount());
         const [page] = await out.copyPages(src, [i]);
         const outPage = out.addPage(page);
+
+        const pageEdits = editsByPage.get(i + 1);
+        if (pageEdits && pageEdits.length) {
+            const size = outPage.getSize();
+            const rotation = outPage.getRotation().angle;
+            for (const edit of pageEdits) {
+                try {
+                    drawTextEdit(outPage, edit, rotation, size.width, size.height, font, editBg);
+                } catch (err) {
+                    console.warn('[exportPdf] skipped text edit', edit.from, err.message);
+                }
+            }
+        }
 
         const list = byPage.get(i + 1);
         if (list && list.length) {
@@ -246,6 +353,15 @@ export async function buildAnnotatedPdf({ bytes, gxDoc, onPage }) {
             }
         }
     }
+
+    if (Array.isArray(gxDoc?.bookmarks) && gxDoc.bookmarks.length) {
+        try {
+            embedOutline(out, gxDoc.bookmarks, out.getPages());
+        } catch (err) {
+            console.warn('[exportPdf] outline not written:', err.message);
+        }
+    }
+
     return out.save();
 }
 

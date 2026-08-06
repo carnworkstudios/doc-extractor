@@ -571,6 +571,52 @@ body {
   color: rgba(0, 0, 0, 0.7) !important;
 }
 
+/* ── PDF edit-text mode ─────────────────────────────────────────────────────
+   The raster render and the text layer both paint the same glyphs, so editing
+   a transparent span leaves the ORIGINAL text visible on the canvas beneath
+   the new one. In edit-text mode the canvas is hidden and the spans become the
+   only visible layer — which is also exactly what the pdf-lib export route
+   reproduces (cover the original box, draw the new string). The structural
+   document is extracted headlessly by the geometry worker, so hiding the
+   raster here costs nothing. */
+.pdf-text-edit-mode .page-wrapper {
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px var(--border-dark, #d6dae1);
+}
+
+.pdf-text-edit-mode .page-wrapper > canvas {
+  visibility: hidden;
+}
+
+.pdf-text-edit-mode .pdf-text-span,
+.pdf-text-edit-mode .editable-text-layer:focus-within .pdf-text-span,
+.pdf-text-edit-mode .editable-text-layer:focus .pdf-text-span {
+  color: #111111 !important;
+  background: transparent;
+  box-shadow: none;
+}
+
+.pdf-text-edit-mode .pdf-text-span:hover {
+  background: rgba(79, 172, 254, 0.14);
+  color: #111111 !important;
+}
+
+.pdf-text-edit-mode .editable-text-layer {
+  outline: none;
+}
+
+/* An edited span is marked so a user can see what will be rewritten on export. */
+.pdf-text-edit-mode .pdf-text-span.pdf-text-span--edited {
+  background: rgba(16, 185, 129, 0.14);
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.5);
+}
+
+#btn-pdf-text-edit.active {
+  background: var(--accent-dim);
+  border-color: rgba(79, 172, 254, 0.4);
+  color: var(--accent-dark);
+}
+
 /* ── Visual Diff — active pane indicator ────────────────────────────────── */
 .vd-pane--active > .vd-pane-header {
   border-bottom: 2px solid var(--accent);
@@ -3620,3 +3666,93 @@ mark.diff-inline-add {
 .vd-pane--active .vd-pane-header .vd-label {
   font-weight: 700;
 }
+
+/* ── Batch Processor View Styles ────────────────────────────────────────── */
+.batch-dropzone.drag-over {
+  border-color: #3b82f6 !important;
+  background: #eff6ff !important;
+}
+
+.batch-format-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.batch-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.batch-badge--pending {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.batch-badge--active {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+
+.batch-badge--success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.batch-badge--error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.batch-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.batch-progress-fill {
+  height: 100%;
+  background: #3b82f6;
+  transition: width 0.2s ease;
+}
+
+.batch-action-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e293b;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-right: 4px;
+  transition: all 0.15s;
+}
+
+.batch-action-btn:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.batch-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.batch-error-text {
+  color: #ef4444;
+  font-size: 12px;
+}
+

@@ -1,520 +1,158 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Getting Started — PDF Processor | GINEXYS</title>
-    <meta
-      name="description"
-      content="Getting started guide for GINEXYS PDF Processor. Load PDF documents, review extracted HTML in multiple views, edit content with the rich text toolbar, and export clean HTML or regenerated PDF."
-    />
-    <meta name="robots" content="index, follow" />
-    <link
-      rel="canonical"
-      href="https://ginexys.com/tools/pdf-processor/docs/getting-started.html"
-    />
-    <meta property="og:type" content="article" />
-    <meta
-      property="og:title"
-      content="Getting Started — PDF Processor | GINEXYS"
-    />
-    <meta
-      property="og:description"
-      content="Getting started guide for GINEXYS PDF Processor. Load PDF documents, review extracted HTML in multiple views, edit content with the rich text toolbar, and export clean HTML or regenerated PDF."
-    />
-    <meta
-      property="og:url"
-      content="https://ginexys.com/tools/pdf-processor/docs/getting-started.html"
-    />
-    <meta property="og:site_name" content="GINEXYS" />
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@graph": [
-          {
-            "@type": "TechArticle",
-            "headline": "Getting Started — PDF Processor",
-            "description": "Getting started guide for GINEXYS PDF Processor. Load PDF documents, review extracted HTML in multiple views, edit content with the rich text toolbar, and export clean HTML or regenerated PDF.",
-            "url": "https://ginexys.com/tools/pdf-processor/docs/getting-started.html",
-            "isPartOf": {
-              "@type": "WebApplication",
-              "name": "PDF Processor",
-              "url": "https://ginexys.com/tools/pdf-processor/"
-            },
-            "publisher": {
-              "@type": "Organization",
-              "name": "GINEXYS",
-              "url": "https://ginexys.com"
-            },
-            "dateModified": "2026-07-31"
-          },
-          {
-            "@type": "BreadcrumbList",
-            "itemListElement": [
-              {
-                "@type": "ListItem",
-                "position": 1,
-                "name": "GINEXYS",
-                "item": "https://ginexys.com/"
-              },
-              {
-                "@type": "ListItem",
-                "position": 2,
-                "name": "Tools",
-                "item": "https://ginexys.com/tools/"
-              },
-              {
-                "@type": "ListItem",
-                "position": 3,
-                "name": "PDF Processor",
-                "item": "https://ginexys.com/tools/pdf-processor/"
-              },
-              {
-                "@type": "ListItem",
-                "position": 4,
-                "name": "Getting Started"
-              }
-            ]
-          }
-        ]
-      }
-    </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link
-      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap"
-      rel="stylesheet"
-    />
-    <style>
-      :root {
-        --bg: #0b1018;
-        --bg-r: #0f1720;
-        --bg-o: #162030;
-        --br: #1e3348;
-        --br-s: #2a4a66;
-        --ac: #c9a84c;
-        --ac2: #00b4d8;
-        --tx: #d8eaf8;
-        --txs: #6a90b0;
-        --txd: #354d63;
-        --radius: 6px;
-      }
-      *,
-      *::before,
-      *::after {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
-      body {
-        background: var(--bg);
-        color: var(--tx);
-        font-family: "DM Mono", "Courier New", monospace;
-        font-size: 13px;
-        line-height: 1.65;
-      }
-      .gx-nav {
-        height: 44px;
-        background: var(--bg-r);
-        border-bottom: 1px solid var(--br);
-        display: flex;
-        align-items: center;
-        padding: 0 20px;
-        gap: 0;
-        position: sticky;
-        top: 0;
-        z-index: 10;
-      }
-      .gx-breadcrumb {
-        list-style: none;
-        display: flex;
-        align-items: center;
-        gap: 0;
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-      }
-      .gx-breadcrumb li {
-        display: flex;
-        align-items: center;
-        font-size: 11px;
-        letter-spacing: 0.05em;
-        white-space: nowrap;
-        color: var(--txd);
-      }
-      .gx-breadcrumb li + li::before {
-        content: "/";
-        margin: 0 6px;
-        color: var(--txd);
-      }
-      .gx-breadcrumb a {
-        color: var(--txs);
-        text-decoration: none;
-        transition: color 0.15s;
-      }
-      .gx-breadcrumb a:hover {
-        color: var(--ac);
-      }
-      .gx-breadcrumb li:last-child {
-        color: var(--tx);
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .gx-open-btn {
-        font-size: 10px;
-        letter-spacing: 0.08em;
-        color: var(--txs);
-        text-decoration: none;
-        border: 1px solid var(--br);
-        border-radius: var(--radius);
-        padding: 4px 12px;
-        white-space: nowrap;
-        transition:
-          border-color 0.15s,
-          color 0.15s;
-        flex-shrink: 0;
-      }
-      .gx-open-btn:hover {
-        border-color: var(--ac);
-        color: var(--ac);
-      }
-      .gx-docs-wrap {
-        max-width: 760px;
-        margin: 0 auto;
-        padding: 36px 24px 80px;
-      }
-      .gx-docs-content h1 {
-        font-size: 24px;
-        color: var(--tx);
-        margin-bottom: 20px;
-        padding-bottom: 12px;
-        border-bottom: 1px solid var(--br);
-        line-height: 1.3;
-      }
-      .gx-docs-content h2 {
-        font-size: 11px;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        color: var(--tx);
-        margin: 28px 0 10px;
-        padding-left: 8px;
-        border-left: 2px solid var(--ac);
-      }
-      .gx-docs-content h3 {
-        font-size: 12px;
-        color: var(--ac2);
-        margin: 18px 0 6px;
-      }
-      .gx-docs-content h4 {
-        font-size: 12px;
-        color: var(--txs);
-        margin: 14px 0 4px;
-        font-style: italic;
-      }
-      .gx-docs-content p {
-        color: var(--txs);
-        margin-bottom: 12px;
-        line-height: 1.8;
-      }
-      .gx-docs-content ul,
-      .gx-docs-content ol {
-        margin: 8px 0 14px 20px;
-        color: var(--txs);
-      }
-      .gx-docs-content li {
-        margin-bottom: 5px;
-        line-height: 1.7;
-      }
-      .gx-docs-content strong {
-        color: var(--tx);
-        font-weight: 500;
-      }
-      .gx-docs-content em {
-        color: var(--txs);
-        font-style: italic;
-      }
-      .gx-docs-content code {
-        background: var(--bg-o);
-        padding: 1px 5px;
-        border: 1px solid var(--br);
-        font-size: 11px;
-        color: var(--ac2);
-        border-radius: 3px;
-      }
-      .gx-docs-content pre {
-        background: var(--bg-o);
-        border: 1px solid var(--br);
-        border-left: 2px solid var(--ac);
-        padding: 14px 16px;
-        margin: 14px 0;
-        overflow-x: auto;
-        border-radius: var(--radius);
-      }
-      .gx-docs-content pre code {
-        background: none;
-        border: none;
-        padding: 0;
-        color: var(--txs);
-        font-size: 11px;
-        line-height: 1.65;
-      }
-      .gx-docs-content blockquote {
-        border-left: 3px solid var(--ac);
-        padding: 10px 16px;
-        background: rgba(201, 168, 76, 0.06);
-        margin: 14px 0;
-        color: var(--txs);
-        border-radius: 0 var(--radius) var(--radius) 0;
-      }
-      .gx-docs-content blockquote.note {
-        border-left-color: var(--ac2);
-        background: rgba(0, 180, 216, 0.06);
-      }
-      .gx-docs-content hr {
-        border: none;
-        border-top: 1px solid var(--br);
-        margin: 24px 0;
-      }
-      .gx-docs-content a {
-        color: var(--ac2);
-        text-decoration: none;
-      }
-      .gx-docs-content a:hover {
-        text-decoration: underline;
-      }
-      .gx-docs-content img {
-        width: 100%;
-        border-radius: var(--radius);
-        margin: 12px 0;
-        display: block;
-      }
-      .gx-docs-content .table-wrap {
-        overflow-x: auto;
-        margin: 14px 0;
-      }
-      .gx-docs-content table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 12px;
-      }
-      .gx-docs-content th {
-        text-align: left;
-        font-size: 10px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--txs);
-        padding: 8px 12px;
-        border-bottom: 1px solid var(--br);
-        background: var(--bg-o);
-      }
-      .gx-docs-content td {
-        padding: 7px 12px;
-        border-bottom: 1px solid var(--br);
-        color: var(--txs);
-        vertical-align: top;
-      }
-      .gx-docs-related {
-        margin-top: 40px;
-        padding-top: 20px;
-        border-top: 1px solid var(--br);
-      }
-      .gx-docs-related-label {
-        font-size: 10px;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: var(--txd);
-        margin-bottom: 10px;
-      }
-      .gx-link-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-      .gx-link-chip {
-        font-size: 11px;
-        color: var(--txs);
-        text-decoration: none;
-        border: 1px solid var(--br);
-        border-radius: var(--radius);
-        padding: 5px 12px;
-        transition:
-          border-color 0.15s,
-          color 0.15s;
-        white-space: nowrap;
-      }
-      .gx-link-chip:hover {
-        border-color: var(--ac2);
-        color: var(--ac2);
-      }
-    </style>
-  </head>
-  <body>
-    <nav class="gx-nav" aria-label="Breadcrumb">
-      <ol class="gx-breadcrumb">
-        <li><a href="/">GINEXYS</a></li>
-        <li><a href="/#tools/">Tools</a></li>
-        <li><a href="/tools/pdf-processor/">PDF Processor</a></li>
-        <li aria-current="page">Getting Started</li>
-      </ol>
-      <a class="gx-open-btn" href="/tools/pdf-processor/">Open Tool ↗</a>
-    </nav>
-    <div class="gx-docs-wrap">
-      <article class="gx-docs-content">
-        <h1 id="getting-started-with-pdf-extractor">
-          Getting Started with PDF Processor
-        </h1>
-        <p>
-          The PDF Processor is a high-performance, browser-native tool for
-          converting PDF documents into structured HTML and Markdown. Using a
-          combination of layout analysis and OCR, it allows for seamless data
-          extraction without your files ever leaving your machine.
-        </p>
-        <h2 id="core-workflow">Core Workflow</h2>
-        <ol>
-          <li>
-            <strong>Load Document</strong>: Import a PDF file for processing.
-          </li>
-          <li>
-            <strong>Verify Layout</strong>: Use the <strong>PDF View</strong> to
-            inspect the source document.
-          </li>
-          <li>
-            <strong>Review Extraction</strong>: Switch to
-            <strong>HTML</strong> or <strong>Editor</strong> views to see the
-            parsed results.
-          </li>
-          <li>
-            <strong>Edit and Refine</strong>: Adjust formatting, fix OCR errors,
-            and modify the grid layout.
-          </li>
-          <li>
-            <strong>Export</strong>: Download the final result as clean HTML or
-            a regenerated PDF.
-          </li>
-        </ol>
-        <hr />
-        <h2 id="1-loading-documents">1. Loading Documents</h2>
-        <h3 id="primary-document">Primary Document</h3>
-        <p>
-          Select the <strong>Open PDF</strong> button in the header to load your
-          source file. TIFANY will immediately begin the layout analysis and
-          text extraction process.
-        </p>
-        <h3 id="multi-page-support">Multi-Page Support</h3>
-        <p>For documents with multiple pages:</p>
-        <ul>
-          <li>
-            Use the <strong>Page Navigation</strong> arrows (⟨ ⟩) in the
-            toolbar.
-          </li>
-          <li>
-            Select a specific page from the
-            <strong>Jump to Page</strong> dropdown.
-          </li>
-          <li>
-            The extraction engine processes each page independently, allowing
-            you to export specific pages or the entire document.
-          </li>
-        </ul>
-        <hr />
-        <h2 id="2-integrated-views">2. Integrated Views</h2>
-        <p>
-          The top tab bar allows you to switch between different representations
-          of the document:
-        </p>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>View</th>
-                <th>Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>PDF</strong></td>
-                <td>
-                  Renders the original PDF file using <code>pdf.js</code>.
-                </td>
-              </tr>
-              <tr>
-                <td><strong>HTML</strong></td>
-                <td>
-                  A live, editable preview of the extracted HTML structure.
-                </td>
-              </tr>
-              <tr>
-                <td><strong>Editor</strong></td>
-                <td>
-                  A technical code view using the Monaco Editor for direct
-                  HTML/Markdown manipulation.
-                </td>
-              </tr>
-              <tr>
-                <td><strong>Visual Diff</strong></td>
-                <td>
-                  A side-by-side view for comparing the original PDF against the
-                  extracted output.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <hr />
-        <h2 id="3-editing-and-formatting">3. Editing and Formatting</h2>
-        <h3 id="rich-text-ui">Rich Text UI</h3>
-        <p>
-          When in the <strong>HTML</strong> or
-          <strong>Visual Diff</strong> views, use the formatting toolbar to
-          refine the extracted text:
-        </p>
-        <ul>
-          <li><strong>Text Styles</strong>: Bold, Italics, and Underline.</li>
-          <li>
-            <strong>Headings</strong>: Convert blocks to H1, H2, H3, or standard
-            Body text.
-          </li>
-          <li><strong>Lists</strong>: Create Bulleted or Numbered lists.</li>
-          <li>
-            <strong>Columns</strong>: Toggle between single-column and
-            responsive 2-column layouts.
-          </li>
-        </ul>
-        <h3 id="manual-page-management">Manual Page Management</h3>
-        <ul>
-          <li>
-            <strong>Add Page</strong>: Use the <strong>+ Page</strong> button to
-            insert blank pages into the extracted document. Useful for adding
-            cover letters or appendices during the conversion process.
-          </li>
-        </ul>
-        <hr />
-        <h2 id="4-exporting-results">4. Exporting Results</h2>
-        <p>
-          Once your document is refined, use the <strong>Export</strong> buttons
-          in the top right:
-        </p>
-        <ul>
-          <li>
-            <strong>HTML</strong>: Downloads the extracted data as a standalone
-            HTML file with preserved styles.
-          </li>
-          <li>
-            <strong>PDF</strong>: Generates a new PDF file based on the
-            extracted and edited HTML content, effectively performing a
-            PDF-to-HTML-to-PDF conversion with layout adjustments.
-          </li>
-        </ul>
-      </article>
-      <aside class="gx-docs-related">
-        <p class="gx-docs-related-label">Related</p>
-        <div class="gx-link-row">
-          <a
-            class="gx-link-chip"
-            href="/tools/pdf-processor/docs/comparison-tools/"
-            >Comparison Tools</a
-          >
-        </div>
-      </aside>
-    </div>
-  </body>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Getting Started — PDF Processor | GINEXYS</title>
+<meta name="description" content="Getting started guide for GINEXYS PDF Processor. Load PDF documents, review extracted HTML in multiple views, edit content with the rich text toolbar, and export clean HTML or regenerated PDF.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://ginexys.com/tools/pdf-processor/docs/getting-started.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Getting Started — PDF Processor | GINEXYS">
+<meta property="og:description" content="Getting started guide for GINEXYS PDF Processor. Load PDF documents, review extracted HTML in multiple views, edit content with the rich text toolbar, and export clean HTML or regenerated PDF.">
+<meta property="og:url" content="https://ginexys.com/tools/pdf-processor/docs/getting-started.html">
+<meta property="og:site_name" content="GINEXYS">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "headline": "Getting Started — PDF Processor",
+      "description": "Getting started guide for GINEXYS PDF Processor. Load PDF documents, review extracted HTML in multiple views, edit content with the rich text toolbar, and export clean HTML or regenerated PDF.",
+      "url": "https://ginexys.com/tools/pdf-processor/docs/getting-started.html",
+      "isPartOf": {
+        "@type": "WebApplication",
+        "name": "PDF Processor",
+        "url": "https://ginexys.com/tools/pdf-processor/"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "GINEXYS",
+        "url": "https://ginexys.com"
+      },
+      "dateModified": "2026-08-06"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "GINEXYS",
+          "item": "https://ginexys.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Tools",
+          "item": "https://ginexys.com/tools/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "PDF Processor",
+          "item": "https://ginexys.com/tools/pdf-processor/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 4,
+          "name": "Getting Started"
+        }
+      ]
+    }
+  ]
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>:root { --bg:#0b1018;--bg-r:#0f1720;--bg-o:#162030;--br:#1e3348;--br-s:#2a4a66;--ac:#c9a84c;--ac2:#00b4d8;--tx:#d8eaf8;--txs:#6a90b0;--txd:#354d63;--radius:6px; }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--tx);font-family:'DM Mono','Courier New',monospace;font-size:13px;line-height:1.65;}
+  .gx-nav{height:44px;background:var(--bg-r);border-bottom:1px solid var(--br);display:flex;align-items:center;padding:0 20px;gap:0;position:sticky;top:0;z-index:10;}
+  .gx-breadcrumb{list-style:none;display:flex;align-items:center;gap:0;flex:1;min-width:0;overflow:hidden;}
+  .gx-breadcrumb li{display:flex;align-items:center;font-size:11px;letter-spacing:.05em;white-space:nowrap;color:var(--txd);}
+  .gx-breadcrumb li+li::before{content:'/';margin:0 6px;color:var(--txd);}
+  .gx-breadcrumb a{color:var(--txs);text-decoration:none;transition:color .15s;}
+  .gx-breadcrumb a:hover{color:var(--ac);}
+  .gx-breadcrumb li:last-child{color:var(--tx);overflow:hidden;text-overflow:ellipsis;}
+  .gx-open-btn{font-size:10px;letter-spacing:.08em;color:var(--txs);text-decoration:none;border:1px solid var(--br);border-radius:var(--radius);padding:4px 12px;white-space:nowrap;transition:border-color .15s,color .15s;flex-shrink:0;}
+  .gx-open-btn:hover{border-color:var(--ac);color:var(--ac);}
+  .gx-docs-wrap{max-width:760px;margin:0 auto;padding:36px 24px 80px;}
+  .gx-docs-content h1{font-size:24px;color:var(--tx);margin-bottom:20px;padding-bottom:12px;border-bottom:1px solid var(--br);line-height:1.3;}
+  .gx-docs-content h2{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx);margin:28px 0 10px;padding-left:8px;border-left:2px solid var(--ac);}
+  .gx-docs-content h3{font-size:12px;color:var(--ac2);margin:18px 0 6px;}
+  .gx-docs-content h4{font-size:12px;color:var(--txs);margin:14px 0 4px;font-style:italic;}
+  .gx-docs-content p{color:var(--txs);margin-bottom:12px;line-height:1.8;}
+  .gx-docs-content ul,.gx-docs-content ol{margin:8px 0 14px 20px;color:var(--txs);}
+  .gx-docs-content li{margin-bottom:5px;line-height:1.7;}
+  .gx-docs-content strong{color:var(--tx);font-weight:500;}
+  .gx-docs-content em{color:var(--txs);font-style:italic;}
+  .gx-docs-content code{background:var(--bg-o);padding:1px 5px;border:1px solid var(--br);font-size:11px;color:var(--ac2);border-radius:3px;}
+  .gx-docs-content pre{background:var(--bg-o);border:1px solid var(--br);border-left:2px solid var(--ac);padding:14px 16px;margin:14px 0;overflow-x:auto;border-radius:var(--radius);}
+  .gx-docs-content pre code{background:none;border:none;padding:0;color:var(--txs);font-size:11px;line-height:1.65;}
+  .gx-docs-content blockquote{border-left:3px solid var(--ac);padding:10px 16px;background:rgba(201,168,76,.06);margin:14px 0;color:var(--txs);border-radius:0 var(--radius) var(--radius) 0;}
+  .gx-docs-content blockquote.note{border-left-color:var(--ac2);background:rgba(0,180,216,.06);}
+  .gx-docs-content hr{border:none;border-top:1px solid var(--br);margin:24px 0;}
+  .gx-docs-content a{color:var(--ac2);text-decoration:none;}
+  .gx-docs-content a:hover{text-decoration:underline;}
+  .gx-docs-content img{width:100%;border-radius:var(--radius);margin:12px 0;display:block;}
+  .gx-docs-content .table-wrap{overflow-x:auto;margin:14px 0;}
+  .gx-docs-content table{width:100%;border-collapse:collapse;font-size:12px;}
+  .gx-docs-content th{text-align:left;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--txs);padding:8px 12px;border-bottom:1px solid var(--br);background:var(--bg-o);}
+  .gx-docs-content td{padding:7px 12px;border-bottom:1px solid var(--br);color:var(--txs);vertical-align:top;}
+  .gx-docs-related{margin-top:40px;padding-top:20px;border-top:1px solid var(--br);}
+  .gx-docs-related-label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--txd);margin-bottom:10px;}
+  .gx-link-row{display:flex;flex-wrap:wrap;gap:8px;}
+  .gx-link-chip{font-size:11px;color:var(--txs);text-decoration:none;border:1px solid var(--br);border-radius:var(--radius);padding:5px 12px;transition:border-color .15s,color .15s;white-space:nowrap;}
+  .gx-link-chip:hover{border-color:var(--ac2);color:var(--ac2);}</style>
+</head>
+<body>
+<nav class="gx-nav" aria-label="Breadcrumb">
+  <ol class="gx-breadcrumb"><li><a href="/">GINEXYS</a></li><li><a href="/tools/">Tools</a></li><li><a href="/tools/pdf-processor/">PDF Processor</a></li><li aria-current="page">Getting Started</li></ol>
+  <a class="gx-open-btn" href="/tools/pdf-processor/">Open Tool ↗</a>
+</nav>
+<div class="gx-docs-wrap">
+  <article class="gx-docs-content"><h1 id="getting-started-with-pdf-processor">Getting Started with PDF Processor</h1>
+<p>The PDF Processor is a high-performance, browser-native tool for converting PDF documents into structured HTML and Markdown. Using a combination of layout analysis and OCR, it allows for seamless data extraction without your files ever leaving your machine.</p>
+<h2 id="core-workflow">Core Workflow</h2>
+<ol><li><strong>Load Document</strong>: Import a PDF file for processing.</li>
+<li><strong>Verify Layout</strong>: Use the <strong>PDF View</strong> to inspect the source document.</li>
+<li><strong>Review Extraction</strong>: Switch to <strong>HTML</strong> or <strong>Editor</strong> views to see the parsed results.</li>
+<li><strong>Edit and Refine</strong>: Adjust formatting, fix OCR errors, and modify the grid layout.</li>
+<li><strong>Export</strong>: Download the final result as clean HTML or a regenerated PDF.</li></ol>
+<hr>
+<h2 id="1-loading-documents">1. Loading Documents</h2>
+<h3 id="primary-document">Primary Document</h3>
+<p>Select the <strong>Open PDF</strong> button in the header to load your source file. TIFANY will immediately begin the layout analysis and text extraction process.</p>
+<h3 id="multi-page-support">Multi-Page Support</h3>
+<p>For documents with multiple pages:</p>
+<ul><li>Use the <strong>Page Navigation</strong> arrows (⟨ ⟩) in the toolbar.</li>
+<li>Select a specific page from the <strong>Jump to Page</strong> dropdown.</li>
+<li>The extraction engine processes each page independently, allowing you to export specific pages or the entire document.</li></ul>
+<hr>
+<h2 id="2-integrated-views">2. Integrated Views</h2>
+<p>The top tab bar allows you to switch between different representations of the document:</p>
+<div class="table-wrap"><table><thead><tr><th>View</th><th>Description</th></tr></thead><tbody><tr><td><strong>PDF</strong></td><td>Renders the original PDF file using <code>pdf.js</code>.</td></tr><tr><td><strong>HTML</strong></td><td>A live, editable preview of the extracted HTML structure.</td></tr><tr><td><strong>Editor</strong></td><td>A technical code view using the Monaco Editor for direct HTML/Markdown manipulation.</td></tr><tr><td><strong>Visual Diff</strong></td><td>A side-by-side view for comparing the original PDF against the extracted output.</td></tr></tbody></table></div>
+<hr>
+<h2 id="3-editing-and-formatting">3. Editing and Formatting</h2>
+<h3 id="rich-text-ui">Rich Text UI</h3>
+<p>When in the <strong>HTML</strong> or <strong>Visual Diff</strong> views, use the formatting toolbar to refine the extracted text:</p>
+<ul><li><strong>Text Styles</strong>: Bold, Italics, and Underline.</li>
+<li><strong>Headings</strong>: Convert blocks to H1, H2, H3, or standard Body text.</li>
+<li><strong>Lists</strong>: Create Bulleted or Numbered lists.</li>
+<li><strong>Columns</strong>: Toggle between single-column and responsive 2-column layouts.</li></ul>
+<h3 id="manual-page-management">Manual Page Management</h3>
+<ul><li><strong>Add Page</strong>: Use the <strong>+ Page</strong> button to insert blank pages into the extracted document. Useful for adding cover letters or appendices during the conversion process.</li></ul>
+<hr>
+<h2 id="4-exporting-results">4. Exporting Results</h2>
+<p>Once your document is refined, use the <strong>Export</strong> buttons in the top right:</p>
+<ul><li><strong>HTML</strong>: Downloads the extracted data as a standalone HTML file with preserved styles.</li>
+<li><strong>PDF</strong>: Generates a new PDF file based on the extracted and edited HTML content, effectively performing a PDF-to-HTML-to-PDF conversion with layout adjustments.</li></ul></article>
+  <aside class="gx-docs-related">
+    <p class="gx-docs-related-label">Related</p>
+    <div class="gx-link-row"><a class="gx-link-chip" href="/tools/pdf-processor/docs/comparison-tools/">Comparison Tools</a></div>
+  </aside>
+</div>
+</body>
 </html>

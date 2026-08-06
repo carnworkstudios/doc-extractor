@@ -29,6 +29,11 @@ async function getDocling() {
     return { processor, model };
 }
 
+// NOTE (2026-08-06): the `process_batch_item` branch was removed. It extracted
+// PDFs with MuPDF's `toStructuredText().asText()` — a second, much weaker engine
+// than the deterministic geometry pipeline the single-document timeline runs, so
+// batch output had no tables, no regions and no IR. Batch now drives
+// geometryWorker.js through the WorkerPool, which is the same engine.
 self.onmessage = async (e) => {
     if (e.data.type !== 'process') return;
     const { pdfIndex, bytes } = e.data;

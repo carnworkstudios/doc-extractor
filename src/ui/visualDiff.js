@@ -47,17 +47,28 @@ export function getVisualDiffFocusedTarget() {
 }
 
 export async function activateVisualDiff() {
-    if (!state.pdf1.bytes) {
-        $('#visual-diff-pdf').html('<p class="empty-hint">Open a PDF first.</p>');
+    if (state.pdf1.bytes) {
+        if (!_rendered || state.pdf1._diffDirty) {
+            await renderPDFToCanvas(state.pdf1.bytes, 'visual-diff-pdf');
+            _rendered = true;
+            state.pdf1._diffDirty = false;
+            unmountAnnotationLayers(document.getElementById('visual-diff-pdf'));
+            mountAnnotationLayers(document.getElementById('visual-diff-pdf'), { readOnly: true });
+        }
+    } else if (state.pdf1.extractedHTML) {
+        const leftPane = document.getElementById('visual-diff-pdf');
+        if (leftPane) {
+            const clean = typeof DOMPurify !== 'undefined'
+                ? DOMPurify.sanitize(state.pdf1.extractedHTML, { ADD_TAGS: ['img'], ALLOW_DATA_ATTR: true })
+                : state.pdf1.extractedHTML;
+            if (leftPane.innerHTML !== clean) {
+                leftPane.innerHTML = clean;
+                initTableFeatures(leftPane);
+            }
+        }
+    } else {
+        $('#visual-diff-pdf').html('<p class="empty-hint">Open a document first.</p>');
         return;
-    }
-
-    if (!_rendered || state.pdf1._diffDirty) {
-        await renderPDFToCanvas(state.pdf1.bytes, 'visual-diff-pdf');
-        _rendered = true;
-        state.pdf1._diffDirty = false;
-        unmountAnnotationLayers(document.getElementById('visual-diff-pdf'));
-        mountAnnotationLayers(document.getElementById('visual-diff-pdf'), { readOnly: true });
     }
 
     // Only re-fill the HTML pane when state has actually moved on. Edits the

@@ -71,6 +71,11 @@ export function refreshCompareDiff() {
         _setStats(0, 0);
         return;
     }
+    if (!raw1) {
+        _renderSingleRightPane(raw2, useHtml);
+        _setStats(0, 0);
+        return;
+    }
 
     // Normalise to plain text lines for the line diff
     const lines1 = _toLines(raw1, useHtml);
@@ -389,6 +394,16 @@ function _renderSinglePane(content, useHtml) {
     });
     $('#content-left').html(html);
     $('#content-right').html('<div class="empty-state">Load Modified File to compare</div>');
+}
+
+function _renderSingleRightPane(content, useHtml) {
+    const lines = _toLines(content, useHtml);
+    let html = '';
+    lines.forEach((line, i) => {
+        html += _row(i + 1, line, 'equal', false);
+    });
+    $('#content-left').html('<div class="empty-state">Load Original File to compare</div>');
+    $('#content-right').html(html);
 }
 
 function _setStats(additions, removals) {

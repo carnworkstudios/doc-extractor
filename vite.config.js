@@ -68,6 +68,7 @@ export default defineConfig({
     resolve: {
         alias: {
             '@os': path.resolve(__dirname, '../../assets/os'),
+            '@batch': path.resolve(__dirname, '../../assets/pdf-processor/batch'),
         },
     },
 

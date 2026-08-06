@@ -17,10 +17,12 @@ import { initZoneToolbar } from './ui/zoneToolbar.js';
 import { initSelectionMode } from './ui/selectionMode.js';
 import { initViewCode } from './ui/viewCode.js';
 import { initPDFEditMode } from './ui/pdfEditMode.js';
+import { initPDFTextEdit } from './ui/pdfTextEdit.js';
 import { initHistoryController } from './ui/historyController.js';
 import { initAnnotationToolbar } from './ui/annotationToolbar.js';
 import { initNavPanel } from './ui/navPanel.js';
 import { initPdfContextMenu } from './ui/pdfContextMenu.js';
+import { initBatchViewController } from './ui/batchViewController.js';
 import { analyzePDF } from './extraction/vector/pdfAnalyzer.js';
 import { showToast } from './ui/toast.js';
 
@@ -157,10 +159,12 @@ $(() => {
     initTableEditing();
     initViewCode();
     initPDFEditMode();
+    initPDFTextEdit();
     initHistoryController();
     initAnnotationToolbar();
     initNavPanel();
     initPdfContextMenu();
+    initBatchViewController();
     _tryInjectAnalyzePanel();
     _initMcpPill();
 

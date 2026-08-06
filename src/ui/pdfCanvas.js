@@ -5,6 +5,7 @@
 
 import $ from 'jquery';
 import * as pdfjsLib from 'pdfjs-dist';
+import { refreshTextEditMode } from './pdfTextEdit.js';
 // Global worker source is already configured in pdfAnalyzer.js or geometryWorker.js,
 // but just in case, it should be available.
 
@@ -102,6 +103,10 @@ export async function renderPDFToCanvas(bytes, containerId = 'pdf-canvas-contain
         console.error("pdfjs render error:", err);
     }
 
+    // The container was emptied above, so the edit-text class has to be
+    // re-applied to the fresh wrappers.
+    refreshTextEditMode();
+
     return { wrappers, numPages };
 }
 
@@ -116,13 +121,15 @@ function buildTextLayer(textContent, viewport, $layerEl) {
                 x,
                 y,
                 fontSize,
+                // item.width/height are in PDF points at scale 1.
+                width: (item.width || 0) * viewport.scale,
                 fontFamily: item.fontName || 'sans-serif'
             };
         });
 
         positionedItems.forEach(it => {
             if (!it.str.trim()) return; // Skip empty whitespace
-            
+
             const $span = $('<span>').text(it.str).addClass('pdf-text-span').css({
                 left: it.x,
                 top: it.y - it.fontSize,
@@ -133,9 +140,21 @@ function buildTextLayer(textContent, viewport, $layerEl) {
                 whiteSpace: 'pre',
                 cursor: 'text'
             });
-            
+
+            // Provenance for the pdf-lib export route: the ORIGINAL string plus
+            // the span's box in DISPLAY SPACE (PDF points, top-left origin,
+            // y down) — the same space annotations use, so exportPdf can run
+            // both through viewportToUserSpace without a second convention.
+            const el = $span[0];
+            el.dataset.orig = it.str;
+            el.dataset.x = String(it.x / viewport.scale);
+            el.dataset.y = String((it.y - it.fontSize) / viewport.scale);
+            el.dataset.w = String(it.width / viewport.scale);
+            el.dataset.fs = String(it.fontSize / viewport.scale);
+
             // Note: The text layer must be transparent to allow selection
-            // while showing the actual PDF rendering beneath it.
+            // while showing the actual PDF rendering beneath it. In text-edit
+            // mode the canvas is hidden and CSS makes these spans opaque.
             $layerEl.append($span);
         });
     } catch (e) {

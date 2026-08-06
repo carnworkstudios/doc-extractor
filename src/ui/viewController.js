@@ -43,6 +43,11 @@ export async function switchView(viewName) {
         activateVisualDiff();
     }
 
+    if (viewName === 'diff') {
+        const { refreshCompareDiff } = await import('./diffViewController.js');
+        refreshCompareDiff();
+    }
+
     syncToolbarToView(viewName);
     renderNavPanel();
 }

@@ -12,8 +12,9 @@ import { getCurrentPage, jumpToPage } from './pageNav.js';
 import * as annEngine from '../annotation/engine.js';
 import { showToast } from './toast.js';
 import { getEffectiveActiveView } from './viewController.js';
+import { updateBatchUI } from './batchViewController.js';
 
-let _activeTab = 'outline'; // 'outline' | 'bookmarks' | 'annotations'
+let _activeTab = 'outline'; // 'outline' | 'bookmarks' | 'annotations' | 'links' | 'batch'
 let _isOpen = false;
 
 export function initNavPanel() {
@@ -42,6 +43,7 @@ export function renderNavPanel() {
     $('.nav-tab-btn[data-tab="bookmarks"]').attr('title', 'Bookmarks');
     $('.nav-tab-btn[data-tab="annotations"]').attr('title', isPdf ? 'PDF Annotations' : 'Doc Notes');
     $('.nav-tab-btn[data-tab="links"]').attr('title', 'Hyperlinks & References');
+    $('.nav-tab-btn[data-tab="batch"]').attr('title', 'Batch Documents & Queue');
 
     // Tab strip active highlight (only when panel body is open)
     $('.nav-tab-btn').removeClass('active');
@@ -49,9 +51,10 @@ export function renderNavPanel() {
         $(`.nav-tab-btn[data-tab="${_activeTab}"]`).addClass('active');
     }
 
-    // Toggle header action buttons (Pin Page vs Add Link)
+    // Toggle header action buttons (Pin Page vs Add Link vs Upload Batch)
     $('#btn-add-bookmark').toggle(_activeTab === 'bookmarks');
     $('#btn-add-link').toggle(_activeTab === 'links');
+    $('#btn-batch-upload').toggle(_activeTab === 'batch');
 
     if (!_isOpen) return;
 
@@ -64,6 +67,8 @@ export function renderNavPanel() {
         $('#nav-panel-title').text(isPdf ? 'Annotations' : 'Doc Notes');
     } else if (_activeTab === 'links') {
         $('#nav-panel-title').text('Hyperlinks');
+    } else if (_activeTab === 'batch') {
+        $('#nav-panel-title').text('Batch Documents');
     }
 
     // Hide all tab views, show active
@@ -82,6 +87,9 @@ export function renderNavPanel() {
             break;
         case 'links':
             renderLinksTab();
+            break;
+        case 'batch':
+            updateBatchUI();
             break;
     }
 }

@@ -19,6 +19,7 @@ import { state } from '../state.js';
 import { showToast } from './toast.js';
 import { downloadExtractedHTML, isProUser, integrationBackendUrl } from './fileUpload.js';
 import { exportAnnotatedPdf } from '../annotation/exportPdf.js';
+import { syncTextEditsToGxDoc } from './pdfTextEdit.js';
 import { _waitForToolReady } from './analyzePanel.js';
 import { gxDocToHtml } from '../ir/gxDocToHtml.js';
 
@@ -107,11 +108,17 @@ async function exportToPdf() {
         showToast('No PDF loaded to export.', 'error');
         return;
     }
+    // Text edits live in the DOM until something asks for them. Harvest before
+    // the build so an export never silently drops in-progress edits.
+    const textEdits = syncTextEditsToGxDoc();
     const hasAnn = Array.isArray(gxDoc?.annotations) && gxDoc.annotations.length > 0;
-    if (!hasAnn) {
+    if (!hasAnn && !textEdits.length) {
         showToast('Exporting original PDF (no annotations present)…', 'info');
     } else {
-        showToast('Building vector PDF with annotations…', 'info');
+        const parts = [];
+        if (hasAnn) parts.push('annotations');
+        if (textEdits.length) parts.push(`${textEdits.length} text edit${textEdits.length !== 1 ? 's' : ''}`);
+        showToast(`Building vector PDF with ${parts.join(' + ')}…`, 'info');
     }
     const fileName = `${(file?.name || 'annotated').replace(/\.pdf$/i, '')}-annotated.pdf`;
     try {

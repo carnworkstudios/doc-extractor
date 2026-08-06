@@ -711,6 +711,24 @@ function extractViaGeometryWorker(bytes, onProgress) {
     });
 }
 
+export async function loadFileToSlot(file, slot = 1) {
+    const route = _routeFile(file.name);
+    let process;
+    if (route === 'docx') {
+        process = handleDocxFile(file, slot);
+    } else if (route === 'doc') {
+        process = handleDocumentFile(file, slot);
+    } else if (route === 'json') {
+        process = handleJsonFile(file, slot);
+    } else {
+        process = handleFile(file, slot);
+    }
+    if (slot === 1) {
+        _slot1Load = process.catch(() => {});
+    }
+    return process;
+}
+
 export function initFileInputs() {
     if (_isProUser()) _ungateAdvanceExtraction();
 
@@ -733,29 +751,13 @@ export function initFileInputs() {
     $('#file1-input').on('change', e => {
         const file = e.target.files[0];
         if (!file) return;
-        const route = _routeFile(file.name);
-        _slot1Load = (route === 'docx'
-            ? handleDocxFile(file, 1)
-            : route === 'doc'
-                ? handleDocumentFile(file)
-                : route === 'json'
-                    ? handleJsonFile(file, 1)
-                    : handleFile(file, 1)).catch(() => {});
+        loadFileToSlot(file, 1);
     });
 
     $('#file2-input').on('change', e => {
         const file = e.target.files[0];
         if (!file) return;
-        const route = _routeFile(file.name);
-        if (route === 'docx') {
-            handleDocxFile(file, 2);
-        } else if (route === 'doc') {
-            handleDocumentFile(file, 2);
-        } else if (route === 'json') {
-            handleJsonFile(file, 2);
-        } else {
-            handleFile(file, 2);
-        }
+        loadFileToSlot(file, 2);
     });
 
     // VS Code extension: signal ready then receive file bytes from extension host
@@ -871,16 +873,14 @@ async function handleDocumentFile(file, slot = 1) {
     $(`#${label}-input`).closest('.file-btn').addClass('loaded');
 
     if (slot === 2) {
-        // Slot 2 is compare-only — trigger diff refresh if slot 1 also has content
-        if (state.pdf1.extractedHTML) refreshCodeDiff();
-        _updateVisualDiffLabels();
+        _onSlotLoaded(2);
         showToast(`${file.name} loaded for compare`, 'success');
         return;
     }
 
     applyHtmlEverywhere(clean, null);
     switchView('html');
-    _updateVisualDiffLabels();
+    _onSlotLoaded(1);
     showToast(`${file.name} loaded`, 'success');
 }
 
@@ -906,15 +906,14 @@ async function handleDocxFile(file, slot = 1) {
     $(`#${label}-input`).closest('.file-btn').addClass('loaded');
 
     if (slot === 2) {
-        if (state.pdf1.extractedHTML) refreshCodeDiff();
-        _updateVisualDiffLabels();
+        _onSlotLoaded(2);
         showToast(`${file.name} loaded for compare`, 'success');
         return;
     }
 
     applyHtmlEverywhere(html, null);
     switchView('html');
-    _updateVisualDiffLabels();
+    _onSlotLoaded(1);
     showToast(`${file.name} loaded`, 'success');
 }
 
@@ -942,22 +941,21 @@ async function handleJsonFile(file, slot = 1) {
         $(`#${label}-input`).closest('.file-btn').addClass('loaded');
 
         if (slot === 2) {
-            if (state.pdf1.extractedHTML) refreshCodeDiff();
-            _updateVisualDiffLabels();
+            _onSlotLoaded(2);
             showToast(`${file.name} loaded for compare`, 'success');
             return;
         }
 
         applyHtmlEverywhere(html, null);
         switchView('html');
-        _updateVisualDiffLabels();
+        _onSlotLoaded(1);
         showToast(`${file.name} loaded`, 'success');
     } catch (err) {
         showToast(`Could not import ${file.name}: ${err.message}`, 'error');
     }
 }
 
-function markdownToHtml(md) {
+export function markdownToHtml(md) {
     return md
         .replace(/^#{6}\s+(.+)$/gm, '<h6>$1</h6>')
         .replace(/^#{5}\s+(.+)$/gm, '<h5>$1</h5>')
@@ -1175,7 +1173,7 @@ async function handleFile(file, pdfIndex) {
             // Populate zone chips for the first visible page
             refreshZoneToolbar();
             markDiffDirty();
-            if (state.pdf2.bytes) refreshCodeDiff();
+            _onSlotLoaded(1);
             // Advance Extraction, vector doc: AI reviews the verifier's scores
             // and re-tolerances weak pages. Runs async — pages patch in place
             // through the same path as a manual analyze-tab re-extract.
@@ -1184,8 +1182,7 @@ async function handleFile(file, pdfIndex) {
                     console.warn('[AI tune] auto pass failed:', e.message));
             }
         } else {
-            refreshCodeDiff();
-            enableDiffTab();
+            _onSlotLoaded(2);
         }
 
         const SOURCE_LABELS = {
@@ -1197,7 +1194,7 @@ async function handleFile(file, pdfIndex) {
         const tableSuffix = (data.source === 'local' || data.source === 'local-ocr-geometry') && data.tableCount != null
             ? ` — ${data.tableCount} table${data.tableCount !== 1 ? 's' : ''} detected`
             : '';
-        _updateVisualDiffLabels();
+        _onSlotLoaded(pdfIndex);
         // The outcome event. `data.source` distinguishes the local deterministic
         // pipeline from local OCR and from the backend, so the three engines can
         // be compared on table yield rather than guessed at.
@@ -1241,7 +1238,94 @@ export function populateHTMLPreview(html, containerId = 'html-preview') {
     hydrateImages(el);
 }
 
+/**
+ * Mount an ALREADY-EXTRACTED document into a slot and bring every surface up
+ * with it: canvas render, text layers, annotation layers, analysis regions,
+ * zone chips, diff state.
+ *
+ * This is the one path a document takes into the app. `handleFile` runs it after
+ * the geometry worker returns; the batch view runs it when a queued document is
+ * focused. Batch used to mount by hand and skipped most of this, which is why a
+ * focused batch document had no analyze panel, no zone toolbar, no annotation
+ * layer and no editable text — it looked loaded and behaved like nothing was.
+ *
+ * @param {object} doc
+ *   file, bytes (Uint8Array|null), html, text, gxDoc, pages (per-page regions),
+ *   extraction (facts about the engine that produced this), slot (1|2)
+ */
+export async function mountExtractedDocument({
+    file, bytes = null, html = '', text = '', gxDoc = null,
+    pages = [], extraction = null, slot = 1,
+}) {
+    const pdfState = slot === 2 ? state.pdf2 : state.pdf1;
+    const label = slot === 2 ? 'file2' : 'file1';
 
+    pdfState.file = file || null;
+    // Keep a pristine copy: pdf.js and pdf-lib both detach the buffer they are
+    // handed, so the slot must never hold the same array anything else consumes.
+    pdfState.bytes = bytes ? bytes.slice() : null;
+    pdfState.extractedHTML = html;
+    pdfState.extractedText = text;
+    pdfState.gxDoc = gxDoc;
+    pdfState.extraction = extraction;
+
+    $(`#${label}-name`).text(file?.name || '');
+    $(`#${label}-input`).closest('.file-btn').addClass('loaded');
+
+    if (slot === 2) {
+        _onSlotLoaded(2);
+        return;
+    }
+
+    resetPDFLayers();
+    resetAnalysisData();
+
+    if (pdfState.bytes) {
+        const container = document.getElementById('pdf-canvas-container');
+        const { wrappers, numPages } = await renderPDFToCanvas(pdfState.bytes.slice(), 'pdf-canvas-container');
+        registerPages(wrappers, numPages);
+        registerPDFLayers(container);
+        unmountAnnotationLayers(container);
+        mountAnnotationLayers(container);
+
+        // The analyze panel re-extracts single pages against bytes CACHED IN THE
+        // WORKER. Without this, "Re-extract page" is dead for the document.
+        const worker = ensureGeometryWorker();
+        worker.postMessage({ type: 'cache-bytes', bytes: pdfState.bytes.slice() });
+
+        _analysisPromise = runAnalysis(pdfState.bytes.slice(), file?.name || 'document')
+            .catch(err => { console.warn('[Analyze] Analysis failed:', err.message); return null; });
+    }
+
+    // Replay the per-page regions the extraction already produced, so the
+    // analyze panel and zone toolbar are populated without a second pass.
+    for (const p of pages) {
+        pushRegionPage(p.page, p.regions, p.pageScale, p.verification);
+    }
+
+    annotationEngine.loadFromGxDoc(gxDoc);
+    applyHtmlEverywhere(html, null);
+    refreshZoneToolbar();
+    markDiffDirty();
+    _onSlotLoaded(1);
+}
+
+function _onSlotLoaded(slot) {
+    _updateVisualDiffLabels();
+
+    const has1 = Boolean(state.pdf1.extractedHTML || state.pdf1.extractedText || state.pdf1.file);
+    const has2 = Boolean(state.pdf2.extractedHTML || state.pdf2.extractedText || state.pdf2.file);
+
+    if (has2) {
+        enableDiffTab();
+    } else {
+        disableDiffTab();
+    }
+
+    if (has1 && has2) {
+        refreshCodeDiff();
+    }
+}
 
 function _updateVisualDiffLabels() {
     const f1 = state.pdf1.file?.name ?? '';

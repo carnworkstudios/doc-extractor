@@ -910,6 +910,14 @@
               icon="material-symbols:edit-note-outline"
             ></iconify-icon>
           </button>
+          <button
+            class="tool-btn"
+            id="btn-pdf-text-edit"
+            aria-pressed="false"
+            title="Edit Text — hide the page image and edit the PDF text directly (exported via pdf-lib)"
+          >
+            <iconify-icon icon="material-symbols:text-fields"></iconify-icon>
+          </button>
           <span class="ribbon-btn-sep"></span>
           <button
             class="tool-btn"
@@ -1255,6 +1263,13 @@
           >
             <iconify-icon icon="material-symbols:link"></iconify-icon>
           </button>
+          <button
+            class="nav-tab-btn"
+            data-tab="batch"
+            title="Batch Documents & Queue"
+          >
+            <iconify-icon icon="material-symbols:folder-zip-outline"></iconify-icon>
+          </button>
         </div>
         <div class="nav-panel-body">
           <div class="nav-panel-header">
@@ -1278,6 +1293,15 @@
                 Add Link
               </button>
               <button
+                class="nav-action-btn"
+                id="btn-batch-upload"
+                title="Add Batch Files"
+                style="display: none"
+              >
+                <iconify-icon icon="material-symbols:upload-file"></iconify-icon>
+                Upload
+              </button>
+              <button
                 class="nav-close-btn"
                 id="nav-panel-close"
                 title="Close Panel"
@@ -1291,6 +1315,7 @@
             <div id="nav-view-bookmarks" class="nav-panel-view"></div>
             <div id="nav-view-annotations" class="nav-panel-view"></div>
             <div id="nav-view-links" class="nav-panel-view"></div>
+            <div id="nav-view-batch" class="nav-panel-view"></div>
           </div>
         </div>
       </aside>

@@ -151,6 +151,37 @@ export function patchPageHtml(pageNum, newHtml) {
     }
 }
 
+/**
+ * Explicitly sync state.pdf1.extractedHTML to a specific DOM surface on focus.
+ * Supports lazy DOM mirroring for batch operations.
+ * @param {string} surfaceId — 'html-preview' | 'visual-diff-html' | 'monaco'
+ */
+export function syncStateToDOMOnFocus(surfaceId = 'html-preview') {
+    if (_syncing) return;
+    _syncing = true;
+    try {
+        const raw = state.pdf1.extractedHTML || '';
+        const clean = sanitize(stripTableRulers(raw));
+
+        if (surfaceId === 'monaco') {
+            const editor = state.monacoEditor;
+            if (editor && editor.getValue() !== raw) {
+                editor.getModel()?.setValue(raw);
+            }
+        } else {
+            const el = document.getElementById(surfaceId);
+            if (el && el.innerHTML !== clean) {
+                el.innerHTML = clean;
+                initTableFeatures(el);
+                rebindTableEditing();
+                hydrateImages(el);
+            }
+        }
+    } finally {
+        _syncing = false;
+    }
+}
+
 export async function hydrateImages(containerEl) {
     const images = containerEl.querySelectorAll('img[data-img-id]');
     for (const img of images) {
@@ -173,3 +204,4 @@ export async function hydrateImages(containerEl) {
         }
     }
 }
+
