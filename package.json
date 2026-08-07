@@ -7,7 +7,8 @@
     "scripts": {
         "dev": "vite",
         "build": "vite build",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "test": "node test/authGate.test.mjs"
     },
     "dependencies": {
         "@canwork/boxwood": "^1.1.0",

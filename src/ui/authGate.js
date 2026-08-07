@@ -61,8 +61,20 @@ function _isDevHost() {
 
 /** Best-effort synchronous read. Fails closed on anything unresolvable. */
 export function isSignedIn() {
-    if (window.CwsBridge && window.CwsBridge.isEmbedded) return true;
-    // TEMP: dev bypass disabled to test the gate locally. UNCOMMENT WHEN DONE.
+    
+// ── Auth resolution ─────────────────────────────────
+    // Analyze and Batch open to every anonymous visitor on ginexys.com, because
+    // this branch runs before the OsShell.getUser() check below and so made the
+    // real check unreachable for exactly the users it was meant to cover.
+    //
+    // 'pending' is the boot state and must read as signed OUT. initAuthGate
+    // subscribes to onAuthChange, so the gate lifts by itself the moment the
+    // extension resolves a real session.
+    if (window.CwsBridge && typeof window.CwsBridge.getAuthState === 'function') {
+        try {
+            return window.CwsBridge.getAuthState()?.status === 'signed-in';
+        } catch (_) { return false; }
+    }
     if (_isDevHost()) return true;
     try {
         if (window.parent !== window && window.parent.OsShell?.getUser) {
@@ -196,6 +208,14 @@ export function isGateResolved() { return _resolved; }
 
 export function initAuthGate() {
     refreshGates();
+
+    // VS Code webview: auth arrives asynchronously from the extension host and
+    // starts as 'pending', which isSignedIn() reads as signed out. Without this
+    // subscription the gate would stay up for the whole session even for a
+    // signed-in user, because nothing else re-evaluates it in that host.
+    if (window.CwsBridge && typeof window.CwsBridge.onAuthChange === 'function') {
+        try { window.CwsBridge.onAuthChange(() => refreshGates()); } catch (_) { /* non-fatal */ }
+    }
 
     // The shell broadcasts auth transitions; re-run so a sign-in unlocks both
     // surfaces without a reload.

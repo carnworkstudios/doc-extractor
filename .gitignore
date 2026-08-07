@@ -31,3 +31,4 @@ test2.js
 # live in git. Without them a fresh CI clone builds a site whose OCR 404s.
 public/tesseract/
 public/ort-wasm/
+scripts
