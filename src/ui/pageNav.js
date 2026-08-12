@@ -82,6 +82,7 @@ export function initToolbar() {
     $('#btn-dist-v').on('click', () => distributeChildren('column'));
 
     initColumnSplitDropdown();
+    initDocTextDragMove();
 
     $('#btn-add-page').on('click', addEditorPage);
     $('#btn-insert-box').on('click', insertBox);
@@ -530,11 +531,20 @@ function decreaseIndent() {
  * bar scrolls horizontally (overflow-x: auto), and an absolutely-positioned
  * descendant would get clipped by that scroll container. This mirrors
  * exportController.js's #export-dropdown positioning.
+ *
+ * The selection is captured (cloned) on caret-open, same as
+ * initColumnSplitDropdown below. Clicking the caret button, then a menu item,
+ * is two clicks on non-editable buttons; by the time the item click fires,
+ * focus has moved off the editable surface and window.getSelection() no
+ * longer points at the text the user picked — so re-reading it at click time
+ * (the previous behavior) silently applied the list style to nothing.
  */
 function initSplitDropdown(rootSelector, insertCmd) {
     const $root = $(rootSelector);
     const $caret = $root.find('.split-btn-caret');
     const $menu = $root.find('.dropdown-menu');
+
+    let capturedRange = null;
 
     $caret.on('click', (e) => {
         e.stopPropagation();
@@ -542,6 +552,9 @@ function initSplitDropdown(rootSelector, insertCmd) {
         $('.dropdown.open').removeClass('open');
 
         if (!isOpen) {
+            const sel = window.getSelection();
+            capturedRange = sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+
             const rect = $caret[0].getBoundingClientRect();
             $menu.css({ top: rect.bottom + 4 + 'px', left: rect.left + 'px' });
             $root.addClass('open');
@@ -553,12 +566,18 @@ function initSplitDropdown(rootSelector, insertCmd) {
     $menu.on('click', '.dropdown-item', function(e) {
         e.stopPropagation();
         const styleType = $(this).data('list-style');
-        applyListStyle(insertCmd, styleType);
+        applyListStyle(insertCmd, styleType, capturedRange);
         $root.removeClass('open');
     });
 }
 
-function applyListStyle(insertCmd, styleType) {
+function applyListStyle(insertCmd, styleType, capturedRange) {
+    if (capturedRange) {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(capturedRange);
+    }
+
     const sel = window.getSelection();
     let node = sel?.rangeCount ? sel.getRangeAt(0).commonAncestorContainer : null;
     if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
@@ -595,7 +614,25 @@ function initColumnSplitDropdown() {
     const $caret = $root.find('.split-btn-caret');
     const $menu = $root.find('.dropdown-menu');
 
-    $('#btn-columns').on('click', () => applyColumnSplit(2));
+    // Shared by the plain button and the caret dropdown: whichever the user
+    // clicks, the range in effect at that exact click needs to be captured
+    // right then, before focus moves to the button and window.getSelection()
+    // stops pointing at the text the user chose.
+    function captureColumnSplitRange() {
+        const sel = window.getSelection();
+        _columnSplitRange = sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    }
+
+    // Previously this read `_columnSplitRange` without ever setting it —
+    // that variable was only assigned inside the caret's click handler below,
+    // so clicking the plain "Columns" button directly (the default 2-column
+    // split, without opening the style menu first) always split against
+    // whatever range was captured by a previous caret click, or null on
+    // first use. Capture fresh here so the direct click works on its own.
+    $('#btn-columns').on('click', () => {
+        captureColumnSplitRange();
+        applyColumnSplit(2);
+    });
 
     $caret.on('click', (e) => {
         e.stopPropagation();
@@ -603,8 +640,7 @@ function initColumnSplitDropdown() {
         $('.dropdown.open').removeClass('open');
 
         if (!isOpen) {
-            const sel = window.getSelection();
-            _columnSplitRange = sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+            captureColumnSplitRange();
 
             const rect = $caret[0].getBoundingClientRect();
             $menu.css({ top: rect.bottom + 4 + 'px', left: rect.left + 'px' });
@@ -736,6 +772,80 @@ function removeColumnSplit(node) {
     splitEl.remove();
     syncStructuralEdit();
     syncUndoRedoUI();
+}
+
+/**
+ * Re-implement drag-and-drop of a selected text range inside the document
+ * surfaces. A contenteditable makes this work natively with zero code in a
+ * normal browser tab — select text, drag it, drop it elsewhere — but the
+ * native OS-level drag session that gesture relies on does not reliably
+ * complete inside the VS Code webview: dragstart fires, the drop target sees
+ * dragover, but nothing is ever inserted. selectionMode.js's region-reorder
+ * drag (plain dragstart/dragover/drop on elements with draggable="true")
+ * already works in this same webview, so driving the move explicitly over
+ * those same event types — rather than depending on the browser's built-in
+ * text-selection-drag internals — sidesteps whatever part of it the webview
+ * host swallows, and behaves identically to native drag in a normal tab.
+ */
+let _textDragRange = null;
+
+function initDocTextDragMove() {
+    document.addEventListener('dragstart', (e) => {
+        const surface = e.target.closest?.(EDITABLE_SURFACE_SEL);
+        if (!surface) return;
+
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+        // Only take over drags that start from inside the current text
+        // selection — anything else (an image, a link) is a different kind
+        // of native drag and should be left alone.
+        if (!range.intersectsNode(e.target)) return;
+
+        _textDragRange = range.cloneRange();
+        e.dataTransfer.setData('text/plain', sel.toString());
+        e.dataTransfer.effectAllowed = 'move';
+    });
+
+    document.addEventListener('dragover', (e) => {
+        if (!_textDragRange) return;
+        if (!e.target.closest?.(EDITABLE_SURFACE_SEL)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    });
+
+    document.addEventListener('drop', (e) => {
+        if (!_textDragRange) return;
+        const surface = e.target.closest?.(EDITABLE_SURFACE_SEL);
+        const range = _textDragRange;
+        _textDragRange = null;
+        if (!surface) return;
+        e.preventDefault();
+
+        const dropRange = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+        if (!dropRange) return;
+        // Dropped back inside (or right at the edge of) the source
+        // selection — nothing to do.
+        if (range.comparePoint(dropRange.startContainer, dropRange.startOffset) === 0 ||
+            (range.intersectsNode(dropRange.startContainer) &&
+             range.isPointInRange(dropRange.startContainer, dropRange.startOffset))) {
+            return;
+        }
+
+        pushSnapshot();
+
+        const fragment = range.extractContents();
+        dropRange.insertNode(fragment);
+
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(dropRange);
+
+        syncStructuralEditFromSurface(surface);
+        syncUndoRedoUI();
+    });
+
+    document.addEventListener('dragend', () => { _textDragRange = null; });
 }
 
 /**

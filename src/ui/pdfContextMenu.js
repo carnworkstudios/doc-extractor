@@ -12,6 +12,7 @@ import { renderLinksTab } from './navPanel.js';
 import { showToast } from './toast.js';
 import { getEffectiveActiveView } from './viewController.js';
 import { setTextEditMode, isTextEditMode } from './pdfTextEdit.js';
+import { promptDialog } from './promptDialog.js';
 
 let $popover = null;
 let currentSelection = null; // { text, page, rect, range }
@@ -199,11 +200,17 @@ export function hidePdfContextMenu() {
     if ($popover) $popover.removeClass('active');
 }
 
-function _addLinkToSelection() {
+async function _addLinkToSelection() {
     if (!currentSelection) return;
+    const sel = currentSelection;
 
-    const url = prompt(`Add Hyperlink for "${currentSelection.text}":`, 'https://');
-    if (!url || !url.trim()) return;
+    // promptDialog is async (it has to be — window.prompt()'s blocking
+    // behavior isn't available), so other selection events can fire while
+    // it's open. Work only off the `sel` snapshot taken above, never the
+    // module-level currentSelection, which may have moved on by the time
+    // the user answers the dialog.
+    const url = await promptDialog(`Add Hyperlink for "${sel.text}":`, 'https://');
+    if (!url || !url.trim()) { hidePdfContextMenu(); return; }
 
     const cleanUrl = url.trim();
     const gxDoc = state.pdf1.gxDoc;
@@ -211,7 +218,7 @@ function _addLinkToSelection() {
         gxDoc.links = gxDoc.links || [];
 
         const isExternal = cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://') || cleanUrl.startsWith('mailto:');
-        const parts = currentSelection.displayRects || [];
+        const parts = sel.displayRects || [];
         if (!parts.length) {
             showToast('Could not resolve that selection to a page position.', 'error');
             hidePdfContextMenu();
@@ -223,7 +230,7 @@ function _addLinkToSelection() {
         parts.forEach((p, i) => gxDoc.links.push({
             id: parts.length > 1 ? `${baseId}_${i}` : baseId,
             page: p.page,
-            text: currentSelection.text,
+            text: sel.text,
             href: cleanUrl,
             rect: p.rect,
             isExternal,
@@ -231,9 +238,9 @@ function _addLinkToSelection() {
         }));
 
         // Apply blue underline highlight on selected text node
-        _applyStyleToRange(currentSelection.range, 'pdf-word-link');
+        _applyStyleToRange(sel.range, 'pdf-word-link');
 
-        showToast(`Linked "${currentSelection.text}" to ${cleanUrl}`, 'success');
+        showToast(`Linked "${sel.text}" to ${cleanUrl}`, 'success');
         renderLinksTab();
     }
 

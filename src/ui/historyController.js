@@ -1,12 +1,10 @@
 /**
  * historyController.js
  * Wires #btn-undo / #btn-redo toolbar buttons and Ctrl+Z / Ctrl+Y keyboard
- * shortcut to the structural ContentHistory stack.
- *
- * Scope: structural mutations only (zone reorder/split/group, insert-box,
- * add-page). Typing / bold / italic use the browser's native undo — this
- * controller never intercepts keystrokes while a contenteditable element
- * is focused.
+ * shortcut to the structural ContentHistory stack, and drives native
+ * execCommand undo/redo for typing/formatting so the key always resolves
+ * to something even when the host (e.g. the VS Code webview) would
+ * otherwise intercept it first. See the keydown handler below for why.
  */
 
 import $ from 'jquery';
@@ -37,24 +35,51 @@ export function initHistoryController() {
     $('#btn-undo').on('click', performUndo);
     $('#btn-redo').on('click', performRedo);
 
-    // Keyboard: only intercept when NOT inside a contenteditable element
-    // so the browser's native undo stack is never stomped while typing.
+    // Keyboard: Ctrl+Z / Ctrl+Y always resolve through this handler, even
+    // while a contenteditable element is focused.
+    //
+    // The comment this replaced said to defer to the browser's native undo
+    // stack while typing, on the assumption that document.execCommand
+    // ('undo') fires on its own from the raw keydown. That holds in a plain
+    // browser tab, but inside the VS Code webview the host editor's global
+    // `ctrl+z`/`cmd+z` keybinding can intercept the key before the native
+    // contenteditable undo ever runs, so nothing happens. Explicitly driving
+    // execCommand ourselves — and stopping the event before it can bubble to
+    // that host keybinding — fixes the webview case and is a no-op change in
+    // a normal browser, where execCommand('undo') is exactly what native
+    // Ctrl+Z already triggers.
+    //
+    // Structural mutations (zone reorder/split/group, insert-box, add-page,
+    // column split) still go through the custom ContentHistory stack via
+    // performUndo/performRedo; typing/bold/italic/list edits stay on the
+    // browser's own undo manager via execCommand.
     document.addEventListener('keydown', (e) => {
         const view = state.activeView;
         if (view !== 'html' && view !== 'visual-diff') return;
 
+        const isUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z';
+        const isRedo = (e.ctrlKey || e.metaKey) &&
+            ((e.shiftKey && e.key.toLowerCase() === 'z') || e.key.toLowerCase() === 'y');
+        if (!isUndo && !isRedo) return;
+
         const active = document.activeElement;
         const isContentEditable = active?.isContentEditable;
-        if (isContentEditable) return; // let browser handle it
 
-        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
-            e.preventDefault();
-            performUndo();
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (isContentEditable) {
+            // Native undo/redo for typing and inline formatting. Falls
+            // through to the structural stack below when there is nothing
+            // left for the browser to undo (e.g. the surface was just
+            // restored from a structural snapshot and has no native history
+            // of its own yet).
+            const did = document.execCommand(isUndo ? 'undo' : 'redo');
+            if (did) return;
         }
-        if ((e.ctrlKey || e.metaKey) && (e.shiftKey && e.key === 'z' || e.key === 'y')) {
-            e.preventDefault();
-            performRedo();
-        }
+
+        if (isUndo) performUndo();
+        else performRedo();
     });
 
     syncUndoRedoUI();

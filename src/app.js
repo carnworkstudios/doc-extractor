@@ -23,6 +23,8 @@ import { initHistoryController } from './ui/historyController.js';
 import { initAnnotationToolbar } from './ui/annotationToolbar.js';
 import { initNavPanel } from './ui/navPanel.js';
 import { initPdfContextMenu } from './ui/pdfContextMenu.js';
+import { initDocSelectionMenu } from './ui/docSelectionMenu.js';
+import { initDocPdfMirror } from './ui/docPdfMirror.js';
 import { initBatchViewController } from './ui/batchViewController.js';
 import { analyzePDF } from './extraction/vector/pdfAnalyzer.js';
 import { showToast } from './ui/toast.js';
@@ -166,6 +168,8 @@ $(() => {
     initAnnotationToolbar();
     initNavPanel();
     initPdfContextMenu();
+    initDocSelectionMenu();
+    initDocPdfMirror();
     initBatchViewController();
     _tryInjectAnalyzePanel();
     _initMcpPill();

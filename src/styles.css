@@ -1859,6 +1859,20 @@ mark.diff-inline-add {
   flex-direction: row;
 }
 
+/* Doc tab: PDF-reference mirror pane, toggled next to #html-preview. Reuses
+   the same .vd-pane / .vd-pane-header styling as Visual Diff. */
+#view-html.doc-pdf-mirror-active {
+  flex-direction: row;
+}
+
+#doc-pdf-mirror-pane {
+  border-right: 1px solid var(--border-dark);
+}
+
+#doc-pdf-mirror-pane[hidden] {
+  display: none;
+}
+
 .vd-pane {
   flex: 1;
   display: flex;

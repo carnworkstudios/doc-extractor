@@ -13,6 +13,7 @@ import * as annEngine from '../annotation/engine.js';
 import { showToast } from './toast.js';
 import { getEffectiveActiveView } from './viewController.js';
 import { updateBatchUI } from './batchViewController.js';
+import { promptDialog } from './promptDialog.js';
 
 let _activeTab = 'outline'; // 'outline' | 'bookmarks' | 'annotations' | 'links' | 'batch'
 let _isOpen = false;
@@ -600,9 +601,9 @@ export function renderLinksTab() {
         });
 
         // Edit button
-        $item.find('.nav-link-act-btn.edit').on('click', (e) => {
+        $item.find('.nav-link-act-btn.edit').on('click', async (e) => {
             e.stopPropagation();
-            const newUrl = prompt('Edit Hyperlink URL:', link.href);
+            const newUrl = await promptDialog('Edit Hyperlink URL:', link.href);
             if (newUrl !== null && newUrl.trim() !== '') {
                 const trimmedUrl = newUrl.trim();
                 if (link.source === 'html' && link.element) {
@@ -637,28 +638,46 @@ export function renderLinksTab() {
     $container.append($list);
 }
 
-export function addNewHyperlink() {
+export async function addNewHyperlink() {
     const activeView = getEffectiveActiveView();
     const isPdf = activeView === 'pdf';
 
     if (!isPdf) {
-        // HTML / Docs view link creation
+        // HTML / Docs view link creation.
+        //
+        // promptDialog is async, unlike window.prompt() — the page keeps
+        // running while it's open, so the contenteditable selection can be
+        // disturbed before the user answers. Capture the range now and
+        // restore it right before execCommand needs it, the same pattern
+        // pageNav.js's column/list dropdowns use to survive an intervening
+        // click.
         const sel = window.getSelection();
         const selectedText = sel ? sel.toString().trim() : '';
+        const capturedRange = sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
 
-        const url = prompt('Enter Hyperlink URL (e.g. https://example.com or #section):', 'https://');
+        const url = await promptDialog('Enter Hyperlink URL (e.g. https://example.com or #section):', 'https://');
         if (!url || !url.trim()) return;
         const cleanUrl = url.trim();
 
         if (selectedText) {
+            if (capturedRange) {
+                const sel2 = window.getSelection();
+                sel2.removeAllRanges();
+                sel2.addRange(capturedRange);
+            }
             document.execCommand('createLink', false, cleanUrl);
             showToast(`Linked "${selectedText}" to ${cleanUrl}`, 'success');
         } else {
-            const linkText = prompt('Enter display text for the link:', 'Link');
+            const linkText = await promptDialog('Enter display text for the link:', 'Link');
             if (!linkText || !linkText.trim()) return;
 
             const cleanText = linkText.trim();
             const html = `<a href="${_escapeHtml(cleanUrl)}" target="_blank" rel="noopener">${_escapeHtml(cleanText)}</a>`;
+            if (capturedRange) {
+                const sel2 = window.getSelection();
+                sel2.removeAllRanges();
+                sel2.addRange(capturedRange);
+            }
             document.execCommand('insertHTML', false, html);
             showToast(`Inserted link "${cleanText}"`, 'success');
         }
@@ -672,7 +691,7 @@ export function addNewHyperlink() {
             return;
         }
 
-        const url = prompt('Enter Hyperlink URL for current PDF page:', 'https://');
+        const url = await promptDialog('Enter Hyperlink URL for current PDF page:', 'https://');
         if (!url || !url.trim()) return;
 
         const cleanUrl = url.trim();

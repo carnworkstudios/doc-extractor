@@ -7,6 +7,7 @@
 import $ from 'jquery';
 import { openViewCode } from './viewCode.js';
 import { toggleFlexCenter } from './selectionMode.js';
+import { promptDialog } from './promptDialog.js';
 
 const REGION_SELECTOR = '.pdf-region, .pdf-zone, .pdf-table-wrap';
 
@@ -41,9 +42,9 @@ export function initContextMenu() {
         }
     });
 
-    $('#ctx-img-url').on('click', function () {
+    $('#ctx-img-url').on('click', async function () {
         $('#ctx-menu').hide();
-        const url = prompt('Image URL:');
+        const url = await promptDialog('Image URL:');
         if (url && targetElement) {
             const img = $('<img>').attr('src', url).css('max-width', '100%');
             $(targetElement).append(img);
