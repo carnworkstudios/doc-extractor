@@ -42,10 +42,151 @@ export function fitPDFWidth() {
     if (intrinsic > 0) setPDFZoom(Math.max(0.5, Math.min(3.0, usable / intrinsic)));
 }
 
+
+// ── Windowed rendering ────────────────────────────────────────────────────────
+//
+// Why this exists: `renderPDFToCanvas` used to paint EVERY page of the document
+// into a DOM canvas and keep all of them alive for the session. A canvas costs
+// width x height x 4 bytes the moment it is sized, and at SCALE 1.5 a Letter
+// page is 918x1188 = 4.16 MB. The 1236-page PDF reference therefore allocated
+// ~5.0 GB of backing store to display one page at a time. Measured in Chrome:
+// >5 GB for exactly that document.
+//
+// Two things made it invisible:
+//   1. It scales with page count, so every test document (11-76 pages) looked
+//      fine — the cost only appears on the documents users complain about.
+//   2. The headless MCP path runs `handleFile()` too, so `extract_pdf` on a
+//      long document allocated gigabytes of canvases inside an invisible host
+//      that never displays anything. That is almost certainly a contributor to
+//      the long-document extraction timeouts.
+//
+// The fix is to treat the bitmap as a cache of what is on screen rather than a
+// property of the document: paint a page when it approaches the viewport, and
+// release it when it leaves. Footprint becomes a function of viewport size, not
+// document length — roughly 21 MB for the window below, at any page count.
+//
+// Releasing means `width = height = 0`. Removing the element from the DOM is
+// NOT enough: `wrappers` is returned to callers and retained by `pageNav`, so
+// the canvases stay reachable and the buffers stay allocated. Zeroing the
+// dimensions is what actually frees them in Chrome.
+
+/** Pages either side of the viewport kept painted. 2 covers a fast scroll. */
+const WINDOW_MARGIN_PAGES = 2;
+
+const _windows = new Map();
+
+function _teardownWindow(containerId) {
+    const existing = _windows.get(containerId);
+    if (!existing) return;
+    existing.observer.disconnect();
+    for (const entry of existing.painters.values()) _release(entry);
+    _windows.delete(containerId);
+}
+
+function _release(entry) {
+    if (!entry.painted) return;
+    try { entry.task?.cancel(); } catch { /* already finished */ }
+    entry.task = null;
+    // Drop the parsed page with the bitmap. Keeping it would make the window
+    // bound the canvases but not pdf.js's own per-page memory.
+    try { entry._page?.cleanup(); } catch { /* nothing to clean */ }
+    entry._page = null;
+    // The allocation lives in the backing store, not the element. Zeroing the
+    // dimensions is the only thing that returns it.
+    entry.canvas.width = 0;
+    entry.canvas.height = 0;
+
+    // Drop the spans unless the user is editing inside them. Discarding a live
+    // edit to save memory would be trading a real loss for an invisible gain.
+    const layer = entry.$textLayer?.[0];
+    if (layer && !layer.contains(document.activeElement)) layer.replaceChildren();
+
+    entry.painted = false;
+}
+
+async function _paint(entry, pdfDoc) {
+    if (entry.painted) return;
+    entry.painted = true;               // claim it first: entries can re-fire
+    entry.canvas.width = entry.viewport.width;
+    entry.canvas.height = entry.viewport.height;
+    try {
+        const page = await pdfDoc.getPage(entry.pageNum);
+        const ctx = entry.canvas.getContext('2d');
+        entry.task = page.render({ canvasContext: ctx, viewport: entry.viewport });
+
+        // Build the text layer only if it is not already there. A page can be
+        // repainted (zoom, re-render) with its spans still live, and rebuilding
+        // would discard any in-progress edit.
+        if (!entry.$textLayer[0].childElementCount) {
+            const textContent = await page.getTextContent();
+            buildTextLayer(textContent, entry.viewport, entry.$textLayer);
+        }
+
+        await entry.task.promise;
+        entry.task = null;
+        entry._page = page;
+    } catch (err) {
+        // A cancelled render is the normal result of scrolling past a page
+        // before it finished. Anything else is worth seeing.
+        if (err?.name !== 'RenderingCancelledException') {
+            console.error('pdf page render failed:', err);
+        }
+        entry.painted = false;
+    }
+}
+
+function _installWindow(containerId, painters, pdfDoc) {
+    if (!painters.size) return;
+
+    // rootMargin in page-heights, so the window is "N pages" rather than "N
+    // pixels" — the same margin behaves correctly at any zoom or page size.
+    const sample = painters.values().next().value;
+    const margin = Math.round((sample?.viewport?.height ?? 1200) * WINDOW_MARGIN_PAGES);
+
+    const observer = new IntersectionObserver(
+        entries => {
+            for (const e of entries) {
+                const entry = painters.get(e.target);
+                if (!entry) continue;
+                if (e.isIntersecting) _paint(entry, pdfDoc);
+                else _release(entry);
+            }
+        },
+        { root: null, rootMargin: `${margin}px 0px ${margin}px 0px`, threshold: 0 }
+    );
+
+    for (const wrapper of painters.keys()) observer.observe(wrapper);
+    _windows.set(containerId, { observer, painters, pdfDoc });
+
+    // Paint page 1 unconditionally.
+    //
+    // In a headless host nothing is ever "visible", so the observer would leave
+    // the document blank — correct for memory, wrong for any caller that opens
+    // a document and screenshots it. One page is 4 MB; the old behaviour was
+    // every page.
+    const first = painters.values().next().value;
+    if (first) _paint(first, pdfDoc);
+}
+
+/**
+ * Repaint whatever is currently in the window.
+ *
+ * Zoom is a CSS transform, so a zoom change does not invalidate a bitmap — but
+ * a re-render at a new scale would. Exposed for callers that change SCALE.
+ */
+export function refreshWindowedPages(containerId = 'pdf-canvas-container') {
+    const w = _windows.get(containerId);
+    if (!w) return;
+    for (const entry of w.painters.values()) {
+        if (entry.painted) { _release(entry); _paint(entry, w.pdfDoc); }
+    }
+}
+
 export async function renderPDFToCanvas(bytes, containerId = 'pdf-canvas-container') {
     const $container = $(`#${containerId}`);
     if (!$container.length) return { wrappers: [], numPages: 0 };
     $container.empty();
+    _teardownWindow(containerId);
 
     const wrappers = [];
     let numPages = 0;
@@ -53,6 +194,8 @@ export async function renderPDFToCanvas(bytes, containerId = 'pdf-canvas-contain
     try {
         const pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
         numPages = pdfDoc.numPages;
+
+        const painters = new Map();
 
         for (let pageNum = 1; pageNum <= numPages; pageNum++) {
             const page = await pdfDoc.getPage(pageNum);
@@ -71,8 +214,10 @@ export async function renderPDFToCanvas(bytes, containerId = 'pdf-canvas-contain
                 css: { display: 'block', width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 },
                 contentEditable: 'false'
             });
-            $canvas[0].width = viewport.width;
-            $canvas[0].height = viewport.height;
+            // NOT sized here. A sized canvas allocates width*height*4 bytes
+            // immediately, whether or not anything is painted on it — that
+            // allocation, times every page, is the whole memory problem. The
+            // wrapper already carries the geometry, so layout is unaffected.
             $wrapper.append($canvas);
 
             const $textLayer = $('<div>', {
@@ -90,15 +235,36 @@ export async function renderPDFToCanvas(bytes, containerId = 'pdf-canvas-contain
             $container.append($wrapper);
             wrappers.push($wrapper[0]);
 
-            // Render PDF to canvas
-            const ctx = $canvas[0].getContext('2d');
-            
-            // Render text layer
-            const textContent = await page.getTextContent();
-            buildTextLayer(textContent, viewport, $textLayer);
-            
-            await page.render({ canvasContext: ctx, viewport }).promise;
+            // The text layer is windowed too, and it is the bigger half.
+            //
+            // `buildTextLayer` creates one absolutely-positioned <span> with
+            // inline styles PER TEXT ITEM. A dense 1236-page document is on the
+            // order of a million DOM nodes — measured at ~4.3 GB peak, which is
+            // more than the canvases ever cost. Nothing in JS reads these spans;
+            // they are a CSS-styled editing surface, so an off-screen page does
+            // not need one.
+
+            // Store the page NUMBER, not the page proxy.
+            //
+            // A pdf.js PageProxy holds the page's operator list, font data and
+            // decoded images. Retaining 1236 of them to "save" a re-fetch trades
+            // one leak for another — and the first version of this windowing did
+            // exactly that, which is why freeing 5 GB of canvas changed the peak
+            // by nothing. `getPage` is cheap and pdf.js caches internally.
+            painters.set($wrapper[0], {
+                canvas: $canvas[0],
+                $textLayer,
+                pageNum,
+                viewport,
+                task: null,
+                painted: false,
+            });
+            // Release this page's parsed resources now that the text layer is
+            // built. Without it pdf.js holds every page for the session.
+            page.cleanup();
         }
+
+        _installWindow(containerId, painters, pdfDoc);
     } catch(err) {
         console.error("pdfjs render error:", err);
     }

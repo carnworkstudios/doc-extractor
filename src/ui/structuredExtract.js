@@ -24,6 +24,7 @@
 
 import { state } from '../state.js';
 import { VisualGridMapper } from '../utils/tableLogic.js';
+import { scoreTables } from '../extraction/vector/tableSemantics.js';
 
 // Flag vocabulary — see the contract. Only the entries this module can prove
 // are ever emitted; `row-spans-page-break` is deliberately absent (see below).
@@ -183,7 +184,18 @@ export function buildStructuredPayload() {
                 .map(b => ({
                     page: p.page,
                     rows: (b.rows || []).length + 1,
-                    cols: (b.headers?.length || b.rows?.[0]?.length || 0),
+                    // MAX across the header and every data row, not the header
+                    // length. A table with a merged header — "Region | Q1 | Q2"
+                    // above "Units | Revenue | Units | Revenue" — has a 3-cell
+                    // header row and 5-cell data rows, and reporting cols: 3
+                    // silently truncated every consumer that indexed by it.
+                    // Found by the table semantic check on our own fixture,
+                    // which flagged spans covering 138% of the declared grid.
+                    cols: Math.max(
+                        b.headers?.length ?? 0,
+                        ...(b.rows ?? []).map(r => r?.length ?? 0),
+                        0,
+                    ),
                     confidence: b.confidence ?? null,
                     cells: _blockToCells(b),
                     flags: b.flags ?? [],
@@ -227,6 +239,23 @@ export function buildStructuredPayload() {
         )
         : [];
 
+    // Semantic self-check. Costs one pass over cells we already have and needs
+    // neither a model nor the source PDF, so there is no reason to make the
+    // caller ask for it separately — and every reason to report it: per-table
+    // `confidence` says how sure the extractor was, which is not the same
+    // question as whether the resulting columns hold coherent values.
+    let tableSemantics = null;
+    try {
+        tableSemantics = scoreTables(tables);
+    } catch (err) {
+        // A scorer fault must never cost the caller the extraction. Report the
+        // gap rather than a silent null that reads as "no tables".
+        tableSemantics = {
+            error: 'table-semantics-failed',
+            detail: String(err?.message || err),
+        };
+    }
+
     return {
         ok: true,
         fileName: pdf.file?.name ?? null,
@@ -236,6 +265,7 @@ export function buildStructuredPayload() {
         confidence,
         flags: docFlags,
         provenance,
+        tableSemantics,
     };
 }
 

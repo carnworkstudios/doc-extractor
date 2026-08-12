@@ -137,6 +137,16 @@ async function detect(imageBitmap) {
     const canvas = new OffscreenCanvas(MODEL_SIZE, MODEL_SIZE);
     const ctx = canvas.getContext('2d');
     ctx.drawImage(imageBitmap, 0, 0, MODEL_SIZE, MODEL_SIZE);
+
+    // Close it the moment it has been drawn.
+    //
+    // The bitmap is TRANSFERRED here (`postMessage(..., [imageBitmap])`), so
+    // this worker owns it and nothing else can free it. An ImageBitmap holds
+    // decoded pixels outside the JS heap — at RENDER_SCALE 2.0 a Letter page is
+    // ~7.8 MB — and GC of the small wrapper object does not reliably release
+    // them. Without this, a 76-page scan leaks a full-page bitmap per page.
+    imageBitmap.close();
+
     const imageData = ctx.getImageData(0, 0, MODEL_SIZE, MODEL_SIZE);
     const { data } = imageData;
 

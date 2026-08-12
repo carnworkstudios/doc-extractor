@@ -19,6 +19,7 @@ import { showToast } from './toast.js';
 import { cwsBroker } from '@os/worker-broker.js';
 import { checkDoclingAgreement } from '../extraction/doclingCheck.js';
 import { buildStructuredPayload } from './structuredExtract.js';
+import { initMcpVerbs } from './mcpVerbs.js';
 import { classifyPage } from '../extraction/vector/contextClassifier.js';
 import { assemblePage, createFontRegistry } from '../extraction/vector/pageAssembler.js';
 import { synthesizeFromWords, makeSyntheticViewport } from '../extraction/vector/rasterSynth.js';
@@ -69,6 +70,25 @@ export function integrationBackendUrl() {
     return 'http://localhost:8000';
 }
 
+// Headers for a call to the hosted AI backend. The backend resolves this token
+// to a user, checks entitlement, and meters before spending any inference; the
+// corpus-write endpoints use it to attribute the record. Without it the call is
+// anonymous and the hosted backend rejects it.
+//
+// Guarded on both sides, so a fork running this tool standalone still works:
+// the shell may not be there (no framing parent), and the token may not be
+// there (signed out). Either way this returns plain JSON headers and the call
+// goes out exactly as it does today.
+export function integrationAuthHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    try {
+        const shell = window.parent !== window ? window.parent.OsShell : null;
+        const token = shell?.getAccessToken ? shell.getAccessToken() : null;
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+    } catch (_) { /* cross-origin parent — send unauthenticated */ }
+    return headers;
+}
+
 // Cross-check the Docling result against the deterministic analyzer and
 // surface + record disagreements. Best-effort: never blocks or fails the
 // extraction it verifies.
@@ -87,7 +107,7 @@ async function _crossCheckDocling(assets) {
         }
         fetch(`${integrationBackendUrl()}/api/v1/ai/pdf/check/report`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: integrationAuthHeaders(),
             body: JSON.stringify({ report }),
         }).catch(() => { /* corpus reporting is best-effort */ });
     } catch (e) {
@@ -206,7 +226,7 @@ async function _autoTunePage(pageResult) {
 
     const res = await fetch(`${integrationBackendUrl()}/api/v1/ai/pdf/tune`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: integrationAuthHeaders(),
         body: JSON.stringify({
             signals,
             context: { region_ids: signals.regions.map(r => r.id), params: signals.params },
@@ -238,7 +258,7 @@ async function _autoTunePage(pageResult) {
 
     fetch(`${integrationBackendUrl()}/api/v1/ai/pdf/tune/report`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: integrationAuthHeaders(),
         body: JSON.stringify({
             trace_id: tune.trace_id,
             score_before: before,
@@ -277,6 +297,33 @@ function _reprocessAndWait(pageNum, pipeline) {
         };
         worker.addEventListener('message', handler);
         worker.postMessage({ type: 'reprocess', page: pageNum, pipeline });
+    });
+}
+
+// One request/response round trip to the geometry worker, matched by requestId.
+//
+// The worker has a permanent listener feeding the analyze panel, so this
+// attaches its own and removes it on settle rather than touching `onmessage` —
+// assigning that would silently unhook the extraction stream.
+let _workerReqSeq = 0;
+function _requestWorker(message, timeoutMs = 120_000) {
+    const worker = ensureGeometryWorker();
+    const requestId = `wreq-${++_workerReqSeq}`;
+    const expect = `${message.type}-result`;
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            worker.removeEventListener('message', handler);
+            reject(new Error(`${message.type} timed out after ${Math.round(timeoutMs / 1000)}s`));
+        }, timeoutMs);
+        const handler = (e) => {
+            if (e.data?.type !== expect || e.data.requestId !== requestId) return;
+            clearTimeout(timer);
+            worker.removeEventListener('message', handler);
+            const { type: _t, requestId: _r, ...payload } = e.data;
+            resolve(payload);
+        };
+        worker.addEventListener('message', handler);
+        worker.postMessage({ ...message, requestId });
     });
 }
 
@@ -542,6 +589,13 @@ async function extractViaScannedGeometry(bytes, onProgress) {
             viewportWidth: pageWidthPt * VIEWPORT_SCALE,
             viewportHeight: pageHeightPt * VIEWPORT_SCALE,
         };
+        // The 2.0-scale page canvas has served both consumers (layout detect via
+        // the transferred bitmap, and Tesseract). Zero it before the next
+        // iteration allocates another: at ~7.8 MB a page, holding these across a
+        // long scan is the difference between hundreds of MB and gigabytes.
+        pageCanvas.width = 0;
+        pageCanvas.height = 0;
+
         const synth = synthesizeFromWords(ocr.words, labelRegions, geom);
         const viewport = makeSyntheticViewport(pageWidthPt, pageHeightPt, VIEWPORT_SCALE);
 
@@ -757,6 +811,12 @@ export function initFileInputs() {
 
     // VS Code extension: signal ready then receive file bytes from extension host
     if (window.CwsBridge?.isEmbedded) {
+        // Convert / merge / verify verbs. Registered before `pdf-ready` so a host
+        // that fires a request the instant it sees ready cannot beat the listener.
+        initMcpVerbs({
+            requestWorker: _requestWorker,
+            whenLoaded: () => _slot1Load,
+        });
         window.CwsBridge.send('ginexys:pdf-ready', {});
         window.addEventListener('message', e => {
             // MCP round-trip: extension host requests extracted text, reply with it

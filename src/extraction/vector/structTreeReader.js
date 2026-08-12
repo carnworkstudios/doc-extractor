@@ -160,6 +160,57 @@ function _buildMcidMap(opList, OPS) {
 }
 
 /**
+ * Text-item indices in STRUCT TREE DOCUMENT ORDER — the author's declared
+ * reading order.
+ *
+ * `readStructTree` above deliberately trusts only Table/TR/TD roles, because
+ * P and H roles are unreliable enough that Tier 3 classification beats them.
+ * That scepticism does not extend to *order*: the sequence of leaves in the
+ * struct tree is what a screen reader follows, and it is the one reading-order
+ * ground truth in a PDF that we did not infer ourselves.
+ *
+ * This is the reference `flowScorer.js` grades an extractor's output against.
+ * Returns null — not a guess — when the document is untagged or the tree
+ * carries no MCIDs, so the caller can say which reference it used instead of
+ * silently falling back to a geometric order and presenting it as the author's.
+ *
+ * @returns {number[]|null} textMeta indices in reading order, deduplicated
+ */
+export function readStructOrder(structTree, opList, textMeta, OPS) {
+    if (!structTree || !structTree.children?.length) return null;
+
+    const mcidToIndices = _buildMcidMap(opList, OPS);
+    if (mcidToIndices.size === 0) return null;
+
+    const order = [];
+    const seen = new Set();
+
+    // Depth-first, children in array order: that IS document order for a struct
+    // tree. No sorting, no heuristics — the moment this starts reordering, it
+    // stops being an independent reference and becomes another opinion.
+    const walk = (node) => {
+        if (!node) return;
+        const mcid = node.mcid ?? node.MCID ?? null;
+        if (mcid !== null && mcidToIndices.has(mcid)) {
+            for (const idx of mcidToIndices.get(mcid)) {
+                if (!seen.has(idx)) { seen.add(idx); order.push(idx); }
+            }
+        }
+        for (const child of node.children ?? []) walk(child);
+    };
+    walk(structTree);
+
+    // A tree that reaches under half the text items is not a usable reference:
+    // the untagged remainder would have to be spliced in by geometry, and a
+    // half-authored, half-inferred order is worse than an honestly inferred one
+    // because it carries the authority of the first half.
+    const covered = order.filter(i => i < (textMeta?.length ?? 0)).length;
+    if (!textMeta?.length || covered / textMeta.length < 0.5) return null;
+
+    return order.filter(i => i < textMeta.length);
+}
+
+/**
  * Recursive struct tree walker. Collects Table nodes into tableNodes[].
  * Each entry: { rows: [ { cells: [ { indices: number[] } ] } ] }
  */

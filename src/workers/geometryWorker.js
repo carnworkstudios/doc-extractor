@@ -8,10 +8,13 @@
 // Message in:
 //   { type: 'process',   bytes: Uint8Array }           — full extraction
 //   { type: 'reprocess', page: number, pipeline: {} }  — single page re-extract
+//   { type: 'score-external', requestId, space, pages } — grade a FOREIGN
+//        extractor's regions against this document's own text (externalScorer.js)
 // Messages out:
 //   { type: 'progress', page, total, status }
 //   { type: 'page',     page, html, text, tables, regions, pageScale, reprocess? }
 //   { type: 'complete', pageCount, tableCount, styles }
+//   { type: 'score-external-result', requestId, ok, pages, summary }
 //   { type: 'error',    error }
 //
 // DESIGN NOTE: Results are streamed per-page via 'page' messages instead of
@@ -29,6 +32,10 @@ import { readStructTree } from '../extraction/vector/structTreeReader.js';
 import { DocScale } from '../extraction/vector/docScale.js';
 import { scoreExtraction } from '../extraction/vector/extractionScorer.js';
 import { ChromeDetector } from '../extraction/vector/chromeDetector.js';
+import { pageTextMeta, bboxToViewport, scoreExternalPage, REGION_SPACES }
+    from '../extraction/vector/externalScorer.js';
+import { scoreFlow, geometricOrder } from '../extraction/vector/flowScorer.js';
+import { readStructOrder } from '../extraction/vector/structTreeReader.js';
 
 // pdfjs-dist v4 — point to the ESM worker bundle.
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -231,6 +238,199 @@ async function _extractPageImages(page, regions) {
     return extractedImages;
 }
 
+/**
+ * Grade a FOREIGN extractor's regions against the source PDF.
+ *
+ * The only thing this needs from the document is its real text items, so it
+ * reopens the cached bytes and reads `getTextContent()` per requested page —
+ * no operator list, no classification, no rendering. That is the same cheap
+ * pass the DocScale pre-scan makes, and it is why scoring somebody else's
+ * output costs a fraction of producing our own.
+ *
+ * in:  { type: 'score-external', requestId, space, pages: [{page, regions}] }
+ * out: { type: 'score-external-result', requestId, ok, pages, summary }
+ */
+async function _handleScoreExternal(data) {
+    const requestId = data.requestId;
+    const reply = (payload) =>
+        self.postMessage({ type: 'score-external-result', requestId, ...payload });
+
+    const space = data.space || 'fraction';
+    if (!REGION_SPACES.includes(space)) {
+        return reply({
+            ok: false,
+            reason: 'unknown-space',
+            detail: `space must be one of ${REGION_SPACES.join(', ')}; got "${space}".`,
+        });
+    }
+    if (!_cachedBytes) {
+        return reply({
+            ok: false,
+            reason: 'no-document',
+            detail: 'No PDF is cached in this worker. Send the document bytes before scoring.',
+        });
+    }
+    if (!Array.isArray(data.pages) || !data.pages.length) {
+        return reply({
+            ok: false,
+            reason: 'no-regions',
+            detail: 'pages must be a non-empty array of { page, regions } and/or { page, text }.',
+        });
+    }
+
+    try {
+        const canvasFactoryOpt = typeof OffscreenCanvas !== 'undefined'
+            ? { CanvasFactory: OffscreenCanvasFactory }
+            : {};
+        // slice(): getDocument transfers/detaches the buffer it is handed, and
+        // this is the cached copy every later re-extract depends on.
+        const pdf = await pdfjsLib.getDocument({
+            data: _cachedBytes.slice(), ...canvasFactoryOpt,
+        }).promise;
+
+        const results = [];
+        const skipped = [];
+        for (const entry of data.pages) {
+            const pageNum = Number(entry?.page);
+            if (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > pdf.numPages) {
+                skipped.push({ page: entry?.page ?? null, reason: 'page-out-of-range' });
+                continue;
+            }
+            const page = await pdf.getPage(pageNum);
+            const viewport = page.getViewport({ scale: 2.0 });
+            const textMeta = await pageTextMeta(page, viewport);
+
+            const geom = {
+                viewportWidth: viewport.width,
+                viewportHeight: viewport.height,
+                pageWidthPt: page.view[2] - page.view[0],
+                pageHeightPt: page.view[3] - page.view[1],
+                vpTransform: viewport.transform,
+            };
+
+            let dropped = 0;
+            const regions = [];
+            for (const r of entry.regions || []) {
+                const bbox = bboxToViewport(r?.bbox, space, geom);
+                // A region whose bbox will not parse is DROPPED and COUNTED, not
+                // coerced to zeros. A zero-area box at the origin covers no text
+                // and would show up as the foreign extractor missing content it
+                // actually found.
+                if (!bbox) { dropped++; continue; }
+                regions.push({
+                    type: typeof r.type === 'string' ? r.type : 'PARAGRAPH',
+                    bbox,
+                    confidence: typeof r.confidence === 'number' ? r.confidence : undefined,
+                });
+            }
+
+            const scored = {
+                page: pageNum,
+                textItemCount: textMeta.length,
+                regionCount: regions.length,
+                unparseableRegions: dropped,
+                ...scoreExternalPage(regions, textMeta, viewport, space),
+            };
+
+            // ── Reading order, when the caller supplied their output text ─────
+            // A separate axis from structure, and separately requested: an
+            // extractor can cover every character (structural 1.000) and still
+            // emit a two-column page line-by-line across the gutter.
+            if (typeof entry.text === 'string' && entry.text.trim()) {
+                const outputText = entry.text;
+                // Prefer the author's declared order. `readStructOrder` returns
+                // null rather than guessing when the document is untagged or the
+                // tree covers too little of the page, so this cannot silently
+                // present an inference as the author's word.
+                let refOrder = null;
+                let refSource = 'geometric';
+                try {
+                    const [opList, structTree] = await Promise.all([
+                        page.getOperatorList(),
+                        page.getStructTree().catch(() => null),
+                    ]);
+                    refOrder = readStructOrder(structTree, opList, textMeta, OPS);
+                    if (refOrder) refSource = 'struct-tree';
+                } catch (_) { /* fall through to geometry */ }
+
+                if (!refOrder) refOrder = geometricOrder(textMeta, viewport.width);
+
+                const outputLines = String(outputText)
+                    .split('\n').map(l => l.trim()).filter(Boolean);
+                scored.flow = scoreFlow(
+                    outputLines, textMeta, refOrder, refSource, viewport.width,
+                    { includeChunks: !!data.includeChunks },
+                );
+            }
+
+            results.push(scored);
+            page.cleanup();
+        }
+
+        // Page-count-weighted means. A document rollup that averaged per-page
+        // scores equally would let a title page with four text items outvote a
+        // dense table page.
+        const totalText = results.reduce((s, r) => s + r.textItemCount, 0);
+        const weighted = (key) => {
+            if (!results.length) return null;
+            if (!totalText) {
+                return Math.round(
+                    (results.reduce((s, r) => s + r[key], 0) / results.length) * 1000
+                ) / 1000;
+            }
+            return Math.round(
+                (results.reduce((s, r) => s + r[key] * r.textItemCount, 0) / totalText) * 1000
+            ) / 1000;
+        };
+
+        // Flow rolls up over DISCRIMINATING pages only. A single-column page
+        // scores 1.0 for everyone because there is nothing to interleave, and a
+        // page where four lines matched can only produce 0, 0.5 or 1. Averaging
+        // those in would drag every document toward whatever the trivial pages
+        // said — the metric would look stable and mean nothing.
+        const flowPages = results.filter(r => r.flow?.discriminating);
+        const flowMean = (key) => {
+            const vals = flowPages.map(r => r.flow[key]).filter(v => typeof v === 'number');
+            if (!vals.length) return null;
+            return Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 1000) / 1000;
+        };
+        const askedForFlow = results.some(r => r.flow);
+        const refSources = [...new Set(flowPages.map(r => r.flow.referenceSource))];
+
+        reply({
+            ok: true,
+            pages: results,
+            summary: {
+                pagesScored: results.length,
+                pagesSkipped: skipped,
+                structuralScore: weighted('structuralScore'),
+                textCoverage: weighted('textCoverage'),
+                uncoveredTextCount: results.reduce((s, r) => s + r.uncoveredTextCount, 0),
+                totalTextItems: totalText,
+                documentPageCount: pdf.numPages,
+                space,
+                ...(askedForFlow ? {
+                    flow: {
+                        pagesMeasured: flowPages.length,
+                        pagesNotDiscriminating: results.filter(r => r.flow && !r.flow.discriminating).length,
+                        referenceSources: refSources,
+                        flowScore: flowMean('flowScore'),
+                        columnFlow: flowMean('columnFlow'),
+                        sequenceFlow: flowMean('sequenceFlow'),
+                        contiguity: flowMean('contiguity'),
+                    },
+                } : {}),
+            },
+        });
+    } catch (err) {
+        reply({
+            ok: false,
+            reason: 'score-external-failed',
+            detail: String(err?.message || err),
+        });
+    }
+}
+
 self.onmessage = async (e) => {
     if (e.data.type === 'cache-bytes') {
         _cachedBytes = e.data.bytes ? e.data.bytes.slice() : null;
@@ -245,6 +445,10 @@ self.onmessage = async (e) => {
             pageHeightPt: e.data.pageHeightPt,
             viewportScale: e.data.viewportScale ?? 2.0,
         });
+        return;
+    }
+    if (e.data.type === 'score-external') {
+        await _handleScoreExternal(e.data);
         return;
     }
     if (e.data.type === 'reprocess') {
