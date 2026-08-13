@@ -66,15 +66,21 @@ function _createPopoverDOM() {
     });
 }
 
+let _selCheckTimer = null;
+
 function _bindSelectionListeners() {
     $(document).on('mouseup selectionchange', (e) => {
         if (getEffectiveActiveView() !== 'pdf') {
             hidePdfContextMenu();
             return;
         }
-
+        // selectionchange fires on every caret move, including every
+        // keystroke — clear any pending check instead of stacking a new
+        // timer on top of it, so a fast burst (e.g. dragging a selection)
+        // only runs the check once, not once per event.
+        clearTimeout(_selCheckTimer);
         // Delay slightly to let browser complete text selection
-        setTimeout(_checkTextSelection, 20);
+        _selCheckTimer = setTimeout(_checkTextSelection, 20);
     });
 
     $(window).on('scroll resize', () => {
@@ -117,9 +123,8 @@ function _clientRectToDisplay(rect, wrapper) {
  * spanning three lines produces three rects. The old code took rects[0] and
  * discarded the rest, so a multi-line highlight only ever marked its first line.
  */
-function _selectionRectsByPage(range) {
-    const wrappers = [...document.querySelectorAll(
-        '#pdf-canvas-container .page-wrapper, #visual-diff-pdf .page-wrapper')];
+export function selectionRectsByPage(range) {
+    const wrappers = [...document.querySelectorAll('#pdf-canvas-container .page-wrapper')];
     const out = [];
     for (const r of range.getClientRects()) {
         if (r.width < 0.5 || r.height < 0.5) continue;
@@ -150,13 +155,11 @@ function _checkTextSelection() {
         return;
     }
 
-    // Ensure selection is inside #pdf-canvas-container or #visual-diff-pdf
+    // Ensure selection is inside #pdf-canvas-container
     const pdfContainer = document.getElementById('pdf-canvas-container');
-    const vdContainer = document.getElementById('visual-diff-pdf');
     const isInsidePdf = pdfContainer && pdfContainer.contains(range.commonAncestorContainer);
-    const isInsideVd = vdContainer && vdContainer.contains(range.commonAncestorContainer);
 
-    if (!isInsidePdf && !isInsideVd) {
+    if (!isInsidePdf) {
         hidePdfContextMenu();
         return;
     }
@@ -182,7 +185,7 @@ function _checkTextSelection() {
         // Display-space, one entry per line box. This is what annotations and
         // links are built from; `rect` above stays client-space and is only
         // used to position the popover.
-        displayRects: _selectionRectsByPage(range),
+        displayRects: selectionRectsByPage(range),
         range: range.cloneRange(),
     };
 
@@ -238,7 +241,7 @@ async function _addLinkToSelection() {
         }));
 
         // Apply blue underline highlight on selected text node
-        _applyStyleToRange(sel.range, 'pdf-word-link');
+        applyStyleToRange(sel.range, 'pdf-word-link');
 
         showToast(`Linked "${sel.text}" to ${cleanUrl}`, 'success');
         renderLinksTab();
@@ -268,7 +271,7 @@ function _highlightSelection() {
         text: currentSelection.text,
     }));
 
-    _applyStyleToRange(currentSelection.range, 'pdf-word-highlight');
+    applyStyleToRange(currentSelection.range, 'pdf-word-highlight');
     showToast(`Highlighted "${currentSelection.text}"`, 'success');
 
     hidePdfContextMenu();
@@ -318,7 +321,7 @@ function _clearSelectionMarks() {
     window.getSelection().removeAllRanges();
 }
 
-function _applyStyleToRange(range, className) {
+export function applyStyleToRange(range, className) {
     try {
         const span = document.createElement('span');
         span.className = className;

@@ -6,6 +6,7 @@
 import $ from 'jquery';
 import * as pdfjsLib from 'pdfjs-dist';
 import { refreshTextEditMode } from './pdfTextEdit.js';
+import { applyPdfReadOnly } from './workspaceLayout.js';
 // Global worker source is already configured in pdfAnalyzer.js or geometryWorker.js,
 // but just in case, it should be available.
 
@@ -21,6 +22,11 @@ export function getPDFZoom() { return _zoom; }
 export function setPDFZoom(z) {
     _zoom = z;
     document.documentElement.style.setProperty('--pdf-zoom', String(z));
+    // Keep the toolbar readout honest. Zoom now changes from places the user
+    // did not click (load, pane toggle), so pairing every call site with a
+    // manual label refresh would just be a rule waiting to be forgotten.
+    const label = document.getElementById('zoom-pct');
+    if (label) label.textContent = Math.round(z * 100) + '%';
 }
 
 /**
@@ -28,13 +34,17 @@ export function setPDFZoom(z) {
  * usable width. Uses the largest visible PDF container present in the DOM.
  */
 export function fitPDFWidth() {
-    const container = document.querySelector(
-        '#view-pdf.active #pdf-canvas-container, ' +
-        '#view-visual-diff.active #visual-diff-pdf, ' +
-        '#pdf-canvas-container'
-    );
+    // There is exactly one rendered PDF container, it lives in #pane-pdf, and
+    // it never moves — only its pane's visibility and width change
+    // (see workspaceLayout.js). So this is always the one to measure.
+    const container = document.getElementById('pdf-canvas-container');
     const firstPage = container?.querySelector('.page-wrapper');
     if (!container || !firstPage) return;
+    // A hidden pane has clientWidth 0, which would compute a zoom of 0 and
+    // clamp to the 0.5 floor — leaving the document tiny once the pane is
+    // shown. Callers that fire on load or on a toggle can land here before
+    // layout, so bail rather than fit against nothing.
+    if (!container.clientWidth) return;
     const styles = getComputedStyle(container);
     const padX = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
     const usable = container.clientWidth - padX - 8;
@@ -85,8 +95,22 @@ function _teardownWindow(containerId) {
 
 function _release(entry) {
     if (!entry.painted) return;
-    try { entry.task?.cancel(); } catch { /* already finished */ }
+    // cancel() rejects task.promise with RenderingCancelledException. Whoever
+    // is awaiting it must be the one to observe that rejection — but _paint
+    // may be parked on `await page.getTextContent()` and, by the time it
+    // resumes, entry.task is already null here, so it never reaches its
+    // `await entry.task.promise` and nothing ever attaches a handler. The
+    // result is an unhandled promise rejection, once per released page. On a
+    // short document that is invisible; on a 1236-page one the window churns
+    // constantly and the console fills with them.
+    //
+    // Claim the rejection here, at the point of cancellation, instead.
+    const task = entry.task;
     entry.task = null;
+    if (task) {
+        task.promise.catch(() => { /* cancellation is the expected outcome */ });
+        try { task.cancel(); } catch { /* already finished */ }
+    }
     // Drop the parsed page with the bitmap. Keeping it would make the window
     // bound the canvases but not pdf.js's own per-page memory.
     try { entry._page?.cleanup(); } catch { /* nothing to clean */ }
@@ -112,7 +136,8 @@ async function _paint(entry, pdfDoc) {
     try {
         const page = await pdfDoc.getPage(entry.pageNum);
         const ctx = entry.canvas.getContext('2d');
-        entry.task = page.render({ canvasContext: ctx, viewport: entry.viewport });
+        const task = page.render({ canvasContext: ctx, viewport: entry.viewport });
+        entry.task = task;
 
         // Build the text layer only if it is not already there. A page can be
         // repainted (zoom, re-render) with its spans still live, and rebuilding
@@ -122,7 +147,14 @@ async function _paint(entry, pdfDoc) {
             buildTextLayer(textContent, entry.viewport, entry.$textLayer);
         }
 
-        await entry.task.promise;
+        // Await the LOCAL task, not entry.task: _release can null the field
+        // during the getTextContent() await above, which would turn this into
+        // a TypeError instead of the cancellation it actually is.
+        await task.promise;
+
+        // If _release ran while this was in flight it already cleared the
+        // canvas and reset `painted` — do not resurrect its bookkeeping.
+        if (entry.task !== task) return;
         entry.task = null;
         entry._page = page;
     } catch (err) {
@@ -270,8 +302,14 @@ export async function renderPDFToCanvas(bytes, containerId = 'pdf-canvas-contain
     }
 
     // The container was emptied above, so the edit-text class has to be
-    // re-applied to the fresh wrappers.
+    // re-applied to the fresh wrappers — and so does the read-only state,
+    // since every new wrapper is built contenteditable="true".
     refreshTextEditMode();
+    applyPdfReadOnly();
+
+    // Fit the freshly rendered document to whatever width its pane currently
+    // has. No-ops while the pane is hidden; workspaceLayout re-fits on toggle.
+    fitPDFWidth();
 
     return { wrappers, numPages };
 }

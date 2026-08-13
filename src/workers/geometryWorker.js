@@ -518,12 +518,14 @@ self.onmessage = async (e) => {
         _cachedChromeSigs = chrome.repeatedSigs();
 
         let totalTables = 0;
+        const failedPages = [];
         const fontRegistry = createFontRegistry();
         _cachedFontRegistry = fontRegistry;
 
         for (let p = 1; p <= numPages; p++) {
             self.postMessage({ type: 'progress', page: p, total: numPages, status: 'Extracting…' });
 
+            try {
             const page = await pdf.getPage(p);
             const viewport = page.getViewport({ scale: 2.0 });
             const pageWidthPt = page.view[2] - page.view[0];
@@ -618,10 +620,28 @@ self.onmessage = async (e) => {
 
             // Release page resources
             page.cleanup();
+            } catch (pageErr) {
+                // One page must not take down the document.
+                //
+                // Every page was inside a single try/catch wrapping the whole
+                // loop, so a throw on page 615 of 1236 discarded the 614 pages
+                // already extracted and surfaced as "the PDF cannot be
+                // extracted". A per-page boundary degrades instead: the bad
+                // page is reported and skipped, the rest of the document still
+                // arrives. `failedPages` rides along on 'complete' so the
+                // caller can tell a partial extraction from a clean one.
+                failedPages.push({ page: p, error: pageErr?.message || String(pageErr) });
+                console.warn(`[geometryWorker] page ${p} failed:`, pageErr);
+                self.postMessage({
+                    type: 'page', page: p, html: '', text: '', tables: 0,
+                    regions: [], pageScale: null, failed: true,
+                });
+            }
         }
 
         self.postMessage({
             type: 'complete',
+            failedPages,
             pageCount: numPages,
             tableCount: totalTables,
             styles: generateDocumentStyles(fontRegistry),

@@ -2,12 +2,11 @@
  * htmlSync.js
  * Single source-of-truth coordinator for the extracted HTML.
  *
- * Three surfaces render the same `state.pdf1.extractedHTML`:
+ * Two surfaces render the same `state.pdf1.extractedHTML`:
  *   1. #html-preview         — HTML tab,        contenteditable
- *   2. #visual-diff-html     — Visual Diff,     contenteditable
- *   3. Monaco editor model   — Editor tab,      monaco editable
+ *   2. Monaco editor model   — Editor tab,      monaco editable
  *
- * Edits on any surface flow back to state and forward to the other two,
+ * Edits on either surface flow back to state and forward to the other,
  * gated by a single re-entrancy flag so the bidirectional handlers
  * (monaco onChange + preview input listeners) don't ping-pong.
  *
@@ -21,34 +20,108 @@ import { state } from '../state.js';
 import { initTableFeatures } from '../utils/tableLogic.js';
 import { getImageBlob } from '../utils/imageStore.js';
 import { rebindTableEditing } from './tableEditorInit.js';
+import { readFullHtml, refreshDocVirtualizer, updateParkedPage } from './docVirtualizer.js';
 
 let _syncing = false;
 const _debouncers = new WeakMap();
 const objectUrlCache = {};
 
-const SURFACE_IDS = ['html-preview', 'visual-diff-html'];
+const SURFACE_IDS = ['html-preview'];
 const DEBOUNCE_MS = 200;
 
 /** True while a programmatic write is in flight. Edit handlers must early-return. */
 export function isSyncing() { return _syncing; }
+
+// ── Lazy document serialization ──────────────────────────────────────────────
+//
+// Every edit used to push the WHOLE document through: serialize #html-preview
+// (51 ms on a 1236-page extraction), stripTableRulers, DOMPurify (432 ms),
+// compare against the live innerHTML (59 ms), then hand Monaco a 16 MB string.
+// Measured end-to-end for one Bold: 1565 ms. All of it O(document) for a
+// change to one paragraph.
+//
+// The fix is to stop treating `state.pdf1.extractedHTML` as something an edit
+// must WRITE, and treat it as something a reader DERIVES. #html-preview is
+// already the live truth — it holds the edit the moment execCommand runs. So
+// an edit just marks the cache stale; the string is rebuilt on the next read,
+// once, no matter how many edits happened in between.
+//
+// Done as an accessor on state.pdf1 so all 26 existing read sites keep working
+// unchanged — none of them has to know the value is now computed.
+let _htmlCache = '';
+let _htmlDirty = false;
+
+function _installLazyHtml() {
+    const target = state.pdf1;
+    // Seed from whatever the plain property held (extraction may have run).
+    _htmlCache = target.extractedHTML || '';
+    Object.defineProperty(target, 'extractedHTML', {
+        configurable: true,
+        enumerable: true,
+        get() {
+            if (_htmlDirty) {
+                const el = document.getElementById('html-preview');
+                // readFullHtml() stitches back any page the virtualizer has
+                // unmounted, so a reader never sees a truncated document just
+                // because part of it is off screen. Falls through to plain
+                // innerHTML when virtualization is off (small documents).
+                if (el) _htmlCache = stripTableRulers(readFullHtml() || el.innerHTML);
+                _htmlDirty = false;
+            }
+            return _htmlCache;
+        },
+        set(v) {
+            _htmlCache = v || '';
+            _htmlDirty = false;
+        },
+    });
+}
+
+/**
+ * Record that the live preview has diverged from the cached string.
+ *
+ * This is what an edit calls instead of applyHtmlEverywhere. It is O(1) — no
+ * serialize, no sanitize, no Monaco write. The document is reassembled lazily
+ * by the getter above, and Monaco is refreshed when the Editor tab is opened
+ * (see syncMonacoFromState).
+ */
+export function markHtmlDirty() {
+    if (_syncing) return;
+    _htmlDirty = true;
+}
+
+/**
+ * Push the current document into Monaco. Called when the Editor tab becomes
+ * visible rather than on every edit — a 16 MB setValue is not something to do
+ * behind a Bold button.
+ */
+export function syncMonacoFromState() {
+    const editor = state.monacoEditor;
+    if (!editor) return;
+    const html = state.pdf1.extractedHTML;
+    if (editor.getValue() !== html) editor.getModel()?.setValue(html);
+}
 
 /**
  * Wire input listeners on every contenteditable preview surface.
  * Call once on app startup.
  */
 export function initHTMLSync() {
+    _installLazyHtml();
     SURFACE_IDS.forEach(wirePreview);
 }
 
 function wirePreview(id) {
     const el = document.getElementById(id);
     if (!el) return;
+    // Typing marks the cache stale and nothing more. This used to debounce
+    // into applyHtmlEverywhere, which meant every 200 ms pause while typing
+    // paid a full serialize + sanitize of the entire document. The surface
+    // being typed into was then skipped anyway, so the sanitized copy was
+    // computed and thrown away.
     el.addEventListener('input', () => {
         if (_syncing) return;
-        const prev = _debouncers.get(el);
-        if (prev) clearTimeout(prev);
-        const t = setTimeout(() => applyHtmlEverywhere(el.innerHTML, el), DEBOUNCE_MS);
-        _debouncers.set(el, t);
+        _htmlDirty = true;
     });
 }
 
@@ -80,24 +153,34 @@ export function applyHtmlEverywhere(html, skipEl = null) {
     try {
         const cleanForState = stripTableRulers(html);
         state.pdf1.extractedHTML = cleanForState;
-        const clean = sanitize(cleanForState);
 
-        for (const id of SURFACE_IDS) {
-            const el = document.getElementById(id);
-            if (!el || el === skipEl) continue;
-            if (el.innerHTML !== clean) {
-                el.innerHTML = clean;
-                // Re-bind crosshair / VisualGridMapper to any tables inside.
-                initTableFeatures(el);
-                rebindTableEditing();
-                hydrateImages(el);
+        // Which surfaces actually need writing? On an edit the answer is
+        // "none" — the caret is in the only surface there is, so it is the
+        // skipEl. Sanitizing first and discovering that afterwards spent
+        // 432 ms of DOMPurify on a string nobody read.
+        const targets = SURFACE_IDS
+            .map(id => document.getElementById(id))
+            .filter(el => el && el !== skipEl);
+
+        if (targets.length) {
+            const clean = sanitize(cleanForState);
+            for (const el of targets) {
+                if (el.innerHTML !== clean) {
+                    el.innerHTML = clean;
+                    // Re-bind crosshair / VisualGridMapper to any tables inside.
+                    initTableFeatures(el);
+                    rebindTableEditing();
+                    hydrateImages(el);
+                    // Fresh page nodes — re-window them (no-op under the
+                    // page threshold).
+                    refreshDocVirtualizer();
+                }
             }
         }
 
-        const editor = state.monacoEditor;
-        if (editor && editor.getValue() !== cleanForState) {
-            editor.getModel()?.setValue(cleanForState);
-        }
+        // Monaco is refreshed when the Editor tab opens (syncMonacoFromState),
+        // not here. getValue()+setValue() on a 16 MB model is not something to
+        // run behind every edit for a tab that may never be looked at.
     } finally {
         _syncing = false;
     }
@@ -126,26 +209,50 @@ export function patchPageHtml(pageNum, newHtml) {
             const container = document.getElementById(id);
             if (!container) continue;
             const existing = container.querySelector(`[data-page="${pageNum}"]`);
-            if (!existing) continue;
+            if (!existing) {
+                // Not in the live DOM — the virtualizer may have parked it.
+                // Update the cached string so the re-extraction is not lost
+                // when the page scrolls back into view.
+                updateParkedPage(pageNum, clean);
+                continue;
+            }
             const tmp = document.createElement('div');
             tmp.innerHTML = clean;
-            const newSection = tmp.querySelector(`[data-page="${pageNum}"]`) || tmp.firstElementChild;
-            if (newSection) {
-                existing.replaceWith(newSection);
+
+            // assemblePage returns <article class="pdf-doc"><section data-page=N>.
+            // Reaching straight for [data-page] pulls the SECTION out of that
+            // wrapper — and every column rule is scoped `.pdf-doc .pdf-page-row`,
+            // so a section re-inserted without a .pdf-doc ancestor loses
+            // `display:grid` and every multi-column page collapses to one
+            // full-width run. The Analyze canvas still drew the split (it reads
+            // `regions`, which were correct), so the split looked applied and
+            // rendered flat.
+            //
+            // Swap like for like: if the page being replaced sits under a
+            // .pdf-doc, insert just the section; if it does not, keep the
+            // incoming wrapper so the styles have something to hang off.
+            const incomingSection = tmp.querySelector(`[data-page="${pageNum}"]`);
+            const replacement = existing.closest('.pdf-doc')
+                // Already under a .pdf-doc (per-page article, or the single
+                // IR-path wrapper) — swap the section and inherit the styles.
+                ? (incomingSection || tmp.firstElementChild)
+                // No wrapper above it: keep the incoming <article class="pdf-doc">
+                // so the column rules have an ancestor to match.
+                : (incomingSection?.closest('.pdf-doc') || tmp.firstElementChild);
+
+            if (replacement) {
+                existing.replaceWith(replacement);
                 initTableFeatures(container);
                 hydrateImages(container);
             }
         }
 
-        // Rebuild full state HTML from the live preview surface
-        const preview = document.getElementById('html-preview');
-        if (preview) {
-            state.pdf1.extractedHTML = preview.innerHTML;
-            const editor = state.monacoEditor;
-            if (editor && editor.getValue() !== state.pdf1.extractedHTML) {
-                editor.getModel()?.setValue(state.pdf1.extractedHTML);
-            }
-        }
+        // The DOM is now the truth; let the accessor rebuild the string on the
+        // next read. Assigning preview.innerHTML directly here would write a
+        // TRUNCATED document whenever the virtualizer has pages parked, and
+        // would re-introduce the per-patch Monaco setValue that the lazy sync
+        // exists to avoid.
+        _htmlDirty = true;
     } finally {
         _syncing = false;
     }
@@ -154,7 +261,7 @@ export function patchPageHtml(pageNum, newHtml) {
 /**
  * Explicitly sync state.pdf1.extractedHTML to a specific DOM surface on focus.
  * Supports lazy DOM mirroring for batch operations.
- * @param {string} surfaceId — 'html-preview' | 'visual-diff-html' | 'monaco'
+ * @param {string} surfaceId — 'html-preview' | 'monaco'
  */
 export function syncStateToDOMOnFocus(surfaceId = 'html-preview') {
     if (_syncing) return;

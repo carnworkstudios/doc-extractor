@@ -15,7 +15,7 @@
  * - flex-center zone toggle
  */
 
-import { applyHtmlEverywhere } from './htmlSync.js';
+import { markHtmlDirty } from './htmlSync.js';
 import { applyZones } from './zoneToolbar.js';
 import { state } from '../state.js';
 
@@ -41,9 +41,7 @@ let _quadrantTarget   = null;  // region currently showing sel-drop-left/right
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function _resolvePreview() {
-    return state.activeView === 'visual-diff'
-        ? document.getElementById('visual-diff-html')
-        : document.getElementById('html-preview');
+    return document.getElementById('html-preview');
 }
 
 // ── Public init ───────────────────────────────────────────────────────────────
@@ -722,7 +720,7 @@ function _syncState() {
     _removeAllDividers();
     _hidePropsPanel();
     _preview.querySelectorAll('.sel-drag-handle').forEach(h => h.remove());
-    applyHtmlEverywhere(_preview.innerHTML, _preview);
+    markHtmlDirty();
     if (_active) {
         _attachHandles();
         _injectAllResizeDividers();

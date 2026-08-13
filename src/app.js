@@ -8,8 +8,6 @@ import { initViewTabs, syncToolbarToView } from './ui/viewController.js';
 import { initFileInputs } from './ui/fileUpload.js';
 import { initExportSystem } from './ui/exportController.js';
 import { initToolbar } from './ui/pageNav.js';
-import { initContextMenu } from './ui/contextMenu.js';
-import { initDividerResize } from './ui/visualDiff.js';
 import { initTableEditing } from './ui/tableEditorInit.js';
 import { initMonacoEditor } from './editor/monacoSetup.js';
 import { initHTMLSync, patchPageHtml } from './ui/htmlSync.js';
@@ -24,10 +22,11 @@ import { initAnnotationToolbar } from './ui/annotationToolbar.js';
 import { initNavPanel } from './ui/navPanel.js';
 import { initPdfContextMenu } from './ui/pdfContextMenu.js';
 import { initDocSelectionMenu } from './ui/docSelectionMenu.js';
-import { initDocPdfMirror } from './ui/docPdfMirror.js';
+import { initWorkspaceLayout, toggleMirror } from './ui/workspaceLayout.js';
 import { initBatchViewController } from './ui/batchViewController.js';
 import { analyzePDF } from './extraction/vector/pdfAnalyzer.js';
 import { showToast } from './ui/toast.js';
+import { state } from './state.js';
 
 // DOMPurify available globally for fileUpload / monacoSetup
 window.DOMPurify = DOMPurify;
@@ -116,44 +115,46 @@ function _tryInjectAnalyzePanel() {
         // VS Code webview — the extension supplies the panel.
         return;
     }
-    // Standalone direct navigation — show a CTA card on the Analyze tab.
-    _renderAnalyzeStandaloneCTA();
+    // Standalone direct navigation used to render a CTA card on the Analyze
+    // tab. That renderer is commented out below; the call to it was left
+    // behind, and since this runs inside the DOM-ready handler the resulting
+    // ReferenceError aborted everything registered after it — which is why
+    // the Compare tab's layout/precision/mode pills had no click handlers
+    // (initDiffTabsAndLayout is the last line of that handler).
 }
 
-function _renderAnalyzeStandaloneCTA() {
-    const container = document.getElementById('analyze-panel-inner');
-    if (!container) return;
-    container.innerHTML = `
-        <div class="gx-analyze-cta" style="
-            display:flex;flex-direction:column;align-items:center;justify-content:center;
-            gap:16px;padding:48px 24px;text-align:center;max-width:400px;margin:0 auto;
-        ">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.5" style="opacity:0.9">
-                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
-            </svg>
-            <div style="font-size:1.05rem;font-weight:600;color:var(--text-tertiary,#f1f5f9)">
-                See inside your PDF
-            </div>
-            <div style="font-size:0.85rem;color:var(--text-secondary,#94a3b8);line-height:1.65">
-                Analyze shows the geometry canvas, region overlays, and pipeline controls —
-                the full structural view of your document. Available inside the Ginexys platform.
-            </div>
-            <a href="https://ginexys.com/app/pdf/analyze" style="
-                display:inline-block;padding:10px 24px;border-radius:6px;
-                background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;
-                font-size:0.85rem;font-weight:600;text-decoration:none;margin-top:4px;
-            ">Open in Ginexys</a>
-        </div>
-    `;
-}
+// function _renderAnalyzeStandaloneCTA() {
+//     const container = document.getElementById('analyze-panel-inner');
+//     if (!container) return;
+//     container.innerHTML = `
+//         <div class="gx-analyze-cta" style="
+//             display:flex;flex-direction:column;align-items:center;justify-content:center;
+//             gap:16px;padding:48px 24px;text-align:center;max-width:400px;margin:0 auto;
+//         ">
+//             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.5" style="opacity:0.9">
+//                 <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+//                 <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+//             </svg>
+//             <div style="font-size:1.05rem;font-weight:600;color:var(--text-tertiary,#f1f5f9)">
+//                 See inside your PDF
+//             </div>
+//             <div style="font-size:0.85rem;color:var(--text-secondary,#94a3b8);line-height:1.65">
+//                 Analyze shows the geometry canvas, region overlays, and pipeline controls —
+//                 the full structural view of your document. Available inside the Ginexys platform.
+//             </div>
+//             <a href="https://ginexys.com/app/pdf/analyze" style="
+//                 display:inline-block;padding:10px 24px;border-radius:6px;
+//                 background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;
+//                 font-size:0.85rem;font-weight:600;text-decoration:none;margin-top:4px;
+//             ">Open in Ginexys</a>
+//         </div>
+//     `;
+// }
 
 $(() => {
     initViewTabs();
     initFileInputs();
     initToolbar();
-    initContextMenu();
-    initDividerResize();
     initMonacoEditor();
     initHTMLSync();
     initZoneToolbar();
@@ -169,10 +170,37 @@ $(() => {
     initNavPanel();
     initPdfContextMenu();
     initDocSelectionMenu();
-    initDocPdfMirror();
+    initWorkspaceLayout();
+    // Both "show original PDF" buttons do the same thing: add #pane-pdf to
+    // the current view's visible set. No per-owner wiring, because there is
+    // no ownership — the pane never moves.
+    $(document).on('click', '.pdf-mirror-toggle', () => {
+        if (!state.pdf1?.bytes) {
+            showToast('Open a PDF first to show it as a reference.', 'error');
+            return;
+        }
+        toggleMirror(state.activeView, 'pdf');
+        syncToolbarToView(state.activeView);
+    });
+    // Analyze only: the extracted HTML is an independent second reference, so
+    // it gets its own toggle rather than riding on the Original one.
+    $(document).on('click', '.doc-mirror-toggle', () => {
+        if (!state.pdf1?.extractedHTML) {
+            showToast('Extract a document first to show it as a reference.', 'error');
+            return;
+        }
+        toggleMirror(state.activeView, 'doc');
+        syncToolbarToView(state.activeView);
+    });
     initBatchViewController();
-    _tryInjectAnalyzePanel();
-    _initMcpPill();
+
+    // Optional/best-effort add-ons. These are isolated because everything in
+    // this handler shares one call stack: a throw here used to abort the rest
+    // of boot silently, and the only visible symptom was that some unrelated
+    // feature further down had no event handlers. Core wiring must not depend
+    // on an optional panel being injectable.
+    try { _tryInjectAnalyzePanel(); } catch (err) { console.warn('[boot] analyze panel:', err); }
+    try { _initMcpPill(); } catch (err) { console.warn('[boot] mcp pill:', err); }
 
     // Sync toolbar to the default active tab (PDF) on first load
     syncToolbarToView('pdf');

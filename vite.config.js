@@ -44,16 +44,27 @@ const stripOrtWasmAssetEmit = () => ({
     },
 })
 
+// viteStaticCopy resolves a relative `src` against the PROCESS working
+// directory, not against this config file. Building from anywhere other than
+// tools/pdf-processor/ therefore looked for node_modules/ beside the caller and
+// failed with "No file was found to copy". Anchor every source to __dirname so
+// the build is cwd-independent; `vite build --config tools/pdf-processor/...`
+// from the repo root now resolves identically to `npm run build` inside the
+// submodule. Forward slashes because fast-glob (which viteStaticCopy uses for
+// the `.*` patterns) treats a backslash as an escape character, not a
+// separator — path.join would break these on Windows.
+const fromHere = (p) => path.resolve(__dirname, p).split(path.sep).join('/')
+
 const RUNTIME_ASSET_COPIES = [
-    { src: 'node_modules/tesseract.js/dist/worker.min.js', dest: 'tesseract' },
-    { src: 'node_modules/tesseract.js-core/tesseract-core-lstm.*', dest: 'tesseract' },
-    { src: 'node_modules/tesseract.js-core/tesseract-core-simd-lstm.*', dest: 'tesseract' },
-    { src: 'node_modules/tesseract.js-core/tesseract-core-relaxedsimd-lstm.*', dest: 'tesseract' },
+    { src: fromHere('node_modules/tesseract.js/dist/worker.min.js'), dest: 'tesseract' },
+    { src: fromHere('node_modules/tesseract.js-core/tesseract-core-lstm.*'), dest: 'tesseract' },
+    { src: fromHere('node_modules/tesseract.js-core/tesseract-core-simd-lstm.*'), dest: 'tesseract' },
+    { src: fromHere('node_modules/tesseract.js-core/tesseract-core-relaxedsimd-lstm.*'), dest: 'tesseract' },
     // Pinned by filename: layoutWorker sets ort.env.wasm.wasmPaths to these two
     // exact files to avoid ORT's default JSEP/WebGPU build (~25MB, over
     // Cloudflare Pages' per-file limit).
-    { src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs', dest: 'ort-wasm' },
-    { src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm', dest: 'ort-wasm' },
+    { src: fromHere('node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs'), dest: 'ort-wasm' },
+    { src: fromHere('node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm'), dest: 'ort-wasm' },
 ]
 
 export default defineConfig({

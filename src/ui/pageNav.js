@@ -7,9 +7,9 @@ import $ from 'jquery';
 import { state } from '../state.js';
 import { setPDFZoom, getPDFZoom, fitPDFWidth } from './pdfCanvas.js';
 import { getActivePDFTarget } from './pdfEditMode.js';
-import { getVisualDiffFocusedTarget } from './visualDiff.js';
+import { getEffectiveActiveView } from './viewController.js';
 import { pushSnapshot, syncUndoRedoUI } from './historyController.js';
-import { applyHtmlEverywhere } from './htmlSync.js';
+import { markHtmlDirty } from './htmlSync.js';
 import { showToast } from './toast.js';
 
 let _totalPages = 0;
@@ -96,10 +96,29 @@ export function initToolbar() {
     $('#btn-next-page').on('click', nextPage);
     $('#page-jump').on('change', function() { jumpToPage(+$(this).val()); });
 
-    document.addEventListener('selectionchange', syncToolbarToSelection);
+    document.addEventListener('selectionchange', _scheduleSyncToolbarToSelection);
 }
 
-const EDITABLE_SURFACE_SEL = '#html-preview, #visual-diff-html, .editable-text-layer';
+// selectionchange fires on every caret move — including every keystroke while
+// typing, since a keystroke moves the caret. syncToolbarToSelection() walks
+// every ancestor from the caret up to the editable surface calling
+// getComputedStyle() up to twice per node, which forces style recalculation;
+// on the deeply-nested DOM this app's own PDF extraction produces (see
+// pageAssembler.js / the "deep DOM nesting" postmortem), running that on
+// every single character typed is a real, measurable cost, not a
+// theoretical one. Coalescing to one run per animation frame means a burst
+// of selectionchange events from fast typing still only pays for one
+// recompute, instead of one per keystroke.
+let _selToolbarRaf = null;
+function _scheduleSyncToolbarToSelection() {
+    if (_selToolbarRaf) return;
+    _selToolbarRaf = requestAnimationFrame(() => {
+        _selToolbarRaf = null;
+        syncToolbarToSelection();
+    });
+}
+
+const EDITABLE_SURFACE_SEL = '#html-preview, .editable-text-layer';
 
 const FONT_SIZE_PX_TO_LEGACY = [
     [10, '1'], [13, '2'], [16, '3'], [18, '4'], [24, '5'], [32, '6'], [48, '7']
@@ -116,7 +135,7 @@ const FONT_SIZE_PX_TO_LEGACY = [
  */
 function syncStructuralEdit() {
     const el = document.getElementById('html-preview');
-    if (el) applyHtmlEverywhere(el.innerHTML, el);
+    if (el) markHtmlDirty();
 }
 
 /**
@@ -213,20 +232,26 @@ function setActiveAlign(which) {
 }
 
 /**
+ * Focus the PDF text layer when that is the surface the toolbar is acting on.
+ *
+ * getEffectiveActiveView() is the single answer to "which surface" — it
+ * already folds in whether the PDF pane is on screen and holds the caret, so
+ * this is one condition instead of the same expression repeated per command.
+ */
+function _focusPdfTargetIfActive() {
+    if (getEffectiveActiveView() !== 'pdf') return null;
+    const target = getActivePDFTarget();
+    if (target) target.focus();
+    return target;
+}
+
+/**
  * Route a document.execCommand call to the correct editable surface.
- * In pdf view → focus the active .editable-text-layer.
- * In visual-diff → focus the tracked pane (pdf overlay or html).
+ * PDF surface → focus the active .editable-text-layer first.
  * Elsewhere → standard behaviour (currently focused element).
  */
 function fmt(cmd, val) {
-    const view = state.activeView;
-    if (view === 'pdf') {
-        const target = getActivePDFTarget();
-        if (target) target.focus();
-    } else if (view === 'visual-diff') {
-        const target = getVisualDiffFocusedTarget();
-        if (target) target.focus();
-    }
+    _focusPdfTargetIfActive();
     document.execCommand(cmd, false, val || null);
 }
 
@@ -237,14 +262,7 @@ function fmt(cmd, val) {
  * keep producing <strong>/<em>, which the gx-doc IR reads (htmlToGxDoc).
  */
 function fmtColor(cmd, color) {
-    const view = state.activeView;
-    if (view === 'pdf') {
-        const target = getActivePDFTarget();
-        if (target) target.focus();
-    } else if (view === 'visual-diff') {
-        const target = getVisualDiffFocusedTarget();
-        if (target) target.focus();
-    }
+    _focusPdfTargetIfActive();
     document.execCommand('styleWithCSS', false, true);
     document.execCommand(cmd, false, color);
     document.execCommand('styleWithCSS', false, false);
@@ -340,11 +358,7 @@ function initColorSplitDropdown(rootSelector, cmd) {
  * Chromium — strip those so the DOM stays clean for the IR/exporters.
  */
 function removeHighlight() {
-    const view = state.activeView;
-    let target = null;
-    if (view === 'pdf') target = getActivePDFTarget();
-    else if (view === 'visual-diff') target = getVisualDiffFocusedTarget();
-    if (target) target.focus();
+    const target = _focusPdfTargetIfActive();
 
     document.execCommand('styleWithCSS', false, true);
     document.execCommand('hiliteColor', false, 'transparent');
@@ -432,13 +446,13 @@ function toggleParagraphBorder() {
 
 /**
  * Push a manual DOM edit to state + every surface. Only the real document
- * surfaces (#html-preview / #visual-diff-html) may be pushed — .editable-text-
- * layer is a per-page PDF overlay, not the document, and its innerHTML has no
- * page structure, so pushing it would corrupt state.pdf1.extractedHTML.
+ * surface (#html-preview) may be pushed — .editable-text-layer is a per-page
+ * PDF overlay, not the document, and its innerHTML has no page structure, so
+ * pushing it would corrupt state.pdf1.extractedHTML.
  */
 function syncStructuralEditFromSurface(surface) {
-    if (surface && surface.matches('#html-preview, #visual-diff-html')) {
-        applyHtmlEverywhere(surface.innerHTML, surface);
+    if (surface && surface.matches('#html-preview')) {
+        markHtmlDirty();
     }
 }
 
@@ -863,9 +877,8 @@ function insertDefinitionList() {
     const view = state.activeView;
     let $surface;
     if (view === 'html') $surface = $('#html-preview');
-    else if (view === 'visual-diff') $surface = $('#visual-diff-html');
     if (!$surface?.length) {
-        showToast('Switch to the Doc or Visual Diff tab to insert a definition list.', 'error');
+        showToast('Switch to the Doc tab to insert a definition list.', 'error');
         return;
     }
 
@@ -998,7 +1011,7 @@ function distributeChildren(direction) {
     let node = sel?.rangeCount ? sel.getRangeAt(0).commonAncestorContainer : null;
     if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
     if (!node) {
-        const $active = $('#html-preview:visible, #visual-diff-html:visible').first();
+        const $active = $('#html-preview:visible').first();
         node = $active[0]?.lastElementChild || $active[0];
     }
     if (!node) return;
@@ -1032,7 +1045,7 @@ function distributeChildren(direction) {
 // ── PDF zoom controls (delegate to pdfCanvas) ────────────────────────────────
 
 function bumpZoom(delta) {
-    const next = clamp(getPDFZoom() + delta, 0.5, 3.0);
+    const next = clamp(getPDFZoom() + delta, 0.1, 3.0);
     setPDFZoom(next);
     refreshZoomLabel();
 }
@@ -1052,9 +1065,8 @@ function insertBox() {
     const view = state.activeView;
     let $surface;
     if (view === 'html') $surface = $('#html-preview');
-    else if (view === 'visual-diff') $surface = $('#visual-diff-html');
     if (!$surface?.length) {
-        showToast('Switch to the Doc or Visual Diff tab to insert a callout box.', 'error');
+        showToast('Switch to the Doc tab to insert a callout box.', 'error');
         return;
     }
 
@@ -1165,10 +1177,7 @@ export function jumpToPage(n) {
 
 function scrollToPage(n) {
     let wrapper = _pageWrappers[n - 1];
-    if (state.activeView === 'visual-diff') {
-        const vdWrapper = document.querySelector(`#visual-diff-pdf .page-wrapper[data-page="${n}"]`);
-        if (vdWrapper) wrapper = vdWrapper;
-    } else if (!wrapper || !document.body.contains(wrapper)) {
+    if (!wrapper || !document.body.contains(wrapper)) {
         wrapper = document.querySelector(`.page-wrapper[data-page="${n}"], .pdf-page-content[data-page="${n}"]`);
     }
 

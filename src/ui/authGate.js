@@ -27,7 +27,7 @@ const GATED = [
         key: 'analyze',
         // The Analyze top-level tab and its panel.
         tabSel: '.tab-btn[data-view="analyze"]',
-        panelSel: '#view-analyze',
+        panelSel: '#pane-analyze',
         feature: 'pdf-analyze-signin',
         title: 'Sign in to use Analyze',
         blurb: 'Region inspection, per-page re-extraction and layout tuning. Free with a Ginexys account.',

@@ -454,6 +454,19 @@ function _buildCandidate(bands, scale, segments = [], { zoneMode = false } = {})
     // the two fixes coherent with each other.
     const participatingItems = participating.flatMap(b => b.items);
 
+    // No participating band means there is no candidate table, and every
+    // numeric gate below fails to say so: fillRate becomes 0/0 = NaN, and
+    // `NaN < min` is false, so NaN passes a rejection test that any real
+    // value would have failed. avgLen and avgItemsPerBand divide by a
+    // `|| 1` guard and come out 0, which passes their caps too. The empty
+    // candidate then reaches the row-boundary code and dereferences
+    // participating[0].y.
+    //
+    // Reject explicitly, before arithmetic on an empty set can launder the
+    // emptiness into a passing score. Needs 2 bands minimum: one row is not
+    // a table, and the row-gap cadence below needs a pair to measure.
+    if (participating.length < 2) return null;
+
     // ── Structural context gates ──────────────────────────────────────────────
     // Pre-detect gutters before the avgLen gate so gutter evidence can relax it.
     // Tables with clear X coverage gaps are structurally column-separated even

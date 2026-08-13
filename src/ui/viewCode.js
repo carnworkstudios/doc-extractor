@@ -4,7 +4,7 @@
  * content element in a Monaco editor dialog so the user can edit and apply it
  * back to the live rendered output.
  *
- * Triggered by contextMenu.js calling openViewCode(targetEl).
+ * Triggered by docSelectionMenu.js calling openViewCode(targetEl).
  * Does NOT intercept right-click — the normal context menu appears first,
  * and "Edit Code" is one of its items.
  *
@@ -17,10 +17,18 @@
  */
 
 import * as monaco from 'monaco-editor';
-import { applyHtmlEverywhere } from './htmlSync.js';
+import { markHtmlDirty } from './htmlSync.js';
 
-const CONTENT_TAGS    = new Set(['H3','H4','H5','H6','DIV','P','ASIDE','UL','OL','HR','IMG','FIGURE']);
+const CONTENT_TAGS    = new Set(['H1','H2','H3','H4','H5','H6','DIV','P','ASIDE','UL','OL','HR','IMG','FIGURE','TABLE','BLOCKQUOTE','PRE','SECTION']);
 const REGION_SELECTOR = '.pdf-region, .pdf-zone, .pdf-table-wrap';
+
+// The blocks gxDocToHtml actually emits. `_resolveTarget` used to require a
+// REGION_SELECTOR ancestor, but extracted documents are made of these classes
+// and carry no .pdf-region wrapper at all — so Edit Code resolved to null on
+// ordinary paragraphs and did nothing at all. Anything here is editable.
+const BLOCK_SELECTOR =
+    '.pdf-paragraph, .pdf-list-wrap, .pdf-box, .pdf-table-wrap, ' +
+    '.pdf-image-placeholder, .pdf-col, .pdf-page-row, .pdf-page-content';
 
 let _dialog    = null;
 let _label     = null;
@@ -51,16 +59,20 @@ export function initViewCode() {
     _dialog.addEventListener('toggle', _onDialogToggle);
 }
 
-// ── Called by contextMenu.js ──────────────────────────────────────────────────
+// ── Called by docSelectionMenu.js ───────────────────────────────────────────
 
 /**
- * Resolve the best editable element from the raw right-click target,
- * then open the code editor dialog.
- * @param {Element} rawTarget  — e.target from the contextmenu event
+ * Resolve the best editable element from the raw target, then open the code
+ * editor dialog.
+ * @param {Element} rawTarget  — e.target from contextmenu, or the element a
+ *   text selection resolved to (see docSelectionMenu.js)
+ * @returns {boolean} whether a target was resolved and the dialog opened.
+ *   Callers use this to tell the user nothing happened rather than leaving
+ *   the click looking broken.
  */
 export function openViewCode(rawTarget) {
     const el = _resolveTarget(rawTarget);
-    if (!el) return;
+    if (!el) return false;
 
     _currentEl = el;
     _pending   = el.outerHTML;
@@ -73,21 +85,35 @@ export function openViewCode(rawTarget) {
     }
 
     _dialog.showModal();
+    return true;
 }
 
 // ── Target resolution ─────────────────────────────────────────────────────────
 
 /**
- * Walk up from the clicked node to find the nearest content-level element
- * that lives inside a .pdf-region or .pdf-zone (or is one itself).
+ * Walk up from the clicked node to the nearest element worth editing.
+ *
+ * Order matters: a region/zone wrapper wins over a bare tag, and an extracted
+ * block (.pdf-paragraph &c.) wins over the generic DIV/P fallback, so the
+ * dialog opens on the smallest meaningful unit rather than on whatever
+ * happens to be a DIV first.
  */
 function _resolveTarget(node) {
-    let el = node;
-    while (el && el !== _preview) {
-        if (CONTENT_TAGS.has(el.tagName) && el.closest(REGION_SELECTOR)) return el;
+    // The node may be a text node (a selection's startContainer).
+    let el = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+
+    // Only edit inside a prose surface — never the browser chrome or the
+    // popover that launched this.
+    const surface = el?.closest?.('.prose-area');
+    if (!surface) return null;
+
+    while (el && el !== surface) {
         if (el.matches?.(REGION_SELECTOR)) return el;
+        if (el.matches?.(BLOCK_SELECTOR)) return el;
+        if (CONTENT_TAGS.has(el.tagName)) return el;
         el = el.parentElement;
     }
+    // Nothing granular matched — editing the whole surface is not useful.
     return null;
 }
 
@@ -140,6 +166,6 @@ function _applyCode() {
     _currentEl.replaceWith(parsed);
     _currentEl = null;
 
-    applyHtmlEverywhere(activePreview.innerHTML, activePreview);
+    markHtmlDirty();
     _dialog.close();
 }

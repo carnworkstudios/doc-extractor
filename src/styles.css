@@ -91,7 +91,7 @@ body {
   align-items: center;
   gap: 6px;
   padding: 5px 12px;
-  border-radius: 20px;
+  border-radius: 5px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.07);
   color: rgba(255, 255, 255, 0.85);
@@ -706,7 +706,7 @@ body {
 }
 
 /* ── Visual Diff — active pane indicator ────────────────────────────────── */
-.vd-pane--active > .vd-pane-header {
+.work-pane--active > .vd-pane-header {
   border-bottom: 2px solid var(--accent);
   background: rgba(79, 172, 254, 0.06);
 }
@@ -978,17 +978,25 @@ body.format-painter-active .editable-text-layer {
   }
 }
 
-/* ── VIEW PANELS ────────────────────────────────────────────────────────── */
-.view-panel {
-  display: none;
+/* ── WORKSPACE PANES ────────────────────────────────────────────────────── */
+/* Every pane is a permanent sibling in #app-workspace; a tab flips [hidden]
+   on the ones it doesn't want (see workspaceLayout.js). Visibility, not
+   parentage — which is what lets the PDF pane sit beside the Doc pane
+   without ever being moved. */
+.work-pane {
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  width: 100%;
-  overflow: hidden;
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
-.view-panel.active {
-  display: flex;
+/* display:flex above is an author rule, and author origin outranks the UA
+   stylesheet's [hidden]{display:none} regardless of specificity — so hiding
+   a pane needs this explicitly. */
+.work-pane[hidden] {
+  display: none;
 }
 
 /* ── PDF CANVAS ─────────────────────────────────────────────────────────── */
@@ -1589,7 +1597,7 @@ body.format-painter-active .editable-text-layer {
 }
 
 /* ── COMPARE DIFF BAR ───────────────────────────────────────────────────── */
-.view-panel.diff-layout {
+.work-pane.diff-layout {
   flex-direction: column;
 }
 
@@ -1854,33 +1862,9 @@ mark.diff-inline-add {
   display: none;
 }
 
-/* ── VISUAL DIFF LAYOUT ─────────────────────────────────────────────────── */
-.visual-diff-layout {
-  flex-direction: row;
-}
-
-/* Doc tab: PDF-reference mirror pane, toggled next to #html-preview. Reuses
-   the same .vd-pane / .vd-pane-header styling as Visual Diff. */
-#view-html.doc-pdf-mirror-active {
-  flex-direction: row;
-}
-
-#doc-pdf-mirror-pane {
-  border-right: 1px solid var(--border-dark);
-}
-
-#doc-pdf-mirror-pane[hidden] {
-  display: none;
-}
-
-.vd-pane {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  overflow: hidden;
-}
-
+/* ── PANE HEADERS / DIVIDER ─────────────────────────────────────────────── */
+/* The pane boxes themselves are .work-pane (see WORKSPACE PANES above); what
+   remains here is the header label bar and the drag handle between them. */
 .vd-pane-header {
   display: flex;
   align-items: center;
@@ -1913,65 +1897,29 @@ mark.diff-inline-add {
 .vd-hint {
   font-size: 11px;
   color: var(--text-muted);
+  display: none;
 }
 
+/* Fixed 4px track, colour-only hover. Changing the divider's WIDTH on hover
+   reflows both panes under the cursor, so content jumps every time the
+   pointer crosses the handle. */
 .vd-divider {
+  flex: 0 0 4px;
   width: 4px;
   background: var(--border-dark);
-  flex-shrink: 0;
   cursor: col-resize;
   position: relative;
   transition: background 0.15s;
+  touch-action: none;
+}
+
+.vd-divider[hidden] {
+  display: none;
 }
 
 .vd-divider:hover,
 .vd-divider.dragging {
   background: var(--accent);
-  width: 2px;
-}
-
-/* ── CONTEXT MENU ───────────────────────────────────────────────────────── */
-.ctx-menu {
-  position: fixed;
-  z-index: 9000;
-  background: var(--surface);
-  border: 1px solid var(--border-dark);
-  border-radius: 8px;
-  padding: 4px;
-  min-width: 190px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-}
-
-.ctx-menu[hidden] {
-  display: none;
-}
-
-.ctx-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 7px 10px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text);
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.1s;
-}
-
-.ctx-item:hover {
-  background: var(--accent-dim);
-  color: var(--accent-dark);
-}
-
-.ctx-sep {
-  height: 1px;
-  background: var(--border-dark);
-  margin: 4px 6px;
 }
 
 /* ── TOAST ──────────────────────────────────────────────────────────────── */
@@ -2031,14 +1979,16 @@ mark.diff-inline-add {
     display: none !important;
   }
 
-  .view-panel {
+  .work-pane {
     display: block !important;
     height: auto;
     overflow: visible;
   }
 
-  #view-html {
-    display: block !important;
+  /* Print the doc surface only; the PDF pane is a screen reference. */
+  #pane-pdf,
+  #pane-divider {
+    display: none !important;
   }
 
   .prose-area {
@@ -2113,10 +2063,23 @@ mark.diff-inline-add {
 
 .analyze-canvas-wrap {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: auto;
   padding: 12px 16px;
+}
+
+.pdf-mirror-toggle[aria-expanded="true"] {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
+/* .vd-pane-header declares display:flex unconditionally, so [hidden] needs
+   the same author-origin override the panes do. */
+.vd-pane-header[hidden] {
+  display: none;
 }
 
 .analyze-canvas-header {
@@ -2233,24 +2196,19 @@ mark.diff-inline-add {
 }
 
 /* ── RESPONSIVE ─────────────────────────────────────────────────────────────
-   Tablet ≤1024px → stack visual-diff vertically.
+   Tablet ≤1024px → stack the PDF-mirror panes (Doc, Analyze) vertically.
    Phone  ≤640px  → wrap header, hide non-essential toolbar groups, slimmer
                     card padding, shorter status bar. */
 @media (max-width: 1024px) {
-  .visual-diff-layout {
+  #workspace-split {
     flex-direction: column;
   }
 
   .vd-divider {
+    flex: 0 0 4px;
     width: 100%;
-    height: 1px;
+    height: 4px;
     cursor: row-resize;
-  }
-
-  .vd-divider:hover,
-  .vd-divider.dragging {
-    width: 100%;
-    height: 2px;
   }
 
   .analyze-canvas-wrap {
@@ -3206,9 +3164,14 @@ mark.diff-inline-add {
   overflow: hidden;
 }
 
-#app-workspace > .view-panel {
+/* The panes live in their own flex row so the 40px nav rail is not part of
+   their reflow (it is a sibling of the split, not of the panes). */
+#workspace-split {
+  display: flex;
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .nav-panel {
@@ -3696,6 +3659,309 @@ mark.diff-inline-add {
   animation: popoverFadeIn 0.15s ease-out;
 }
 
+/* doc-context-popover only: two button groups sharing one popover, switched
+   by how it was opened (see docSelectionMenu.js _showPopover). Only relevant
+   here — pdf-context-popover's other user (pdfContextMenu.js) has a single
+   flat button row and never gets these mode classes.
+
+   The two groups are DIFFERENT SHAPES on purpose:
+     selection -> a horizontal pill bar floating over the selected text
+     element   -> a vertical labelled list at the cursor, i.e. a real
+                  right-click context menu (what the standalone #ctx-menu
+                  used to be, before it was folded into this popover). */
+.doc-ctx-group {
+  display: none;
+  gap: 2px;
+}
+
+.doc-ctx-mode-selection .doc-ctx-group--selection {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.doc-ctx-mode-element .doc-ctx-group--element {
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+}
+
+/* The popover itself is a row by default (the selection bar). Element mode
+   needs it to stop centring and let the list own the width. */
+#doc-context-popover.doc-ctx-mode-element {
+  align-items: stretch;
+  padding: 4px;
+}
+
+/* ── Switch (checkbox rendered as a track + knob) ───────────────────────── */
+/* The <input> stays a real checkbox — it keeps keyboard focus, the checked
+   state, and the disabled state that the Pro gate relies on. It is only
+   visually replaced by .gx-switch, which is a sibling so it can read
+   :checked / :disabled off it. */
+.gx-switch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  font-size: 13px;
+  font-weight: 500;
+  color: #4b5563;
+  cursor: pointer;
+  user-select: none;
+}
+
+.gx-switch-label input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.gx-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(140, 138, 138, 0.649);
+  transition: background 0.16s ease;
+}
+
+.gx-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.16s ease;
+}
+
+.gx-switch-label input:checked ~ .gx-switch {
+  background: var(--accent, #4facfe);
+}
+
+.gx-switch-label input:checked ~ .gx-switch::after {
+  transform: translateX(12px);
+}
+
+/* Keyboard focus has to stay visible even though the input is invisible. */
+.gx-switch-label input:focus-visible ~ .gx-switch {
+  outline: 2px solid var(--accent, #4facfe);
+  outline-offset: 2px;
+}
+
+/* Locked (free tier): the whole control reads as unavailable. The Pro
+   interceptor overlay still sits on top and handles the click. */
+.gx-switch-label input:disabled ~ .gx-switch {
+  opacity: 0.5;
+}
+
+.gx-switch-label.gx-pro-locked,
+.gx-switch-label.gx-pro-locked .gx-switch {
+  cursor: default;
+}
+
+.gx-switch-text {
+  white-space: nowrap;
+}
+
+/* ── Analyze T-split ────────────────────────────────────────────────────── */
+/* Analyze can show the Original and/or the Extracted HTML alongside its
+   canvas — the SAME #pane-pdf / #pane-doc the Doc tab uses. Nothing is cloned
+   and nothing is re-rendered; only the flow changes.
+
+   Showing BOTH makes a T:
+
+       wide (default)                narrow (<=1024px)
+       +----------+---+------+       +---------------------+
+       | Original |   |      |       |       Canvas        |
+       +----------+ | | Canvas       +---------------------+
+       | Extract  |   |      |       | Original | Extract  |
+       +----------+---+------+       +----------+----------+
+
+   Nested flex, not grid. Grid places panes independently of DOM order, which
+   is elegant for the layout — but a grid track has nowhere to put a DRAG
+   HANDLE, and both splits here are resizable. With nesting, each divider sits
+   inside the flex container it resizes, so paneDivider.js works unmodified and
+   reads its own container's flex-direction to know which way to drag.
+
+   #pane-stack is `display: contents` outside the T, so #pane-pdf / #pane-doc
+   remain direct children of #workspace-split and every other layout is
+   untouched. */
+#pane-stack {
+  display: contents;
+}
+
+#workspace-split.t-split > #pane-stack {
+  display: flex;
+  flex-direction: column;   /* Original above Extracted */
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Inside the T, #pane-divider separates the two stacked doc panes, so it runs
+   horizontally. Everywhere else it stays the vertical column divider. */
+#workspace-split.t-split > #pane-stack > #pane-divider {
+  flex: 0 0 4px;
+  width: auto;
+  height: 4px;
+  cursor: row-resize;
+}
+
+@media (max-width: 1024px) {
+  /* The T rotates: canvas full-width on top, the two document panes paired
+     beneath it. The doc panes are the ones that belong side by side (same
+     content in two forms); the canvas is the one that wants the full width
+     for its region overlays. */
+  #workspace-split.t-split {
+    flex-direction: column;
+  }
+
+  #workspace-split.t-split > #pane-analyze { order: 1; }
+  #workspace-split.t-split > #stack-divider { order: 2; }
+  #workspace-split.t-split > #pane-stack    { order: 3; }
+
+  /* Stack becomes a row, so its inner divider becomes vertical... */
+  #workspace-split.t-split > #pane-stack {
+    flex-direction: row;
+  }
+
+  #workspace-split.t-split > #pane-stack > #pane-divider {
+    flex: 0 0 4px;
+    width: 4px;
+    height: auto;
+    cursor: col-resize;
+  }
+
+  /* ...and the stack/canvas divider becomes horizontal. */
+  #workspace-split.t-split > #stack-divider {
+    flex: 0 0 4px;
+    width: auto;
+    height: 4px;
+    cursor: row-resize;
+  }
+}
+
+/* ── Doc-tab page stub (virtualizer) ────────────────────────────────────── */
+/* Stands in for an unmounted .pdf-page-content, holding its exact measured
+   height so the scrollbar and scroll position do not move when a page is
+   swapped out. Deliberately inert: no border, no background, nothing to
+   suggest content is missing. See docVirtualizer.js. */
+.gx-page-stub {
+  display: block;
+  width: 100%;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+/* ── Loaded-file chip (pane headers + compare pane labels) ──────────────── */
+/* The open document's name and its close control. Lives on the surface that
+   is showing the document, so the load buttons stay fixed-label actions. */
+.gx-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  padding: 1px 2px 1px 8px;
+  border: 1px solid var(--border-dark, rgba(0, 0, 0, 0.14));
+  border-radius: 4px;
+  background: var(--surface, #fff);
+  font-size: 11px;
+  color: var(--text, #222);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.gx-file-chip:hover {
+  border-color: var(--accent, #4facfe);
+  background: var(--accent-dim, rgba(79, 172, 254, 0.1));
+}
+
+/* Nothing loaded: no name to show and nothing to close. */
+.gx-file-chip.is-empty {
+  display: none;
+}
+
+.gx-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gx-file-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted, #6b7280);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.gx-file-x:hover {
+  background: #fef2f2;
+  color: #ef4444;
+}
+
+/* The compare labels become a row so the chip can sit beside the vd-label. */
+.diff-pane-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Thin rule between the selection bar's action group and its format group. */
+.doc-ctx-sep-v {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 3px;
+  background: var(--border-dark, rgba(0, 0, 0, 0.15));
+}
+
+/* ── CONTEXT MENU ROWS ──────────────────────────────────────────────────── */
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.ctx-item:hover {
+  background: var(--accent-dim);
+  color: var(--accent-dark);
+}
+
+.ctx-sep {
+  height: 1px;
+  background: var(--border-dark);
+  margin: 4px 6px;
+}
+
 @keyframes popoverFadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -3758,13 +4024,13 @@ mark.diff-inline-add {
   background: var(--surface-hover, rgba(0, 0, 0, 0.04));
 }
 
-.vd-pane--active .vd-pane-header,
+.work-pane--active .vd-pane-header,
 .vd-pane-header--active {
   background: var(--accent-dim, rgba(79, 172, 254, 0.08));
   border-bottom-color: var(--accent, #4facfe);
 }
 
-.vd-pane--active .vd-pane-header .vd-label {
+.work-pane--active .vd-pane-header .vd-label {
   font-weight: 700;
 }
 

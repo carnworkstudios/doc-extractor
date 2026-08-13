@@ -55,7 +55,7 @@ export function initHistoryController() {
     // browser's own undo manager via execCommand.
     document.addEventListener('keydown', (e) => {
         const view = state.activeView;
-        if (view !== 'html' && view !== 'visual-diff') return;
+        if (view !== 'html') return;
 
         const isUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z';
         const isRedo = (e.ctrlKey || e.metaKey) &&

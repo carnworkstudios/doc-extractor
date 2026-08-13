@@ -1,5 +1,5 @@
 import { TableEditor } from '../../../table-formatter/src/js/core/TableEditor.js';
-import { applyHtmlEverywhere } from './htmlSync.js';
+import { markHtmlDirty } from './htmlSync.js';
 import { pushSnapshot } from './historyController.js';
 import { showToast } from './toast.js';
 import { GridMapper } from '../../../table-formatter/src/js/core/GridMapper.js';
@@ -23,14 +23,12 @@ export function initTableEditing() {
     _observers.forEach(obs => obs.disconnect());
     _observers = [];
 
-    ['html-preview', 'visual-diff-html'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            const obs = new MutationObserver(() => _rebind());
-            obs.observe(el, { childList: true, subtree: true, characterData: false });
-            _observers.push(obs);
-        }
-    });
+    const el = document.getElementById('html-preview');
+    if (el) {
+        const obs = new MutationObserver(() => _rebind());
+        obs.observe(el, { childList: true, subtree: true, characterData: false });
+        _observers.push(obs);
+    }
 
     _rebind();
 
@@ -156,13 +154,13 @@ function _wirePopover() {
 
     _popover.querySelector('#tbl-pop-undo')?.addEventListener('click', () => {
         if (!_editor) return; pushSnapshot(); _editor.history.undo(); _syncPopoverBtns();
-        const container = _activeTable?.closest('#html-preview, #visual-diff-html') || document.getElementById('html-preview');
-        if (container) applyHtmlEverywhere(container.innerHTML, container);
+        const container = _activeTable?.closest('#html-preview') || document.getElementById('html-preview');
+        if (container) markHtmlDirty();
     });
     _popover.querySelector('#tbl-pop-redo')?.addEventListener('click', () => {
         if (!_editor) return; pushSnapshot(); _editor.history.redo(); _syncPopoverBtns();
-        const container = _activeTable?.closest('#html-preview, #visual-diff-html') || document.getElementById('html-preview');
-        if (container) applyHtmlEverywhere(container.innerHTML, container);
+        const container = _activeTable?.closest('#html-preview') || document.getElementById('html-preview');
+        if (container) markHtmlDirty();
     });
     _popover.querySelector('#tbl-pop-toggle')?.addEventListener('click', () => _exitEditMode());
 }
@@ -201,7 +199,7 @@ export function rebindTableEditing() {
 }
 
 function _rebind() {
-    const tables = document.querySelectorAll('#html-preview table, #visual-diff-html table');
+    const tables = document.querySelectorAll('#html-preview table');
     tables.forEach(t => {
         if (t._fabWired) return;
         t._fabWired = true;
@@ -263,9 +261,9 @@ function _enterEditMode() {
     _activeTable.contentEditable = 'false';
     _editor = new TableEditor(_activeTable, { ruler: true });
 
-    const container = _activeTable.closest('#html-preview, #visual-diff-html') || document.getElementById('html-preview');
+    const container = _activeTable.closest('#html-preview') || document.getElementById('html-preview');
     _editor.on('change', () => {
-        if (container) applyHtmlEverywhere(container.innerHTML, container);
+        if (container) markHtmlDirty();
     });
     _editor.on('select', () => _syncPopoverBtns());
     _editor.on('error', (d) => showToast(d.message, 'warning'));
@@ -323,7 +321,7 @@ function _onCellDblClick(e) {
 
 function _exitEditMode() {
     if (!_editor) return;
-    const container = _activeTable?.closest('#html-preview, #visual-diff-html') || document.getElementById('html-preview');
+    const container = _activeTable?.closest('#html-preview') || document.getElementById('html-preview');
 
     _editModeActive = false;
     _fab.classList.remove('tbl-fab--active');
@@ -338,7 +336,11 @@ function _exitEditMode() {
     _popover.style.display = 'none';
     _fab.style.display = 'none';
     _enableToolbarBtns(false);
-    if (container) applyHtmlEverywhere(container.innerHTML, null);
+    // `container` IS #html-preview, so the old applyHtmlEverywhere(…, null)
+    // sanitized the whole document and wrote it back into the very surface it
+    // came from — a full O(document) round-trip that also blew away the caret.
+    // The DOM is already correct; only the cached string is stale.
+    if (container) markHtmlDirty();
 }
 
 // ── Main toolbar ────────────────────────────────────────────────────────────

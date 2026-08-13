@@ -177,7 +177,7 @@ function renderOutlineTab() {
         }
     } else {
         // DOCS / HTML / EDITOR VIEW OUTLINE MODE
-        const surfaceId = (state.activeView === 'visual-diff' || activeView === 'html') ? 'visual-diff-html' : 'html-preview';
+        const surfaceId = 'html-preview';
         const $preview = $(`#${surfaceId}`).length ? $(`#${surfaceId}`) : $('#html-preview');
         const $headings = $preview.find('h1, h2, h3, h4, h5, h6, .pdf-page-content');
 
@@ -275,7 +275,7 @@ function renderOutlineTab() {
             } else {
                 let targetEl = item.element;
                 if (!targetEl || !document.body.contains(targetEl)) {
-                    const activeSurfId = (state.activeView === 'visual-diff' || activeView === 'html') ? 'visual-diff-html' : 'html-preview';
+                    const activeSurfId = 'html-preview';
                     const container = document.getElementById(activeSurfId) || document.getElementById('html-preview');
                     if (container) {
                         targetEl = container.querySelector(`.pdf-page-content[data-page="${item.page}"]`)
@@ -500,7 +500,7 @@ export function renderLinksTab() {
     let links = []; // { id, text, href, isExternal, page, element, source: 'html'|'pdf' }
 
     // 1. Scan active HTML preview DOM for <a> tags
-    const surfaceId = (state.activeView === 'visual-diff' || activeView === 'html') ? 'visual-diff-html' : 'html-preview';
+    const surfaceId = 'html-preview';
     const $preview = $(`#${surfaceId}`).length ? $(`#${surfaceId}`) : $('#html-preview');
     const $aTags = $preview.find('a[href]');
     if ($aTags.length) {
@@ -580,7 +580,7 @@ export function renderLinksTab() {
             if (link.source === 'html') {
                 let targetEl = link.element;
                 if (!targetEl || !document.body.contains(targetEl)) {
-                    const activeSurfId = (state.activeView === 'visual-diff' || getEffectiveActiveView() === 'html') ? 'visual-diff-html' : 'html-preview';
+                    const activeSurfId = 'html-preview';
                     const container = document.getElementById(activeSurfId) || document.getElementById('html-preview');
                     if (container) targetEl = container.querySelector(`a[href="${link.href}"]`);
                 }

@@ -275,26 +275,13 @@
         <!-- <div -->
         <!-- style="display: flex; gap: 8px; align-items: center; margin-left: 16px; border-left: 1px solid #e5e7eb; padding-left: 16px;"> -->
         <label
-          class="gx-pro-locked"
-          style="
-            cursor: default;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 13px;
-            font-weight: 500;
-            color: #4b5563;
-            position: relative;
-          "
-          title="AI-verified extraction: auto-tunes weak pages on vector PDFs; Docling OCR for scanned documents — Pro feature"
+          class="gx-switch-label gx-pro-locked"
+          title="Smart OCR: reads scanned documents with Docling OCR, and re-tunes low-confidence pages on vector PDFs — Pro feature"
         >
-          <input
-            type="checkbox"
-            id="ai-layout-toggle"
-            style="cursor: default"
-            disabled
-          />
-          ✨ Advance Extraction <span class="gx-pro-badge">PRO</span>
+          <input type="checkbox" id="ai-layout-toggle" disabled />
+          <span class="gx-switch" aria-hidden="true"></span>
+          <span class="gx-switch-text">✨ Smart OCR</span>
+          <span class="gx-pro-badge">PRO</span>
           <div
             class="gx-pro-interceptor"
             data-pro-feature="pdf-ai-extract"
@@ -307,9 +294,6 @@
       <nav class="tab-bar" role="tablist">
         <button class="tab-btn active" data-view="pdf" role="tab">PDF</button>
         <button class="tab-btn" data-view="html" role="tab">Doc</button>
-        <button class="tab-btn" data-view="visual-diff" role="tab">
-          Visual Diff
-        </button>
         <button class="tab-btn" data-view="editor" role="tab">Editor</button>
         <button class="tab-btn" data-view="analyze" role="tab">Analyze</button>
         <button
@@ -493,8 +477,8 @@
 
     <!-- ── TOOLBAR / RIBBON ─────────────────────────────────────────────── -->
     <div class="toolbar-bar" id="format-toolbar">
-      <!-- Clipboard: pdf, html, visual-diff -->
-      <div class="ribbon-group" data-toolbar-ctx="pdf html visual-diff">
+      <!-- Clipboard: pdf, html -->
+      <div class="ribbon-group" data-toolbar-ctx="pdf html">
         <div class="ribbon-group-buttons">
           <button
             class="tool-btn"
@@ -508,10 +492,10 @@
         </div>
         <span class="ribbon-group-label">Clipboard</span>
       </div>
-      <div class="toolbar-sep" data-toolbar-ctx="pdf html visual-diff"></div>
+      <div class="toolbar-sep" data-toolbar-ctx="pdf html"></div>
 
-      <!-- Font: pdf, html, visual-diff -->
-      <div class="ribbon-group" data-toolbar-ctx="pdf html visual-diff">
+      <!-- Font: pdf, html -->
+      <div class="ribbon-group" data-toolbar-ctx="pdf html">
         <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
           <select
             class="tool-select tool-select--font"
@@ -619,10 +603,10 @@
         </div>
         <span class="ribbon-group-label">Font</span>
       </div>
-      <div class="toolbar-sep" data-toolbar-ctx="html visual-diff"></div>
+      <div class="toolbar-sep" data-toolbar-ctx="html"></div>
 
-      <!-- Paragraph: html, visual-diff only -->
-      <div class="ribbon-group" data-toolbar-ctx="html visual-diff">
+      <!-- Paragraph: html only -->
+      <div class="ribbon-group" data-toolbar-ctx="html">
         <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
           <div class="split-btn dropdown" id="dd-bullets">
             <button class="tool-btn" id="btn-ul" title="Bullet list">
@@ -830,9 +814,10 @@
             ></iconify-icon>
           </button>
           <button
-            class="tool-btn"
-            id="btn-toggle-pdf-mirror"
-            title="Show original PDF alongside the doc, for reference while editing"
+            class="tool-btn pdf-mirror-toggle"
+            id="doc-pdf-mirror-toggle"
+            title="Show the original PDF alongside the doc, for reference while editing"
+            aria-expanded="false"
           >
             <iconify-icon
               icon="material-symbols:picture-as-pdf-outline"
@@ -841,13 +826,13 @@
         </div>
         <span class="ribbon-group-label">Styles</span>
       </div>
-      <div class="toolbar-sep" data-toolbar-ctx="html visual-diff"></div>
+      <div class="toolbar-sep" data-toolbar-ctx="html"></div>
 
-      <!-- Editing (Undo/Redo): html + visual-diff -->
+      <!-- Editing (Undo/Redo): html -->
       <div
         class="ribbon-group"
         id="undo-redo-group"
-        data-toolbar-ctx="html visual-diff"
+        data-toolbar-ctx="html"
       >
         <div class="ribbon-group-buttons">
           <button
@@ -865,13 +850,13 @@
         <span class="ribbon-group-label">Editing</span>
       </div>
 
-      <div class="toolbar-sep" data-toolbar-ctx="pdf visual-diff"></div>
-      <!-- PDF zoom: pdf, visual-diff -->
+      <div class="toolbar-sep" data-toolbar-ctx="pdf"></div>
+      <!-- PDF zoom: pdf -->
       <div
         class="ribbon-group"
         id="pdf-zoom-group"
         aria-label="PDF zoom"
-        data-toolbar-ctx="pdf visual-diff"
+        data-toolbar-ctx="pdf"
       >
         <div class="ribbon-group-buttons">
           <button class="tool-btn" id="btn-zoom-out" title="Zoom out">
@@ -889,7 +874,7 @@
         </div>
         <span class="ribbon-group-label">Zoom</span>
       </div>
-      <div class="toolbar-sep" data-toolbar-ctx="pdf html visual-diff"></div>
+      <div class="toolbar-sep" data-toolbar-ctx="pdf html"></div>
 
       <!-- Annotate: pdf only -->
       <div class="toolbar-sep" data-toolbar-ctx="pdf"></div>
@@ -1002,8 +987,8 @@
         <span class="ribbon-group-label">Annotate</span>
       </div>
 
-      <!-- Selection Mode: pdf, html, visual-diff -->
-      <div class="ribbon-group" data-toolbar-ctx="pdf html visual-diff">
+      <!-- Selection Mode: pdf, html -->
+      <div class="ribbon-group" data-toolbar-ctx="pdf html">
         <div class="ribbon-group-buttons">
           <button
             class="tool-btn"
@@ -1027,10 +1012,10 @@
         </div>
         <span class="ribbon-group-label">Select</span>
       </div>
-      <div class="toolbar-sep" data-toolbar-ctx="html visual-diff"></div>
+      <div class="toolbar-sep" data-toolbar-ctx="html"></div>
 
-      <!-- Table editing: html, visual-diff -->
-      <div class="ribbon-group" data-toolbar-ctx="html visual-diff">
+      <!-- Table editing: html -->
+      <div class="ribbon-group" data-toolbar-ctx="html">
         <div class="ribbon-group-buttons">
           <button
             class="tool-btn"
@@ -1179,13 +1164,13 @@
         </div>
         <span class="ribbon-group-label">Table</span>
       </div>
-      <div class="toolbar-sep" data-toolbar-ctx="html visual-diff"></div>
+      <div class="toolbar-sep" data-toolbar-ctx="html"></div>
 
-      <!-- Page navigation: pdf, visual-diff -->
+      <!-- Page navigation: pdf -->
       <div
         class="ribbon-group"
         id="page-nav-group"
-        data-toolbar-ctx="pdf visual-diff"
+        data-toolbar-ctx="pdf"
       >
         <div class="ribbon-group-buttons page-nav" id="page-nav">
           <button
@@ -1257,6 +1242,8 @@
             <iconify-icon icon="material-symbols:folder-zip-outline"></iconify-icon>
           </button>
           <!-- Ginexys Send To -->
+<span class="doc-ctx-sep-v" data-ctx-surface="html"></span>
+           
         <button
           id="pdfSendBtn"
           class="gx-tool-send-btn"
@@ -1320,21 +1307,74 @@
         </div>
       </aside>
 
-      <!-- PDF VIEW -->
-      <div id="view-pdf" class="view-panel active">
+      <!-- Holds every pane so the panes can stack vertically on tablet
+           without the 40px nav rail (a sibling of THIS, not of the panes)
+           being dragged into the same reflow. -->
+      <div id="workspace-split">
+
+      <!-- ══ WORKSPACE PANES ═══════════════════════════════════════════════
+           Every surface is a PERMANENT sibling here; a tab decides which ones
+           are [hidden], it does not decide where anything lives. That is what
+           lets "show the original PDF beside the Doc" be a visibility flip
+           rather than a DOM move — #pdf-canvas-container is rendered once and
+           never reparented (see workspaceLayout.js).
+
+           DOM ORDER MATTERS: #pane-pdf and #pane-divider come first, so the
+           divider lands between the PDF and whichever pane follows it —
+           Doc or Analyze — without needing a second divider. -->
+
+      <!-- The two document panes. `display: contents` everywhere except the
+           Analyze T-split, so in every other layout #pane-pdf / #pane-doc stay
+           direct flex children of #workspace-split and nothing changes. In the
+           T-split it becomes a real flex container, which is what gives
+           #pane-divider a box to resize inside. -->
+      <div id="pane-stack">
+
+      <!-- PDF PANE -->
+      <div id="pane-pdf" class="work-pane">
+        <div class="vd-pane-header" id="pdf-header-bar">
+          <span class="vd-label vd-label--pdf">Original</span>
+          <!-- The open document's name lives here, not on the load button.
+               Click to swap the file, ✕ to unload it. -->
+          <span class="gx-file-chip is-empty" data-slot="1">
+            <span class="gx-file-name"></span>
+            <button
+              class="gx-file-x"
+              type="button"
+              data-unload-slot="1"
+              title="Close this document"
+              aria-label="Close this document"
+            >
+              &times;
+            </button>
+          </span>
+          <span class="vd-hint">Rendered source with editable text overlay</span>
+        </div>
         <div id="pdf-canvas-container" class="canvas-scroll">
           <p class="empty-hint">Open a PDF to view it here.</p>
         </div>
       </div>
 
-      <!-- HTML VIEW -->
-      <div id="view-html" class="view-panel">
-        <div id="doc-pdf-mirror-pane" class="vd-pane" hidden>
-          <div class="vd-pane-header">
-            <span class="vd-label vd-label--pdf">Original</span>
-            <span class="vd-hint">Read-only PDF reference</span>
-          </div>
-          <div id="doc-pdf-mirror" class="canvas-scroll"></div>
+      <!-- Shown only when the PDF pane is sharing the workspace -->
+      <div class="vd-divider" id="pane-divider" hidden></div>
+
+      <!-- DOC PANE -->
+      <div id="pane-doc" class="work-pane" hidden>
+        <div class="vd-pane-header" id="doc-header-bar">
+          <span class="vd-label vd-label--html">Extracted HTML</span>
+          <span class="gx-file-chip is-empty" data-slot="1">
+            <span class="gx-file-name"></span>
+            <button
+              class="gx-file-x"
+              type="button"
+              data-unload-slot="1"
+              title="Close this document"
+              aria-label="Close this document"
+            >
+              &times;
+            </button>
+          </span>
+          <span class="vd-hint">Editable rendered output</span>
         </div>
         <div
           id="html-preview"
@@ -1348,41 +1388,20 @@
         </div>
       </div>
 
-      <!-- MONACO EDITOR VIEW -->
-      <div id="view-editor" class="view-panel">
+      </div><!-- /#pane-stack -->
+
+      <!-- Divider between the document group and the canvas. Vertical in the
+           wide T, horizontal in the narrow one — paneDivider reads its own
+           container's flex-direction, so no JS knows which. -->
+      <div class="vd-divider" id="stack-divider" hidden></div>
+
+      <!-- MONACO EDITOR PANE -->
+      <div id="pane-editor" class="work-pane" hidden>
         <div id="monaco-editor-container" class="monaco-fill"></div>
       </div>
 
-      <!-- VISUAL DIFF VIEW (PDF editable vs HTML editable side by side) -->
-      <div id="view-visual-diff" class="view-panel visual-diff-layout">
-        <div class="vd-pane">
-          <div class="vd-pane-header">
-            <span class="vd-label vd-label--pdf" id="vd-label-left"
-              >Original</span
-            >
-            <span class="vd-hint" id="vd-hint-left"
-              >Rendered source with editable text overlay</span
-            >
-          </div>
-          <div id="visual-diff-pdf" class="canvas-scroll"></div>
-        </div>
-        <div class="vd-divider" id="vd-divider"></div>
-        <div class="vd-pane">
-          <div class="vd-pane-header">
-            <span class="vd-label vd-label--html">Extracted HTML</span>
-            <span class="vd-hint">Editable rendered output</span>
-          </div>
-          <div
-            id="visual-diff-html"
-            class="prose-area"
-            contenteditable="true"
-            spellcheck="true"
-          ></div>
-        </div>
-      </div>
-
       <!-- COMPARE DIFF VIEW (Diffchecker Style) -->
-      <div id="view-diff" class="view-panel diff-layout">
+      <div id="pane-diff" class="work-pane diff-layout" hidden>
         <!-- Single compact control bar: mode · layout · precision · stats -->
         <div class="diff-bar">
           <div class="diff-bar-left">
@@ -1477,7 +1496,21 @@
           <div id="diff-container" class="split-view">
             <!-- Left Pane -->
             <div class="diff-pane left-pane" id="pane-left">
-              <div class="diff-pane-label">Original</div>
+              <div class="diff-pane-label">
+                <span class="vd-label vd-label--pdf">Original</span>
+                <span class="gx-file-chip is-empty" data-slot="1">
+                  <span class="gx-file-name"></span>
+                  <button
+                    class="gx-file-x"
+                    type="button"
+                    data-unload-slot="1"
+                    title="Close this document"
+                    aria-label="Close this document"
+                  >
+                    &times;
+                  </button>
+                </span>
+              </div>
               <div class="pane-content" id="content-left">
                 <div class="empty-state">Load Original PDF</div>
               </div>
@@ -1488,7 +1521,21 @@
 
             <!-- Right Pane -->
             <div class="diff-pane right-pane" id="pane-right">
-              <div class="diff-pane-label">Modified</div>
+              <div class="diff-pane-label">
+                <span class="vd-label vd-label--html">Modified</span>
+                <span class="gx-file-chip is-empty" data-slot="2">
+                  <span class="gx-file-name"></span>
+                  <button
+                    class="gx-file-x"
+                    type="button"
+                    data-unload-slot="2"
+                    title="Close this document"
+                    aria-label="Close this document"
+                  >
+                    &times;
+                  </button>
+                </span>
+              </div>
               <div class="pane-content" id="content-right">
                 <div class="empty-state">Load Modified PDF</div>
               </div>
@@ -1498,7 +1545,7 @@
       </div>
 
       <!-- ── ANALYZE VIEW ─────────────────────────────────────────────── -->
-      <div id="view-analyze" class="view-panel">
+      <div id="pane-analyze" class="work-pane" hidden>
         <div class="analyze-layout" id="analyze-panel-inner">
           <!-- ── Meta bar: status + file info ───────────────────────── -->
           <div class="analyze-meta-bar">
@@ -1692,6 +1739,47 @@
                 <line x1="3" y1="18" x2="21" y2="18" />
               </svg>
               Controls
+            </button>
+            <!-- Original-PDF reference toggle -->
+            <button
+              class="atb-btn atb-btn--label pdf-mirror-toggle"
+              id="analyze-pdf-mirror-toggle"
+              title="Show the original PDF alongside the canvas, for reference while tuning"
+              aria-expanded="false"
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              Original PDF
+            </button>
+            <!-- Extracted-HTML reference toggle. Independent of the Original
+                 toggle: either, both or neither can share the canvas. -->
+            <button
+              class="atb-btn atb-btn--label doc-mirror-toggle"
+              id="analyze-doc-mirror-toggle"
+              title="Show the extracted HTML alongside the canvas"
+              aria-expanded="false"
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 4h16v16H4z" />
+                <path d="M4 9h16M9 9v11" />
+              </svg>
+              Extracted
             </button>
             <div class="analyze-toolbar-sep" style="margin-left: auto"></div>
             <!-- User guide toggle -->
@@ -1889,6 +1977,10 @@
           <!-- ── Body: canvas left, stats right ─────────────────────── -->
           <div class="analyze-body">
             <div class="analyze-canvas-wrap">
+              <div id="analyze-canvas-header-bar" class="vd-pane-header">
+                <span class="vd-label vd-label--html">Canvas</span>
+                <span class="vd-hint">Detection layers &amp; region overlays</span>
+              </div>
               <canvas class="analyze-canvas" id="analyze-canvas"></canvas>
 
               <!-- Geometry layer toggles -->
@@ -2153,77 +2245,7 @@
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- ── RIGHT-CLICK CONTEXT MENU ──────────────────────────────────── -->
-    <div id="ctx-menu" class="ctx-menu" hidden>
-      <button class="ctx-item" id="ctx-img-url">
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <circle cx="8.5" cy="8.5" r="1.5" />
-          <polyline points="21 15 16 10 5 21" />
-        </svg>
-        Insert image from URL
-      </button>
-      <button class="ctx-item" id="ctx-img-file">
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="17 8 12 3 7 8" />
-          <line x1="12" y1="3" x2="12" y2="15" />
-        </svg>
-        Insert image from file
-      </button>
-      <div class="ctx-sep" id="ctx-sep-edit"></div>
-      <button class="ctx-item" id="ctx-edit-code">
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <polyline points="16 18 22 12 16 6" />
-          <polyline points="8 6 2 12 8 18" />
-        </svg>
-        Edit Code
-      </button>
-      <div class="ctx-sep" id="ctx-sep-center" style="display: none"></div>
-      <button class="ctx-item" id="ctx-center-zone" style="display: none">
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <line x1="3" y1="12" x2="21" y2="12" />
-          <line x1="8" y1="6" x2="16" y2="6" />
-          <line x1="8" y1="18" x2="16" y2="18" />
-        </svg>
-        <span id="ctx-center-zone-label">Make centered</span>
-      </button>
-      <input
-        id="ctx-file-input"
-        type="file"
-        accept="image/*"
-        style="display: none"
-      />
+      </div><!-- /#workspace-split -->
     </div>
 
     <!-- ── TOAST ──────────────────────────────────────────────────────── -->
@@ -2248,11 +2270,17 @@
           compare: "diff",
           editor: "editor",
         };
+        // /visual-diff/ is a PUBLISHED route (sitemap, OS-shell deep links),
+        // kept working even though the standalone view is gone. It now means
+        // "Doc tab with the original PDF beside it" — the Doc tab plus the
+        // PDF pane. There is no visual-diff tab button to click, so it is
+        // expressed as tab + toggle.
         var queryView = new URLSearchParams(location.search).get("view");
         var targetView = null;
         if (
           queryView &&
-          document.querySelector('.tab-btn[data-view="' + queryView + '"]')
+          (queryView === "visual-diff" ||
+            document.querySelector('.tab-btn[data-view="' + queryView + '"]'))
         ) {
           targetView = queryView;
         } else {
@@ -2261,7 +2289,12 @@
           });
           if (matched) targetView = viewMap[matched];
         }
-        if (targetView) {
+        if (targetView === "visual-diff") {
+          var docTab = document.querySelector('.tab-btn[data-view="html"]');
+          if (docTab) docTab.click();
+          var mirrorToggle = document.getElementById("doc-pdf-mirror-toggle");
+          if (mirrorToggle) mirrorToggle.click();
+        } else if (targetView) {
           var btn = document.querySelector(
             '.tab-btn[data-view="' + targetView + '"]',
           );
@@ -2280,6 +2313,22 @@
           var btn = e.target.closest(".tab-btn");
           if (btn && urlMap[btn.dataset.view]) {
             history.replaceState({}, "", urlMap[btn.dataset.view]);
+            return;
+          }
+          if (e.target.closest("#doc-pdf-mirror-toggle")) {
+            // aria-expanded is flipped by workspaceLayout.applyLayout(), from
+            // a separate listener on this same click — read it a tick later
+            // so this sees the post-toggle value.
+            setTimeout(function () {
+              var expanded =
+                document.getElementById("doc-pdf-mirror-toggle")
+                  ?.getAttribute("aria-expanded") === "true";
+              history.replaceState(
+                {},
+                "",
+                expanded ? urlMap["visual-diff"] : urlMap.html,
+              );
+            }, 0);
           }
         });
       });
@@ -2296,7 +2345,7 @@
         "pdf-analyze-pro":
           "Per-region confidence scores, tolerance controls, and per-page re-extraction. Join the waitlist to get early access.",
         "pdf-ai-extract":
-          "Advance Extraction runs your PDF through Docling layout analysis and OpenRouter AI for responsive Bootstrap grid mapping. Join the waitlist to get early access.",
+          "Smart OCR reads scanned documents with Docling layout analysis and re-tunes low-confidence pages on vector PDFs. Join the waitlist to get early access.",
       };
 
       // Pro waitlist trigger: emit IPC when embedded in the OS, open local modal when standalone.

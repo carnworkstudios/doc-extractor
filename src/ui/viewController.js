@@ -1,14 +1,19 @@
 /**
  * viewController.js
- * Manages the 5-tab view system: PDF | HTML | Editor | Visual Diff | Compare Diff
+ * Tab bar: PDF | Doc | Editor | Analyze | Compare Diff.
+ *
+ * A tab selects which panes are visible, nothing more — workspaceLayout.js
+ * owns the panes themselves. "Show original PDF" is not a view switch and
+ * not a DOM move; it just adds #pane-pdf to the visible set.
  */
 
 import $ from 'jquery';
 import { state } from '../state.js';
 import { deactivateSelectionMode } from './selectionMode.js';
 import { renderNavPanel } from './navPanel.js';
+import { setView, getFocusedPane, isSplit } from './workspaceLayout.js';
 
-const VIEWS = ['analyze', 'pdf', 'html', 'editor', 'visual-diff', 'diff'];
+const VIEWS = ['analyze', 'pdf', 'html', 'editor', 'diff'];
 
 // Views where the toolbar is completely hidden
 const TOOLBAR_HIDDEN_VIEWS = new Set(['editor', 'analyze', 'diff']);
@@ -24,23 +29,20 @@ export async function switchView(viewName) {
     deactivateSelectionMode();
     if (!VIEWS.includes(viewName)) return;
 
-    VIEWS.forEach(v => {
-        $(`#view-${v}`).toggleClass('active', v === viewName);
-    });
+    state.activeView = viewName;
+    setView(viewName);
 
     $('.tab-btn[data-view]').each(function() {
         $(this).toggleClass('active', $(this).data('view') === viewName);
     });
 
-    state.activeView = viewName;
-
-    // Monaco needs layout() call when made visible
-    if (viewName === 'editor' && state.monacoEditor) state.monacoEditor.layout();
-
-    // Visual diff needs its own activation logic
-    if (viewName === 'visual-diff') {
-        const { activateVisualDiff } = await import('./visualDiff.js');
-        activateVisualDiff();
+    // Monaco needs layout() when made visible, and it is also where the
+    // deferred document sync lands: edits mark the cache stale rather than
+    // pushing a 16 MB setValue per keystroke (see htmlSync.js).
+    if (viewName === 'editor' && state.monacoEditor) {
+        const { syncMonacoFromState } = await import('./htmlSync.js');
+        syncMonacoFromState();
+        state.monacoEditor.layout();
     }
 
     if (viewName === 'diff') {
@@ -52,14 +54,18 @@ export async function switchView(viewName) {
     renderNavPanel();
 }
 
-import { getVisualDiffFocusedPane } from './visualDiff.js';
-
-/** Returns active view, respecting visual-diff pane focus if active. */
+/**
+ * The ONE answer to "which surface is the toolbar acting on".
+ *
+ * With the PDF sharing the screen, the Doc tab has two editable surfaces, so
+ * the answer is the focused pane rather than the tab. Everything that used to
+ * ask this question separately — pageNav's fmt/fmtColor/removeHighlight, the
+ * toolbar group visibility, the nav panel — goes through here.
+ */
 export function getEffectiveActiveView() {
-    if (state.activeView === 'visual-diff') {
-        return getVisualDiffFocusedPane();
-    }
-    return state.activeView || 'pdf';
+    const view = state.activeView || 'pdf';
+    if (isSplit() && getFocusedPane() === 'pdf') return 'pdf';
+    return view;
 }
 
 /**
@@ -72,10 +78,10 @@ export function syncToolbarToView(viewName) {
     const $bar = $('#format-toolbar');
     if (!$bar.length) return;
 
-    const currentView = viewName || state.activeView || 'pdf';
-    const targetCtx = currentView === 'visual-diff' ? getVisualDiffFocusedPane() : currentView;
+    const requested = viewName || state.activeView || 'pdf';
+    const currentView = (isSplit() && getFocusedPane() === 'pdf') ? 'pdf' : requested;
 
-    if (TOOLBAR_HIDDEN_VIEWS.has(targetCtx)) {
+    if (TOOLBAR_HIDDEN_VIEWS.has(currentView)) {
         $bar.addClass('toolbar-bar--hidden');
         return;
     }
@@ -84,7 +90,7 @@ export function syncToolbarToView(viewName) {
     // Show/hide each group and separator based on ctx list
     $bar.find('[data-toolbar-ctx]').each(function() {
         const ctxList = $(this).attr('data-toolbar-ctx').split(' ');
-        $(this).toggleClass('toolbar-ctx--hidden', !ctxList.includes(targetCtx));
+        $(this).toggleClass('toolbar-ctx--hidden', !ctxList.includes(currentView));
     });
 }
 

@@ -11,7 +11,6 @@ import { state } from '../state.js';
 import { renderPDFToCanvas } from './pdfCanvas.js';
 import { showStatus, hideStatus, enableDiffTab, disableDiffTab, switchView } from './viewController.js';
 import { registerPages } from './pageNav.js';
-import { markDiffDirty } from './visualDiff.js';
 import { registerPDFLayers, resetPDFLayers } from './pdfEditMode.js';
 import { initTableFeatures } from '../utils/tableLogic.js';
 import { applyHtmlEverywhere, hydrateImages } from './htmlSync.js';
@@ -115,7 +114,7 @@ async function _crossCheckDocling(assets) {
     }
 }
 
-// ── AI auto-tune (Advance Extraction, vector docs) ───────────────────────────
+// ── AI auto-tune (Smart OCR, vector docs) ───────────────────────────
 // Document-level drive-and-verify: after Pass 1, the AI reviews pages the
 // verifier scored poorly, proposes parameter/classification ops (validated
 // server-side against the closed vocabulary), the deterministic engine
@@ -140,7 +139,7 @@ function _phCapture(event, props) {
 }
 
 // ── Large-document gate for the AI drive-and-verify pass ─────────────────────
-// The AI pass (Advance Extraction) is a Pro feature — the toggle is disabled in
+// The AI pass (Smart OCR) is a Pro feature — the toggle is disabled in
 // markup for free users. This gate is the SIZE dimension layered on top: Pro
 // users have no page limit; any non-Pro context (e.g. a DOM-forced toggle, or a
 // future BYO-key surface) reaching the AI pass with a document beyond
@@ -328,7 +327,7 @@ function _requestWorker(message, timeoutMs = 120_000) {
 }
 
 // Local vector pipeline cannot read scanned pages — point the user at the
-// Advance Extraction (Docling/OCR) path instead of silently returning nothing.
+// Smart OCR (Docling/OCR) path instead of silently returning nothing.
 async function _maybeSuggestOcr() {
     try {
         const analysis = await _analysisPromise;
@@ -336,7 +335,7 @@ async function _maybeSuggestOcr() {
         if (!scanned) return;
         showToast(
             `${scanned} page(s) look scanned — the local vector pipeline can't read them. ` +
-            `Use Advance Extraction (OCR) for this document.`,
+            `Turn on Smart OCR to read this document.`,
             'info',
         );
     } catch (_) { /* analysis failed — nothing to suggest */ }
@@ -349,13 +348,14 @@ const onReprocessResult = (n, h, r, s, v) => _core()?._dispatchReprocessResult(n
 const onReprocessError  = (n, e)       => _core()?._dispatchReprocessError(n, e);
 import { clearImages, saveImages, getImageBlob } from '../utils/imageStore.js';
 import { refreshZoneToolbar } from './zoneToolbar.js';
+import { refreshDocVirtualizer, mountAllPages } from './docVirtualizer.js';
 
 let brokerReady = false;
 
 // Lazily created geometry worker for local (offline) table extraction
 let _geoWorker = null;
 
-// Tier check — gates Advance Extraction (the hosted AI-assisted path).
+// Tier check — gates Smart OCR (the hosted AI-assisted path).
 // Embedded: ask the host for the current user's tier. Standalone: default to free.
 // Until auth Phase 7 wires real tier detection, this always returns false.
 export function isProUser() { return _isProUser(); }
@@ -375,18 +375,20 @@ function _isProUser() {
     return false;
 }
 
-// Unlock the Advance Extraction checkbox for Pro/dev users: enable the input,
-// drop the locked styling, and remove the waitlist interceptor so checking it
+// Unlock the Smart OCR toggle for Pro/dev users: enable the input, drop the
+// locked styling, and remove the waitlist interceptor so switching it on
 // routes extraction through the backend AI path (Docling / OCR / all PDF types).
+//
+// The control is a real <input type="checkbox"> styled as a switch, so
+// enabling the input is all that is needed — the track/knob read :checked and
+// :disabled off it in CSS, no inline styles to undo.
 function _ungateAdvanceExtraction() {
     const toggle = document.getElementById('ai-layout-toggle');
     if (!toggle) return;
     toggle.disabled = false;
-    toggle.style.cursor = 'pointer';
     const label = toggle.closest('label');
     if (label) {
         label.classList.remove('gx-pro-locked');
-        label.style.cursor = 'pointer';
         label.querySelector('.gx-pro-interceptor')?.remove();
     }
 }
@@ -735,6 +737,17 @@ function extractViaGeometryWorker(bytes, onProgress) {
                 }
             } else if (msg.type === 'complete') {
                 clearTimeout(timeout);
+                // A partial extraction is a real result, not a failure — but it
+                // must not look like a clean one.
+                if (msg.failedPages?.length) {
+                    const n = msg.failedPages.length;
+                    console.warn('[HandleFile] pages skipped:', msg.failedPages.slice(0, 10));
+                    showToast(
+                        `${n} of ${msg.pageCount} page(s) could not be extracted and were skipped. `
+                        + `The rest of the document is here.`,
+                        'info',
+                    );
+                }
                 const styleBlock = msg.styles ? `<style>\n${msg.styles}\n</style>\n` : '';
                 const html = htmlParts.length > 0
                     ? styleBlock + htmlParts.join('\n')
@@ -808,6 +821,23 @@ export function initFileInputs() {
         if (!file) return;
         loadFileToSlot(file, 2);
     });
+
+    // The pane header is the document's handle: click the name to swap the
+    // file, ✕ to close it. Delegated, because the headers are re-shown by
+    // workspaceLayout as panes come and go.
+    $(document).on('click', '.gx-file-x', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        unloadSlot(Number($(this).data('unload-slot')) === 2 ? 2 : 1);
+    });
+
+    $(document).on('click', '.gx-file-chip', function (e) {
+        if ($(e.target).closest('.gx-file-x').length) return;
+        const slot = Number($(this).data('slot')) === 2 ? 2 : 1;
+        $(`#file${slot}-input`).trigger('click');
+    });
+
+    syncSlotNames();
 
     // VS Code extension: signal ready then receive file bytes from extension host
     if (window.CwsBridge?.isEmbedded) {
@@ -924,7 +954,6 @@ async function handleDocumentFile(file, slot = 1) {
         scannedPageCount: null,
         isScanned: null,
     };
-    $(`#${label}-name`).text(file.name);
     $(`#${label}-input`).closest('.file-btn').addClass('loaded');
 
     if (slot === 2) {
@@ -957,7 +986,6 @@ async function handleDocxFile(file, slot = 1) {
         scannedPageCount: null,
         isScanned: false,
     };
-    $(`#${label}-name`).text(file.name);
     $(`#${label}-input`).closest('.file-btn').addClass('loaded');
 
     if (slot === 2) {
@@ -992,8 +1020,7 @@ async function handleJsonFile(file, slot = 1) {
             isScanned: false,
         };
         if (slot === 1) annotationEngine.loadFromGxDoc(gxDoc);
-        $(`#${label}-name`).text(file.name);
-        $(`#${label}-input`).closest('.file-btn').addClass('loaded');
+            $(`#${label}-input`).closest('.file-btn').addClass('loaded');
 
         if (slot === 2) {
             _onSlotLoaded(2);
@@ -1037,7 +1064,6 @@ async function handleFile(file, pdfIndex) {
     const label = pdfIndex === 1 ? 'file1' : 'file2';
 
     pdfState.file = file;
-    $(`#${label}-name`).text(file.name);
     $(`#${label}-input`).closest('.file-btn').addClass('loaded');
 
     showStatus('Loading PDF…');
@@ -1076,7 +1102,7 @@ async function handleFile(file, pdfIndex) {
         const formData = new FormData();
         formData.append('file', file);
 
-        // Advance Extraction (AI layout via Docling + OpenRouter) is a Pro feature gated
+        // Smart OCR (AI layout via Docling + OpenRouter) is a Pro feature gated
         // by the .gx-pro-interceptor overlay in index.html. The checkbox is disabled in
         // markup so .checked is always false for free users; the explicit check below
         // is defense in depth against DOM manipulation.
@@ -1135,7 +1161,7 @@ async function handleFile(file, pdfIndex) {
                     useBackend = cwsBroker.getBackendStatus();
                 }
             } else if (useAiLayout) {
-                // Vector doc + Advance Extraction: geometry runs, AI re-tolerances
+                // Vector doc + Smart OCR: geometry runs, AI re-tolerances
                 // low-scoring pages afterward (Pass 2). The AI pass is Pro-only
                 // (toggle-gated) and additionally size-gated — Pro has no page
                 // limit, non-Pro large docs skip the AI pass with a Pro upsell.
@@ -1145,7 +1171,7 @@ async function handleFile(file, pdfIndex) {
         }
 
         if (useBackend) {
-            // ── Advance Extraction, scanned doc: plain Docling (no LLM stage) ─
+            // ── Smart OCR, scanned doc: plain Docling (no LLM stage) ─
             data = await cwsBroker.extractPdf(formData, (msg) => showStatus(
                 typeof msg === 'string' ? msg : (msg.message || 'Processing…'),
             ));
@@ -1227,9 +1253,8 @@ async function handleFile(file, pdfIndex) {
             applyHtmlEverywhere(pdfState.extractedHTML, null);
             // Populate zone chips for the first visible page
             refreshZoneToolbar();
-            markDiffDirty();
             _onSlotLoaded(1);
-            // Advance Extraction, vector doc: AI reviews the verifier's scores
+            // Smart OCR, vector doc: AI reviews the verifier's scores
             // and re-tolerances weak pages. Runs async — pages patch in place
             // through the same path as a manual analyze-tab re-extract.
             if (runAutoTune && data.pages?.length) {
@@ -1244,7 +1269,7 @@ async function handleFile(file, pdfIndex) {
             'local': 'deterministic vector pipeline',
             'local-ocr-geometry': 'local layout + OCR (scanned)',
         };
-        const source = SOURCE_LABELS[data.source] || 'Advance Extraction (Docling)';
+        const source = SOURCE_LABELS[data.source] || 'Smart OCR (Docling)';
         const warnSuffix = data.warning ? ` (${data.warning})` : '';
         const tableSuffix = (data.source === 'local' || data.source === 'local-ocr-geometry') && data.tableCount != null
             ? ` — ${data.tableCount} table${data.tableCount !== 1 ? 's' : ''} detected`
@@ -1291,6 +1316,9 @@ export function populateHTMLPreview(html, containerId = 'html-preview') {
     // enabling crosshair highlight and column features on merged-cell tables.
     initTableFeatures(el);
     hydrateImages(el);
+    // Window the pages if this document is large enough to need it. No-op at
+    // or below the page threshold, so small documents are untouched.
+    refreshDocVirtualizer();
 }
 
 /**
@@ -1324,7 +1352,6 @@ export async function mountExtractedDocument({
     pdfState.gxDoc = gxDoc;
     pdfState.extraction = extraction;
 
-    $(`#${label}-name`).text(file?.name || '');
     $(`#${label}-input`).closest('.file-btn').addClass('loaded');
 
     if (slot === 2) {
@@ -1361,13 +1388,10 @@ export async function mountExtractedDocument({
     annotationEngine.loadFromGxDoc(gxDoc);
     applyHtmlEverywhere(html, null);
     refreshZoneToolbar();
-    markDiffDirty();
     _onSlotLoaded(1);
 }
 
 function _onSlotLoaded(slot) {
-    _updateVisualDiffLabels();
-
     const has1 = Boolean(state.pdf1.extractedHTML || state.pdf1.extractedText || state.pdf1.file);
     const has2 = Boolean(state.pdf2.extractedHTML || state.pdf2.extractedText || state.pdf2.file);
 
@@ -1380,15 +1404,91 @@ function _onSlotLoaded(slot) {
     if (has1 && has2) {
         refreshCodeDiff();
     }
+
+    syncSlotNames();
 }
 
-function _updateVisualDiffLabels() {
-    const f1 = state.pdf1.file?.name ?? '';
-    const f2 = state.pdf2.file?.name ?? '';
-    const labelEl = document.getElementById('vd-label-left');
-    const hintEl  = document.getElementById('vd-hint-left');
-    if (labelEl) labelEl.textContent = f1 || 'Original';
-    if (hintEl)  hintEl.textContent  = f2 ? `${f1 || 'Left'} vs ${f2}` : (f1 || 'Rendered source');
+// ── Loaded-file names ───────────────────────────────────────────────────────
+// The name of the open document belongs to the surface showing it, not to the
+// button that opened it. The file inputs are load actions with fixed labels
+// ("Open File" / "Compare File"); the pane headers and the compare-pane labels
+// carry the filename and the unload affordance.
+//
+// One writer for all of it: every load path already funnels through
+// _onSlotLoaded, so the name is derived from state rather than pushed from
+// each of the five format-specific handlers that used to set it themselves.
+
+const SLOT_NAME_TARGETS = {
+    // slot -> [selectors of .gx-file-name spans that should show it]
+    1: ['#pdf-header-bar', '#doc-header-bar', '#analyze-canvas-header-bar', '#pane-left'],
+    2: ['#pane-right'],
+};
+
+/**
+ * Close the document in a slot.
+ *
+ * The mirror image of the tail of _commitSlot: clear the slot's state, then
+ * tear down the derived surfaces it populated. Slot 2 is the cheap case (it
+ * only feeds Compare). Slot 1 owns the rendered canvas, the page registry,
+ * the annotation layers, the analysis cache and the HTML preview, so all of
+ * those have to be dropped or they keep describing a document that is gone.
+ */
+export function unloadSlot(slot = 1) {
+    const pdfState = slot === 2 ? state.pdf2 : state.pdf1;
+    const hadFile = Boolean(pdfState.file || pdfState.extractedHTML || pdfState.extractedText);
+    if (!hadFile) return;
+
+    const name = pdfState.file?.name || 'Document';
+
+    pdfState.file = null;
+    pdfState.doc = null;
+    pdfState.bytes = null;
+    pdfState.extractedHTML = '';
+    pdfState.extractedText = '';
+    pdfState.gxDoc = null;
+    pdfState.extraction = null;
+
+    $(`#file${slot}-input`).val('').closest('.file-btn').removeClass('loaded');
+
+    if (slot === 2) {
+        $('#content-right').html('<div class="empty-state">Load Modified PDF</div>');
+        _onSlotLoaded(2);
+        showToast(`${name} closed`, 'info');
+        return;
+    }
+
+    const container = document.getElementById('pdf-canvas-container');
+    if (container) {
+        unmountAnnotationLayers(container);
+        $(container).empty().append('<p class="empty-hint">Open a PDF to view it here.</p>');
+    }
+    resetPDFLayers();
+    resetAnalysisData();
+    registerPages([], 0);
+    annotationEngine.loadFromGxDoc(null);
+    _analysisPromise = null;
+
+    $('#html-preview').html(
+        '<p class="empty-hint">Open a PDF to see the extracted HTML or Add Blank Page to Edit.</p>'
+    );
+    $('#content-left').html('<div class="empty-state">Load Original PDF</div>');
+
+    _onSlotLoaded(1);
+    showToast(`${name} closed`, 'info');
+}
+
+export function syncSlotNames() {
+    [1, 2].forEach(slot => {
+        const st = slot === 2 ? state.pdf2 : state.pdf1;
+        const name = st.file?.name || st.gxDoc?.title || '';
+        (SLOT_NAME_TARGETS[slot] || []).forEach(sel => {
+            const $host = $(sel);
+            if (!$host.length) return;
+            $host.find('.gx-file-name').text(name);
+            // The unload control is only meaningful once something is loaded.
+            $host.find('.gx-file-chip').toggleClass('is-empty', !name);
+        });
+    });
 }
 
 function refreshCodeDiff() {
