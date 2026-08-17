@@ -18,9 +18,10 @@
 
 import { state } from '../state.js';
 import { initTableFeatures } from '../utils/tableLogic.js';
-import { getImageBlob } from '../utils/imageStore.js';
+import { getImageBlob, docPrefix } from '../utils/imageStore.js';
 import { rebindTableEditing } from './tableEditorInit.js';
 import { readFullHtml, refreshDocVirtualizer, updateParkedPage } from './docVirtualizer.js';
+import { refreshScrollSync, invalidatePageAnchors } from './scrollSync.js';
 
 let _syncing = false;
 const _debouncers = new WeakMap();
@@ -174,6 +175,9 @@ export function applyHtmlEverywhere(html, skipEl = null) {
                     // Fresh page nodes — re-window them (no-op under the
                     // page threshold).
                     refreshDocVirtualizer();
+                    // Every cached scroll anchor was an offset into the
+                    // document that just got replaced.
+                    refreshScrollSync();
                 }
             }
         }
@@ -244,6 +248,10 @@ export function patchPageHtml(pageNum, newHtml) {
                 existing.replaceWith(replacement);
                 initTableFeatures(container);
                 hydrateImages(container);
+                // This page's regions moved; every other page's anchors are
+                // still valid, and re-measuring them all on a single-page
+                // re-extract would be the expensive way to learn that.
+                invalidatePageAnchors(pageNum);
             }
         }
 
@@ -289,6 +297,31 @@ export function syncStateToDOMOnFocus(surfaceId = 'html-preview') {
     }
 }
 
+/**
+ * Drop every cached object URL.
+ *
+ * Scoped to one document when a `docId` is given, because several documents are
+ * live at once — a compare slot, a batch — and revoking all of them because one
+ * was replaced blanks the others. Called wherever a document's blobs are
+ * deleted, so the cache cannot serve a URL whose blob is gone.
+ */
+export function resetImageHydration(docId = null) {
+    const prefix = docId == null ? null : docPrefix(docId);
+    for (const [key, url] of Object.entries(objectUrlCache)) {
+        if (prefix && !key.startsWith(prefix)) continue;
+        try { URL.revokeObjectURL(url); } catch (_) { /* already gone */ }
+        delete objectUrlCache[key];
+    }
+}
+
+/**
+ * Resolve every `data-img-id` in a subtree to a blob: object URL.
+ *
+ * This is the step that puts pixels on screen. The document string holds only
+ * keys, so any surface that has just been written — a fresh extraction, a
+ * re-extracted page, a page the virtualizer brought back — has to be hydrated
+ * or its pictures stay blank.
+ */
 export async function hydrateImages(containerEl) {
     const images = containerEl.querySelectorAll('img[data-img-id]');
     for (const img of images) {

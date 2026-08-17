@@ -154,7 +154,7 @@ function _buildOverlay(spec) {
     // of string that quietly becomes user/config data later.
     el.querySelector('.gx-signin-gate-title').textContent = spec.title;
     el.querySelector('.gx-signin-gate-blurb').textContent = spec.blurb;
-    el.addEventListener('click', (e) => {
+    window.GxPointer.onPress(el, (e) => {
         e.preventDefault();
         e.stopPropagation();
         promptSignIn(spec.feature);

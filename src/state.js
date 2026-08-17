@@ -9,8 +9,11 @@ export const state = {
     // the structured MCP reply. Null until something has been extracted.
     // `gxDoc` is the typed gx-doc/1 IR (src/ir/gxDoc.js). `extractedHTML` stays
     // as the rendered view cache — the two coexist (import-export-gateway.md).
-    pdf1: { file: null, doc: null, bytes: null, extractedHTML: '', extractedText: '', extraction: null, gxDoc: null },
-    pdf2: { file: null, doc: null, bytes: null, extractedHTML: '', extractedText: '', extraction: null, gxDoc: null },
+    // `docId` namespaces this slot's pictures in the blob store. It changes on
+    // every load, so a replaced document's crops can be deleted by prefix
+    // without touching the other slot's — or a batch's — pixels.
+    pdf1: { file: null, doc: null, docId: null, bytes: null, extractedHTML: '', extractedText: '', extraction: null, gxDoc: null },
+    pdf2: { file: null, doc: null, docId: null, bytes: null, extractedHTML: '', extractedText: '', extraction: null, gxDoc: null },
     activeView: 'pdf',
     monacoEditor: null,   // monaco.editor instance (HTML editor)
     

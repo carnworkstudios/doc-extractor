@@ -720,11 +720,14 @@
       <div class="ribbon-group" data-toolbar-ctx="html">
         <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
           <select class="tool-select" id="sel-block" title="Paragraph style">
-            <option value="">Body</option>
+            <option value="">Paragraph</option>
             <option value="h1">Heading 1</option>
             <option value="h2">Heading 2</option>
             <option value="h3">Heading 3</option>
             <option value="h4">Heading 4</option>
+            <option value="h5">Heading 5</option>
+            <option value="h6">Heading 6</option>
+            <option value="small">Small text</option>
           </select>
           <button class="tool-btn" id="btn-add-page" title="Add blank page">
             <iconify-icon
@@ -1387,10 +1390,6 @@
               >Load a PDF to inspect its structure.</span
             >
             <div class="analyze-meta" id="analyze-meta"></div>
-          </div>
-
-          <!-- ── Format toolbar: nav + actions ──────────────────────── -->
-          <div class="analyze-toolbar">
             <div class="analyze-toolbar-nav">
               <button
                 class="atb-btn"
@@ -1428,12 +1427,56 @@
                 </svg>
               </button>
             </div>
-            <div class="analyze-toolbar-sep atb-sep-desktop"></div>
+          </div>
+
+          <!-- ── Format toolbar: actions ────────────────────────────── -->
+          <div class="analyze-toolbar">
             <button
-              class="atb-btn atb-btn--label"
-              id="analyze-col-split-tool"
-              title="Click on the canvas to place a column split line. Drag to reposition, click ✕ to remove."
+              class="atb-btn"
+              id="analyze-undo"
+              title="Undo (Ctrl/Cmd+Z)"
+              disabled
             >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+            </button>
+            <button
+              class="atb-btn"
+              id="analyze-redo"
+              title="Redo (Ctrl/Cmd+Shift+Z)"
+              disabled
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                  <path d="M21 3v5h-5" />
+                </svg>
+              </button>
+              <button
+                class="atb-btn"
+                id="analyze-merge"
+                title="Merge selected regions into one (M)"
+                disabled
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M10 18H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h5" />
+                  <path d="M14 6h5a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-5" />
+                  <path d="M18 12h-4a2 2 0 0 1-2-2V6" />
+                </svg>
+              </button>
+              <button
+                class="atb-btn atb-btn--label"
+                id="analyze-col-split-tool"
+                title="Click on the canvas to place a column split line. Drag to reposition, click ✕ to remove."
+              >
               <svg
                 width="13"
                 height="13"
@@ -2114,6 +2157,7 @@
     <script src="/assets/os/contracts.js"></script>
     <script src="/assets/os/mcp.js"></script>
     <script src="/assets/os/bridge.js"></script>
+    <script src="/assets/os/pointer.js"></script>
     <script src="/assets/js/gx-track.js"></script>
 
     <script type="module" src="./src/app.js"></script>

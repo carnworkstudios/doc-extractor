@@ -18,14 +18,14 @@ import { pushSnapshot, syncUndoRedoUI } from './historyController.js';
 let _refreshTimer = null;
 
 export function initZoneToolbar() {
-    document.getElementById('zone-chips')?.addEventListener('click', e => {
+    window.GxPointer.onPress(document.getElementById('zone-chips'), e => {
         const chip = e.target.closest('[data-zone-idx]');
         if (!chip) return;
         const pageEl = _getActivePage();
         if (pageEl) _cycleZoneCols(pageEl, parseInt(chip.dataset.zoneIdx, 10));
     });
 
-    document.getElementById('btn-add-zone')?.addEventListener('click', () => {
+    window.GxPointer.onPress(document.getElementById('btn-add-zone'), () => {
         const pageEl = _getActivePage();
         if (pageEl) _splitZone(pageEl);
     });

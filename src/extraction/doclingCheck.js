@@ -90,6 +90,12 @@ export function checkDoclingAgreement(analysisPages, assets) {
 
     return {
         agreementScore: claims ? Math.round((agreements / claims) * 1000) / 1000 : 1,
+        // How many claims were actually adjudicated. Without this the caller
+        // cannot tell a genuine 1.0 ("everything agreed") from a vacuous one
+        // ("every page was scanned, so nothing was compared") — both report
+        // agreementScore 1 with no flags. A scanned document scores a perfect
+        // 1.0 here while the checker examines none of Docling's output.
+        claims,
         flags,
         pages,
     };

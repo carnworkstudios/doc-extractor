@@ -26,7 +26,7 @@ export function initAnnotationToolbar() {
     const root = document.getElementById('annotate-group');
     if (!root) return;
 
-    root.addEventListener('click', (e) => {
+    window.GxPointer.onPress(root, (e) => {
         const toolBtn = e.target.closest('[data-ann-tool]');
         if (toolBtn) {
             engine.setMode('annotate');

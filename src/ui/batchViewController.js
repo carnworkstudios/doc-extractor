@@ -12,6 +12,7 @@ import { switchView } from './viewController.js';
 import { showToast } from './toast.js';
 import { mountExtractedDocument, markdownToHtml } from './fileUpload.js';
 import { htmlToGxDoc } from '../ir/htmlToGxDoc.js';
+import { enforceBudget, touchDoc } from '../utils/imageStore.js';
 import { gxDocToHtml } from '../ir/gxDocToHtml.js';
 import { docxToGxDoc } from '../ir/docxToGxDoc.js';
 import { jsonToGxDoc } from '../ir/jsonToGxDoc.js';
@@ -237,7 +238,13 @@ function _wireDropzoneEvents() {
 
     $('#nav-batch-clear-btn').on('click', () => {
         // Keep the content-hash cache: clearing the LIST should not throw away
-        // extraction work for documents the user re-adds seconds later.
+        // extraction work for documents the user re-adds seconds later. Their
+        // crops stay too — the cached HTML references them by key, so deleting
+        // the pixels would turn every re-added document into placeholders. What
+        // bounds the store is the byte budget, which evicts whole documents
+        // least-recently-used first; this is exactly the abandoned-but-maybe-
+        // wanted case it exists for.
+        enforceBudget().catch(() => {});
         batchQueue.clear({ keepCache: true });
         _focusedBatchId = null;
         updateBatchUI();
@@ -401,6 +408,8 @@ export async function focusBatchItem(itemId, slotNum = 1) {
 
     _focusedBatchId = itemId;
     updateBatchUI();
+    // The document you are looking at is the last one that should be evicted.
+    touchDoc(itemId).catch(() => {});
 
     if (item.status === 'error') {
         showToast(`"${item.name}" failed: ${item.error}. Use Retry on the card.`, 'error', 6000);
@@ -422,6 +431,8 @@ export async function focusBatchItem(itemId, slotNum = 1) {
             bytes: item.format === 'pdf' ? item.bytes : null,
             html: item.extractedHTML || '<p>No extracted content available.</p>',
             text: item.extractedText || '',
+            styles: item.styles || '',
+            docId: item.id,
             gxDoc: item.gxDoc,
             pages: item.pages,
             extraction: {

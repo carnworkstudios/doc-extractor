@@ -60,7 +60,7 @@ function _createFab() {
             <line x1="7" y1="2" x2="7" y2="14"/>
         </svg>`;
     _fab.style.display = 'none';
-    _fab.addEventListener('click', (e) => { e.stopPropagation(); _toggleEditMode(); });
+    window.GxPointer.onPress(_fab, (e) => { e.stopPropagation(); _toggleEditMode(); });
     document.body.appendChild(_fab);
 }
 
@@ -141,7 +141,8 @@ function _wirePopover() {
     _popoverWired = true;
 
     const pop = (id, fn) => {
-        _popover.querySelector(id)?.addEventListener('click', () => {
+        const el = _popover.querySelector(id);
+        if (el) window.GxPointer.onPress(el, () => {
             if (!_editor) return; pushSnapshot(); fn(); _syncPopoverBtns();
         });
     };
@@ -152,17 +153,20 @@ function _wirePopover() {
     pop('#tbl-pop-merge', () => _editor.mergeCells());
     pop('#tbl-pop-dup', () => _editor.duplicate());
 
-    _popover.querySelector('#tbl-pop-undo')?.addEventListener('click', () => {
+    const undoBtn = _popover.querySelector('#tbl-pop-undo');
+    if (undoBtn) window.GxPointer.onPress(undoBtn, () => {
         if (!_editor) return; pushSnapshot(); _editor.history.undo(); _syncPopoverBtns();
         const container = _activeTable?.closest('#html-preview') || document.getElementById('html-preview');
         if (container) markHtmlDirty();
     });
-    _popover.querySelector('#tbl-pop-redo')?.addEventListener('click', () => {
+    const redoBtn = _popover.querySelector('#tbl-pop-redo');
+    if (redoBtn) window.GxPointer.onPress(redoBtn, () => {
         if (!_editor) return; pushSnapshot(); _editor.history.redo(); _syncPopoverBtns();
         const container = _activeTable?.closest('#html-preview') || document.getElementById('html-preview');
         if (container) markHtmlDirty();
     });
-    _popover.querySelector('#tbl-pop-toggle')?.addEventListener('click', () => _exitEditMode());
+    const toggleBtn = _popover.querySelector('#tbl-pop-toggle');
+    if (toggleBtn) window.GxPointer.onPress(toggleBtn, () => _exitEditMode());
 }
 
 function _syncPopoverBtns() {
@@ -359,7 +363,8 @@ function _wireMainToolbar() {
         'btn-table-merge':    () => _editor.mergeCells(),
     };
     Object.entries(map).forEach(([id, fn]) => {
-        document.getElementById(id)?.addEventListener('click', handler(fn));
+        const el = document.getElementById(id);
+        if (el) window.GxPointer.onPress(el, handler(fn));
     });
 }
 

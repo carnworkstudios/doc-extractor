@@ -13,10 +13,12 @@ import { showStatus, hideStatus, enableDiffTab, disableDiffTab, switchView } fro
 import { registerPages } from './pageNav.js';
 import { registerPDFLayers, resetPDFLayers } from './pdfEditMode.js';
 import { initTableFeatures } from '../utils/tableLogic.js';
-import { applyHtmlEverywhere, hydrateImages } from './htmlSync.js';
+import { applyHtmlEverywhere, hydrateImages, resetImageHydration } from './htmlSync.js';
+import { setDocumentStyles, getDocumentStyles, splitLeadingStyles } from './docStyles.js';
 import { showToast } from './toast.js';
 import { cwsBroker } from '@os/worker-broker.js';
 import { checkDoclingAgreement } from '../extraction/doclingCheck.js';
+import { doclingToRegionHtml } from '../extraction/doclingAdapter.js';
 import { buildStructuredPayload } from './structuredExtract.js';
 import { initMcpVerbs } from './mcpVerbs.js';
 import { classifyPage } from '../extraction/vector/contextClassifier.js';
@@ -94,7 +96,7 @@ export function integrationAuthHeaders() {
 async function _crossCheckDocling(assets) {
     try {
         const analysis = await _analysisPromise;
-        if (!analysis?.pages?.length) return;
+        if (!analysis?.pages?.length) return null;
         const report = checkDoclingAgreement(analysis.pages, assets);
         if (report.flags.length) {
             console.warn('[Verifier] Docling vs geometry disagreements:', report.flags);
@@ -103,15 +105,107 @@ async function _crossCheckDocling(assets) {
                 `(agreement ${Math.round(report.agreementScore * 100)}%). Check the Analyze tab.`,
                 'info',
             );
+        } else if (report.claims > 0) {
+            // A clean run is a result too. Without this the pass is indis-
+            // tinguishable from one that never happened, which is exactly how
+            // the vector run read: a `check/report` POST in the server log and
+            // nothing at all in the tool.
+            showToast(
+                `Verifier: semantic and geometric views agree on all ${report.claims} claim(s).`,
+                'success',
+            );
+        } else {
+            // Zero claims is not agreement — it is an empty comparison. Never
+            // report it as a pass.
+            console.info('[Verifier] Docling ran but no page offered a comparable claim — nothing verified.');
         }
         fetch(`${integrationBackendUrl()}/api/v1/ai/pdf/check/report`, {
             method: 'POST',
             headers: integrationAuthHeaders(),
             body: JSON.stringify({ report }),
         }).catch(() => { /* corpus reporting is best-effort */ });
+        return report;
     } catch (e) {
         console.warn('[Verifier] Docling cross-check failed:', e.message);
+        return null;
     }
+}
+
+// ── Docling semantic pass (Smart OCR, parallel) ─────────────────────────────
+// pdf-extraction-v2.md §Pass 1: Docling is a semantic CLASSIFIER whose output is
+// compared against the geometry engine's structural output — "it runs *in
+// addition to* the geometry engine, not instead of it." It is not the extractor.
+//
+// So this fires alongside the deterministic pipeline and never owns `data`. The
+// geometry engine (vector) or local Tesseract (scanned) still produces the
+// document the user sees; Docling's return is used only to cross-check and to
+// carry the semantic view. That ordering is deliberate — Docling runs neural
+// layout + table models per page and is minutes slower than reading the operator
+// stream, and blocking a result we already have on a view we merely want to
+// compare against would trade the whole latency budget for a verification.
+//
+// Deliberately NOT sent: `force_ocr`. On a scanned page there is no text layer,
+// so Docling's own heuristic OCRs it anyway, and the default converter is the
+// one warmed at startup (backend/main.py startup_warmup only warms force_ocr=
+// False). Asking for forced OCR here would load a second set of models on the
+// first request for no additional pages read.
+//
+// Returns a promise, or null when the pass does not apply. Never rejects.
+async function _startDoclingSemanticPass(file, { isScannedDoc } = {}) {
+    // The comparator has no basis on a scanned document. `checkDoclingAgreement`
+    // skips every page where `scanned` is true — geometry read no vector
+    // substrate, so it has no standing to dispute Docling — which on a fully
+    // scanned doc means zero claims adjudicated and a vacuous agreement of 1.0.
+    // Running the pass anyway costs minutes of neural OCR to produce a report
+    // that examined none of it. Refuse it and say why.
+    //
+    // The useful comparison on these documents is Docling's OCR against the
+    // LOCAL Tesseract/YOLO result, not against the vector analyzer. That is a
+    // different comparator and does not exist yet.
+    if (isScannedDoc) {
+        console.info(
+            '[Semantic] Scanned document — skipping the Docling pass: the invariant '
+            + 'checker discards scanned pages, so the run would compare nothing.',
+        );
+        return null;
+    }
+    return _doclingSemanticPass(file);
+}
+
+async function _doclingSemanticPass(file) {
+    // Pro + toggle: same gate as the AI tune pass. The toggle is disabled in
+    // markup for free users, so `.checked` cannot be true without DOM edits;
+    // the tier check is the defense in depth behind it.
+    const toggle = document.getElementById('ai-layout-toggle');
+    if (!toggle || toggle.disabled || !toggle.checked) return null;
+    if (!_isProUser()) return null;
+
+    try {
+        if (!brokerReady) {
+            await cwsBroker.init();
+            brokerReady = true;
+        }
+        if (!cwsBroker.getBackendStatus()) {
+            console.info('[Semantic] Smart OCR is on but the backend is offline — skipping the Docling pass.');
+            return null;
+        }
+    } catch (e) {
+        console.warn('[Semantic] Broker init failed, skipping the Docling pass:', e.message);
+        return null;
+    }
+
+    // A second FormData over the same File. `file` is a Blob and is readable
+    // more than once; reusing the primary FormData would hand the same body to
+    // two in-flight requests.
+    const fd = new FormData();
+    fd.append('file', file);
+
+    // No progress callback on purpose: the deterministic pipeline owns the
+    // status bar, and a slower parallel request must not narrate over it.
+    return cwsBroker.extractPdf(fd).catch(e => {
+        console.warn('[Semantic] Docling pass failed:', e.message);
+        return null;
+    });
 }
 
 // ── AI auto-tune (Smart OCR, vector docs) ───────────────────────────
@@ -121,10 +215,15 @@ async function _crossCheckDocling(assets) {
 // re-runs those pages, and the verifier decides which result survives.
 // A page is never left worse than Pass 1 left it.
 
-const TUNE_MAX_PAGES = 5;   // cost circuit-breaker, not a quality gate
-const DEFAULT_SCALE_OVERRIDES = {
-    R_Y_BAND: 0.45, R_PARA_GAP: 1.80, R_COL_GAP_MIN: 1.50, STREAM_CONFIDENCE: 0.60,
-};
+// The free-page cap, the tune-candidate selection gate, and the default
+// reprocess scale overrides are POLICY, not mechanism — they live in the
+// portfolio root (assets/pdf-processor/ui/tunePolicy.js) and are injected
+// into this frame at runtime as window.__GX_PDF_POLICY__ (see
+// shell/inject.js). This file only drives the tune (fetch calls, worker
+// reprocess, verifier score compare); it does not decide which pages
+// qualify or how far reprocessing is allowed to go. A standalone fork
+// without the injected policy simply gets no AI-tune candidates.
+const _policy = () => window.__GX_PDF_POLICY__;
 
 // Best-effort product-analytics capture. window.posthog is initialised by the
 // host page; guard it so a standalone build without the snippet doesn't throw.
@@ -142,19 +241,20 @@ function _phCapture(event, props) {
 // The AI pass (Smart OCR) is a Pro feature — the toggle is disabled in
 // markup for free users. This gate is the SIZE dimension layered on top: Pro
 // users have no page limit; any non-Pro context (e.g. a DOM-forced toggle, or a
-// future BYO-key surface) reaching the AI pass with a document beyond
-// AI_MAX_FREE_PAGES is the `document_too_large_for_ai` conversion moment — we
+// future BYO-key surface) reaching the AI pass with a document beyond the
+// policy's page cap is the `document_too_large_for_ai` conversion moment — we
 // skip only the costly AI refinement (deterministic extraction has already
-// produced the full document), record it, and surface a Pro upsell.
-const AI_MAX_FREE_PAGES = 20;
-
+// produced the full document), record it, and surface a Pro upsell. Without
+// the injected policy (standalone fork) the gate is closed outright.
 function _aiSizeGateOk(pageCount) {
-    if (_isProUser() || pageCount <= AI_MAX_FREE_PAGES) return true;
+    const policy = _policy();
+    if (!policy) return false;
+    if (policy.aiSizeGateOk(pageCount, _isProUser())) return true;
     _phCapture('document_too_large_for_ai', {
-        page_count: pageCount, limit: AI_MAX_FREE_PAGES, tier: 'free',
+        page_count: pageCount, limit: policy.aiMaxFreePages, tier: 'free',
     });
     showToast(
-        `${pageCount}-page document: AI refinement is capped at ${AI_MAX_FREE_PAGES} pages on the free tier. `
+        `${pageCount}-page document: AI refinement is capped at ${policy.aiMaxFreePages} pages on the free tier. `
         + `Upgrade to Pro for unlimited AI on large documents — the deterministic extraction below is complete.`,
         'info',
     );
@@ -164,19 +264,10 @@ function _aiSizeGateOk(pageCount) {
 async function _autoTunePages(pageResults) {
     const scored = pageResults.filter(p => p.verification);
     if (!scored.length) return;
-    // Relative gate: pages differ (a diagram page legitimately scores lower
-    // than a dense text page), so an absolute threshold misjudges both
-    // directions. A page is a tune candidate when it falls clearly below its
-    // OWN document's typical quality (median − 0.12); the absolute floor
-    // catches uniformly bad documents where nothing is below the median by
-    // much because everything is bad.
-    const scores = scored.map(p => p.verification.score).sort((a, b) => a - b);
-    const median = scores[Math.floor(scores.length / 2)];
-    const gate = Math.max(0.60, median - 0.12);
-    const candidates = scored
-        .filter(p => p.verification.score < gate)
-        .sort((a, b) => a.verification.score - b.verification.score)
-        .slice(0, TUNE_MAX_PAGES);
+    const policy = _policy();
+    // No injected policy (standalone fork) — no candidate-selection rule to
+    // apply, so there is nothing to tune.
+    const candidates = policy ? policy.selectTuneCandidates(scored) : [];
     if (!candidates.length) {
         showToast('AI review: no page falls below this document\'s own quality baseline.', 'success');
         return;
@@ -202,6 +293,8 @@ async function _autoTunePages(pageResults) {
 }
 
 async function _autoTunePage(pageResult) {
+    const policy = _policy();
+    if (!policy) return false;
     const analysis = await _analysisPromise;
     const pg = analysis?.pages?.[pageResult.page - 1];
 
@@ -218,7 +311,7 @@ async function _autoTunePage(pageResult) {
             id: r.id, type: r.type, algorithm: r.algorithm,
             confidence: Math.round((r.confidence ?? 1) * 100) / 100,
         })),
-        params: { ...DEFAULT_SCALE_OVERRIDES },
+        params: policy.scaleOverrides(),
         skippedTypes: [],
         verification: pageResult.verification,
     };
@@ -235,7 +328,7 @@ async function _autoTunePage(pageResult) {
     if (tune.status !== 'success' || !tune.ops?.length) return false;
 
     // Translate validated ops into a stateless reprocess pipeline.
-    const scaleOverrides = { ...DEFAULT_SCALE_OVERRIDES };
+    const scaleOverrides = policy.scaleOverrides();
     const skip = [];
     const customRegions = [];
     for (const op of tune.ops) {
@@ -269,7 +362,7 @@ async function _autoTunePage(pageResult) {
     if (afterScore <= before) {
         // The verifier rejected the proposal — restore the Pass 1 result.
         await _reprocessAndWait(pageResult.page, {
-            skip: [], scaleOverrides: { ...DEFAULT_SCALE_OVERRIDES }, customRegions: [], manualSplits: [],
+            skip: [], scaleOverrides: policy.scaleOverrides(), customRegions: [], manualSplits: [],
         });
         return false;
     }
@@ -346,7 +439,7 @@ const resetAnalysisData = ()              => _core()?._dispatchReset();
 const setAnalyzeWorker  = (w)             => { window.__GX_PDF_GEO_WORKER__ = w; _core()?._dispatchWorkerReady(w); };
 const onReprocessResult = (n, h, r, s, v) => _core()?._dispatchReprocessResult(n, h, r, s, v);
 const onReprocessError  = (n, e)       => _core()?._dispatchReprocessError(n, e);
-import { clearImages, saveImages, getImageBlob } from '../utils/imageStore.js';
+import { saveImages, getImageBlob, cropKey, deleteDoc } from '../utils/imageStore.js';
 import { refreshZoneToolbar } from './zoneToolbar.js';
 import { refreshDocVirtualizer, mountAllPages } from './docVirtualizer.js';
 
@@ -356,18 +449,16 @@ let brokerReady = false;
 let _geoWorker = null;
 
 // Tier check — gates Smart OCR (the hosted AI-assisted path).
-// Embedded: ask the host for the current user's tier. Standalone: default to free.
-// Until auth Phase 7 wires real tier detection, this always returns false.
+// Embedded: ask the host shell for the resolved tier via OsShell.isProTier(),
+// which owns the dev-host bypass and the pro/team check (assets/os/shell/auth.js).
+// Standalone (no parent shell, e.g. a fork run on its own): always free — this
+// file has no tier policy of its own to fall back on.
 export function isProUser() { return _isProUser(); }
 
 function _isProUser() {
-    // Dev bypass — localhost always gets Pro so the AI layer can be exercised
-    // against the local backend. Production hostnames use the real tier.
-    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return true;
     try {
-        if (window.parent !== window && window.parent.OsShell && typeof window.parent.OsShell.getUser === 'function') {
-            const user = window.parent.OsShell.getUser();
-            return !!(user && (user.tier === 'pro' || user.tier === 'team'));
+        if (window.parent !== window && window.parent.OsShell && typeof window.parent.OsShell.isProTier === 'function') {
+            return !!window.parent.OsShell.isProTier();
         }
     } catch (_) {
         // Cross-origin access can throw — treat as free.
@@ -509,6 +600,95 @@ function _disposeLayoutWorker() {
 }
 
 /**
+ * Crop every IMAGE region out of an already-rendered page canvas.
+ *
+ * The scanned path renders each page once for layout detection and OCR. That
+ * same canvas IS the picture source — there is no operator list to crop from on
+ * a scanned page, and re-rendering to get one would pay for the page twice.
+ *
+ * Region boxes are in the SYNTHETIC viewport's space, which is derived from the
+ * page's point size rather than from this canvas, so the two are related by a
+ * ratio and not by an assumed scale. Computing it from the actual dimensions is
+ * what keeps the crop on the picture when the two scales drift apart.
+ *
+ * @returns {Promise<Object>} `{ [regionId]: { key, pw, ph, scale } }` in the
+ *   shape `assemblePage` expects — the pixels go to the blob store, the entry
+ *   carries its key. Regions that cannot be cropped are simply absent, and the
+ *   assembler falls back to a sized placeholder for them.
+ */
+/**
+ * Move a {key: base64|Blob} dict into the blob store.
+ *
+ * Every producer ends here: the document string never carries pixels, so
+ * whatever made them has to put them somewhere the page can reference. A write
+ * failure is logged, not thrown — the extraction is still worth showing.
+ */
+async function _persistExtractedImages(images) {
+    if (!images) return;
+    const blobs = {};
+    for (const [key, val] of Object.entries(images)) {
+        try {
+            if (val instanceof Blob) blobs[key] = val;
+            else if (typeof val === 'string' && val.startsWith('data:image')) {
+                blobs[key] = await (await fetch(val)).blob();
+            }
+        } catch (err) {
+            console.warn(`[imageStore] could not decode image ${key}:`, err?.message || err);
+        }
+    }
+    if (!Object.keys(blobs).length) return;
+    try {
+        await saveImages(blobs);
+    } catch (err) {
+        console.warn('[imageStore] write failed:', err?.message || err);
+    }
+}
+
+async function _cropRegionsFromCanvas(pageCanvas, regions, viewport, renderScale, pageNum, docId) {
+    const out = {};
+    const blobs = {};
+    const pics = (regions || []).filter(r => r.type === 'IMAGE' && r.bbox && r.id);
+    const cw = pageCanvas?.width || 0;
+    const ch = pageCanvas?.height || 0;
+    if (!pics.length || !cw || !ch || typeof OffscreenCanvas === 'undefined') return out;
+
+    const rx = cw / (viewport.width || cw);
+    const ry = ch / (viewport.height || ch);
+
+    for (const pic of pics) {
+        if (out[pic.id]) continue;
+        const sx = Math.max(0, Math.round(pic.bbox.x * rx));
+        const sy = Math.max(0, Math.round(pic.bbox.y * ry));
+        const sw = Math.min(Math.round(pic.bbox.w * rx), cw - sx);
+        const sh = Math.min(Math.round(pic.bbox.h * ry), ch - sy);
+        if (sw < 4 || sh < 4) continue;
+        try {
+            const crop = new OffscreenCanvas(sw, sh);
+            crop.getContext('2d').drawImage(pageCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+            const blob = await crop.convertToBlob({ type: 'image/png' });
+            // The pixels go to the blob store; the page gets the key. Same rule
+            // as the vector worker — a scanned document is the one most likely
+            // to be all pictures, so it is the last place to inline base64.
+            const key = cropKey(docId, pageNum, pic.id);
+            blobs[key] = blob;
+            out[pic.id] = { key, pw: sw, ph: sh, scale: renderScale };
+        } catch (err) {
+            console.warn(`[extractViaScannedGeometry] crop failed for ${pic.id}:`, err?.message || err);
+        }
+    }
+    if (Object.keys(blobs).length) {
+        try {
+            await saveImages(blobs);
+        } catch (err) {
+            // A page that assembles without its pictures still beats a page
+            // that does not assemble.
+            console.warn('[extractViaScannedGeometry] crop store write failed:', err?.message || err);
+        }
+    }
+    return out;
+}
+
+/**
  * Extract a SCANNED PDF by rejoining the vector geometry pipeline:
  *   render page → layoutWorker (regions) → per-region TrOCR → rasterSynth
  *   (synthetic PDF.js text items + table borders) → classifyPage + assemblePage.
@@ -520,7 +700,7 @@ function _disposeLayoutWorker() {
  * @param {function} [onProgress]
  * @returns {Promise<{html,text,tableCount,pages,source}>}
  */
-async function extractViaScannedGeometry(bytes, onProgress) {
+async function extractViaScannedGeometry(bytes, onProgress, docId = null) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = window.__VSC_PDF_WORKER_SRC__ || pdfWorkerUrl;
 
     const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
@@ -591,13 +771,6 @@ async function extractViaScannedGeometry(bytes, onProgress) {
             viewportWidth: pageWidthPt * VIEWPORT_SCALE,
             viewportHeight: pageHeightPt * VIEWPORT_SCALE,
         };
-        // The 2.0-scale page canvas has served both consumers (layout detect via
-        // the transferred bitmap, and Tesseract). Zero it before the next
-        // iteration allocates another: at ~7.8 MB a page, holding these across a
-        // long scan is the difference between hundreds of MB and gigabytes.
-        pageCanvas.width = 0;
-        pageCanvas.height = 0;
-
         const synth = synthesizeFromWords(ocr.words, labelRegions, geom);
         const viewport = makeSyntheticViewport(pageWidthPt, pageHeightPt, VIEWPORT_SCALE);
 
@@ -606,9 +779,28 @@ async function extractViaScannedGeometry(bytes, onProgress) {
             [], synth.textItems, viewport, pageWidthPt, synth.imageMeta,
             { filledRects: synth.filledRects },
         );
+
+        // Picture crops, off the canvas that is already rendered and still in
+        // hand. Passing {} here (what this did before) sent every figure on
+        // every scanned page through the assembler's PLACEHOLDER branch — an
+        // empty dashed box with no src — so a locally-OCR'd document showed the
+        // regions, tagged them, and displayed none of them. The pictures were
+        // never missing; nobody had cropped them.
+        const extractedImages = await _cropRegionsFromCanvas(
+            pageCanvas, classified, viewport, RENDER_SCALE, i, docId,
+        );
+
+        // The 2.0-scale page canvas has served every consumer (layout detect via
+        // the transferred bitmap, Tesseract, and the picture crops above). Zero
+        // it before the next iteration allocates another: at ~7.8 MB a page,
+        // holding these across a long scan is the difference between hundreds of
+        // MB and gigabytes.
+        pageCanvas.width = 0;
+        pageCanvas.height = 0;
+
         const result = assemblePage(
             classified, textMeta, synth.textItems, viewport, pageWidthPt, i,
-            fontRegistry, rawSplits ?? columnSplits, {}, null,
+            fontRegistry, rawSplits ?? columnSplits, extractedImages, null,
         );
 
         totalTables += result.tableCount || 0;
@@ -706,7 +898,7 @@ function ensureGeometryWorker() {
  * Run the local vector extraction pipeline via geometryWorker.
  * Returns { html, tableCount } on success; throws on error.
  */
-function extractViaGeometryWorker(bytes, onProgress) {
+function extractViaGeometryWorker(bytes, onProgress, docId = null) {
     return new Promise((resolve, reject) => {
         const worker = ensureGeometryWorker();
 
@@ -748,12 +940,16 @@ function extractViaGeometryWorker(bytes, onProgress) {
                         'info',
                     );
                 }
-                const styleBlock = msg.styles ? `<style>\n${msg.styles}\n</style>\n` : '';
+                // The document's CSS travels BESIDE the markup, not inside it.
+                // Prepending it as a <style> block put it where the HTML parser
+                // parks leading styles — <head> — so every reader that takes
+                // body.innerHTML dropped it, fonts and all.
                 const html = htmlParts.length > 0
-                    ? styleBlock + htmlParts.join('\n')
+                    ? htmlParts.join('\n')
                     : '<p class="no-tables-msg">No table structures detected. This PDF may use text-only layout.</p>';
                 const text = textParts.join('\n\n--- page break ---\n\n');
-                resolve({ html, text, tableCount: msg.tableCount ?? totalTables, pages: pageResults });
+                resolve({ html, text, styles: msg.styles || '',
+                          tableCount: msg.tableCount ?? totalTables, pages: pageResults });
             } else if (msg.type === 'error') {
                 clearTimeout(timeout);
                 reject(new Error(msg.error));
@@ -767,6 +963,7 @@ function extractViaGeometryWorker(bytes, onProgress) {
 
         worker.postMessage({ 
             type: 'process', 
+            docId,
             bytes,
             pdfWorkerSrc: window.__VSC_PDF_WORKER_SRC__ 
         });
@@ -1063,8 +1260,19 @@ async function handleFile(file, pdfIndex) {
     const pdfState = pdfIndex === 1 ? state.pdf1 : state.pdf2;
     const label = pdfIndex === 1 ? 'file1' : 'file2';
 
+    // A slot's pictures are namespaced by document, so replacing the document
+    // in a slot retires exactly that document's crops — not the other slot's,
+    // and not a batch's. `clearImages()` here would blank every other document
+    // the session is holding, which is why nothing calls it on load any more.
+    const previousDocId = pdfState.docId;
+    pdfState.docId = `s${pdfIndex}-${Date.now().toString(36)}`;
     pdfState.file = file;
     $(`#${label}-input`).closest('.file-btn').addClass('loaded');
+    if (previousDocId) {
+        resetImageHydration(previousDocId);
+        deleteDoc(previousDocId).catch(err =>
+            console.warn('[imageStore] could not retire previous document:', err?.message || err));
+    }
 
     showStatus('Loading PDF…');
     try {
@@ -1078,6 +1286,12 @@ async function handleFile(file, pdfIndex) {
         if (pdfIndex === 1) {
             resetPDFLayers();
             resetAnalysisData();
+            // Crops are keyed by page + region id, which are per-DOCUMENT. A new
+            // document reuses those keys, so last document's pixels have to go
+            // before this one's are written — otherwise page 3 of the new file
+            // could hydrate page 3 of the old one. Cleared here, at the one
+            // point where a document is replaced, and never during extraction.
+
             const { wrappers, numPages } = await renderPDFToCanvas(bytesForCanvas, 'pdf-canvas-container');
             registerPages(wrappers, numPages);
             registerPDFLayers(document.getElementById('pdf-canvas-container'));
@@ -1090,6 +1304,7 @@ async function handleFile(file, pdfIndex) {
             // Cache PDF bytes in the geometry worker so interactive re-extraction works on any pipeline
             worker.postMessage({
                 type: 'cache-bytes',
+                docId: pdfState.docId,
                 bytes: bytesForAnalysis.slice()
             });
 
@@ -1122,14 +1337,33 @@ async function handleFile(file, pdfIndex) {
         // pass on top (auto-tune of low-scoring pages, Pass 2).
         //
         // SCANNED documents (no vector substrate — e.g. 0 fonts, image-only
-        // pages) have nothing for the geometry engine to read, so they route to
-        // the local-first raster→geometry bridge: layoutWorker (YOLOv8) finds
-        // regions, TrOCR transcribes each, and rasterSynth feeds synthetic text
-        // items back into the SAME classifyPage/assemblePage pipeline. This is
-        // free and in-tab (manifesto: heavy work, no server) — NOT gated behind
-        // the Pro Advance-Extraction toggle. Docling stays as the backend
-        // fallback only when the local models fail to load.
+        // pages) have nothing for the geometry engine to read. Two engines can
+        // read them, and on a scanned page they are not close:
+        //
+        //   local  — Tesseract WASM for words + YOLOv8 for region labels,
+        //            through rasterSynth into classifyPage/assemblePage.
+        //   Docling — RapidOCR (PP-OCRv4) for words + TableFormer for table
+        //            structure. Verified as the engine actually loaded by this
+        //            backend's `agent-env`.
+        //
+        // TableFormer is the decisive difference: recovering a table grid from
+        // pixels is exactly what the YOLO+heuristic bridge is weakest at. So
+        // Docling is PRIMARY on scanned documents whenever the backend is up,
+        // and local OCR is the fallback that keeps the tool working offline —
+        // the reverse of the earlier arrangement.
+        //
+        // This is a disposition, not a contest: local has no axis on which it
+        // beats Docling here except speed, so there is nothing to arbitrate.
+        // Vector documents are unaffected — geometry still owns those, where it
+        // genuinely does win on structural precision.
         let useBackend = false;
+        // Set when the backend result must be rebuilt through doclingAdapter
+        // rather than used as-is. Docling's own HTML has no region anchors.
+        let backendIsScannedPrimary = false;
+        // Docling's semantic view, running in parallel with whichever engine
+        // below owns the output. Null when Smart OCR is off, the user is not
+        // Pro, or the backend is unreachable.
+        let semanticPromise = null;
         if (pdfIndex === 1) {
             showStatus('Pre-flight: classifying document…');
             const analysis = await _analysisPromise;
@@ -1138,27 +1372,31 @@ async function handleFile(file, pdfIndex) {
             isScannedDoc = pages.length > 0 && scannedCount > pages.length / 2;
 
             if (isScannedDoc) {
-                // Scanned → local raster→geometry bridge (layout + OCR in-tab).
-                // Tesseract (OCR) is the load-bearing piece and is required; the
-                // YOLO layout model only LABELS regions (table/heading) for nicer
-                // structure, so its failure alone must not force a fallback to
-                // the Pro-gated backend — that would wrongly look like local OCR
-                // is tier-gated when it isn't.
-                showStatus('Scanned document — preparing local OCR…');
-                try {
-                    await ensureTesseract();
-                    useLocalScannedGeometry = true;
-                    ensureLayoutWorker().catch(layoutErr =>
-                        console.warn('[HandleFile] Layout model failed to load, OCR will run without region labels:', layoutErr.message));
-                } catch (mlErr) {
-                    localOcrFailReason = mlErr.message;
-                    console.warn('[HandleFile] Local OCR (Tesseract) init failed, falling back to backend:', mlErr.message);
-                    if (!brokerReady) {
-                        showStatus('Connecting to backend OCR service…');
+                showStatus('Scanned document — checking for backend OCR…');
+                if (!brokerReady) {
+                    try {
                         await cwsBroker.init();
                         brokerReady = true;
+                    } catch (_) { /* offline — local OCR below */ }
+                }
+                if (cwsBroker.getBackendStatus()) {
+                    useBackend = true;
+                    backendIsScannedPrimary = true;
+                } else {
+                    // Offline fallback: local raster→geometry bridge. Tesseract
+                    // (OCR) is the load-bearing piece and is required; the YOLO
+                    // layout model only LABELS regions (table/heading), so its
+                    // failure alone must not sink the run.
+                    showStatus('Scanned document — preparing local OCR…');
+                    try {
+                        await ensureTesseract();
+                        useLocalScannedGeometry = true;
+                        ensureLayoutWorker().catch(layoutErr =>
+                            console.warn('[HandleFile] Layout model failed to load, OCR will run without region labels:', layoutErr.message));
+                    } catch (mlErr) {
+                        localOcrFailReason = mlErr.message;
+                        console.warn('[HandleFile] Local OCR (Tesseract) init failed and backend is offline:', mlErr.message);
                     }
-                    useBackend = cwsBroker.getBackendStatus();
                 }
             } else if (useAiLayout) {
                 // Vector doc + Smart OCR: geometry runs, AI re-tolerances
@@ -1168,35 +1406,133 @@ async function handleFile(file, pdfIndex) {
                 // Deterministic extraction below runs regardless and stays free.
                 runAutoTune = _aiSizeGateOk(pages.length);
             }
+
+            // Start the semantic pass now, so it overlaps the deterministic
+            // engine instead of running after it. Skipped when `useBackend` is
+            // set — there Docling IS the primary extractor (local OCR failed to
+            // start) and the existing branch already cross-checks its result, so
+            // a parallel pass would be the same request run twice.
+            // Not awaited: `_startDoclingSemanticPass` is async and therefore
+            // ADOPTS the extract promise it returns, so awaiting here would
+            // block on the entire Docling run — the exact thing this pass exists
+            // to avoid. The handle resolves to the result (or null) later.
+            if (!useBackend) {
+                semanticPromise = _startDoclingSemanticPass(file, { isScannedDoc });
+            }
         }
 
         if (useBackend) {
-            // ── Smart OCR, scanned doc: plain Docling (no LLM stage) ─
-            data = await cwsBroker.extractPdf(formData, (msg) => showStatus(
-                typeof msg === 'string' ? msg : (msg.message || 'Processing…'),
-            ));
-            
-            // If backend provides images, cache them
-            if (data.images || data.assets) {
-                const imgDict = data.images || data.assets;
-                // convert base64 dict to blobs if needed
-                const blobsToSave = {};
-                for (const [id, val] of Object.entries(imgDict)) {
-                    if (val instanceof Blob) {
-                        blobsToSave[id] = val;
-                    } else if (typeof val === 'string' && val.startsWith('data:image')) {
-                        const res = await fetch(val);
-                        blobsToSave[id] = await res.blob();
-                    }
+            // ── Scanned doc, backend up: Docling is the primary extractor ─────
+            //
+            // Docling costs ~7s per scanned page and cannot be made materially
+            // faster (measured: MPS + FAST TableFormer buys ~10%, 4-way
+            // parallelism 1.63x). So the backend streams page CHUNKS, and each
+            // one is rendered the moment it lands. Total wall-clock is
+            // unchanged; time-to-first-page drops from the whole document to
+            // roughly one chunk.
+            //
+            // Chunks are only consumed when Docling owns the surface. On the
+            // vector path the geometry engine owns it and the parallel semantic
+            // pass passes no handler, so its chunks are simply never delivered.
+            let streamedHtml = '';
+            let streamedTables = 0;
+            const streamedPages = [];
+            const onChunk = backendIsScannedPrimary ? async (chunk) => {
+                if (pdfIndex !== 1 || !chunk?.assets?.order) return;
+                const part = doclingToRegionHtml(chunk.assets, pdfState.docId);
+                if (!part.regionCount) return;
+                // Pixels into the store BEFORE the markup that references them
+                // reaches a surface — hydration reads the store once per paint.
+                await _persistExtractedImages(part.images);
+                streamedHtml += (streamedHtml ? '\n' : '') + part.html;
+                streamedTables += part.tableCount;
+                streamedPages.push(...part.pages);
+                // Paint immediately. `applyHtmlEverywhere` rewrites the state
+                // and every surface, so the accumulated document stays the
+                // single source of truth rather than being patched in place.
+                applyHtmlEverywhere(streamedHtml, null);
+                refreshZoneToolbar();
+                showStatus(
+                    `Pages ${chunk.page_start}–${chunk.page_end}`
+                    + (chunk.page_count ? ` of ${chunk.page_count}` : '')
+                    + ` ready — ${streamedTables} table${streamedTables !== 1 ? 's' : ''} so far…`,
+                );
+            } : null;
+
+            try {
+                data = await cwsBroker.extractPdf(formData, (msg) => showStatus(
+                    typeof msg === 'string' ? msg : (msg.message || 'Processing…'),
+                ), onChunk);
+                if (streamedPages.length) {
+                    _phCapture('extraction_streamed', {
+                        pages: streamedPages.length,
+                        tables: streamedTables,
+                        chunks: streamedPages.length,
+                    });
                 }
-                await clearImages();
-                await saveImages(blobsToSave);
+            } catch (beErr) {
+                // Docling was the primary engine and it failed. Fall back to
+                // local OCR rather than dropping to the vector pipeline, which
+                // has no substrate to read on a scanned page and would report
+                // an empty document as a success.
+                console.warn('[HandleFile] Docling failed, falling back to local OCR:', beErr.message);
+                data = null;
+                useBackend = false;
+                backendIsScannedPrimary = false;
+                try {
+                    await ensureTesseract();
+                    useLocalScannedGeometry = true;
+                } catch (mlErr) {
+                    localOcrFailReason = mlErr.message;
+                }
             }
+        }
+
+        if (useBackend) {
+            // Docling's own HTML carries no `data-region-id` / `data-page`
+            // anchors, so a table taken from it has no return address and can
+            // never be annotated back to the page it came from. Rebuild it in
+            // the pipeline's region-anchored shape before it reaches any
+            // surface. `assets.order` is Docling's reading order — required,
+            // because bbox sorting scrambles multi-column pages.
+            if (backendIsScannedPrimary && data?.assets?.order) {
+                const rebuilt = doclingToRegionHtml(data.assets, pdfState.docId);
+                if (rebuilt.regionCount > 0) {
+                    await _persistExtractedImages(rebuilt.images);
+                    data = {
+                        ...data,
+                        html: rebuilt.html,
+                        text: rebuilt.text || data.text || '',
+                        tableCount: rebuilt.tableCount,
+                        pages: rebuilt.pages,
+                        source: 'docling-ocr',
+                    };
+                } else {
+                    // The adapter placed nothing. Keeping Docling's raw HTML
+                    // costs the return address but is still a readable
+                    // document; silently showing an empty page is not.
+                    console.warn('[HandleFile] Docling adapter produced no regions — using raw Docling HTML (tables will be unaddressed).');
+                    showToast('Extracted, but the page structure could not be anchored — tables sent onward will not support back-annotation.', 'info');
+                }
+            } else if (backendIsScannedPrimary) {
+                console.warn('[HandleFile] Backend returned no `assets.order` — the backend may predate the reading-order change. Tables will be unaddressed.');
+            }
+
+
+            // Legacy `data.images` shape (a flat {id: base64} dict from older
+            // backends). The adapter's own pictures are already stored under
+            // page-scoped keys above; this must NOT clear the store first, or a
+            // response carrying both shapes would delete the crops the page is
+            // about to reference.
+            if (data.images) await _persistExtractedImages(data.images);
 
             // Verifier link: cross-check Docling's semantic view against the
             // deterministic pre-flight analyzer. Disagreements are flagged to
             // the user and recorded to the corpus (fuel-quality.md capture point).
-            if (pdfIndex === 1 && data.assets) {
+            // Skipped when Docling is the scanned primary: the checker discards
+            // scanned pages, so it would adjudicate zero claims and post an
+            // empty report (see the `claims` field on its result).
+            if (pdfIndex === 1 && data.assets && !backendIsScannedPrimary) {
                 _crossCheckDocling(data.assets);
             }
         } else if (useLocalScannedGeometry) {
@@ -1204,7 +1540,7 @@ async function handleFile(file, pdfIndex) {
             //    rasterSynth → classifyPage/assemblePage. Same downstream as
             //    vector PDFs, so tables/headings/columns are reconstructed.
             showStatus('Running local layout + OCR on scanned pages…');
-            const result = await extractViaScannedGeometry(bytesForWorker, (msg) => showStatus(msg));
+            const result = await extractViaScannedGeometry(bytesForWorker, (msg) => showStatus(msg), pdfState.docId);
             data = { html: result.html, text: result.text || '', source: 'local-ocr-geometry', tableCount: result.tableCount, pages: result.pages };
         } else {
             // ── Primary: deterministic geometry pipeline (Pass 1 + verifier) ──
@@ -1219,17 +1555,23 @@ async function handleFile(file, pdfIndex) {
                     'error',
                 );
             }
-            const result = await extractViaGeometryWorker(bytesForWorker, (msg) => showStatus(msg));
-            data = { html: result.html, text: result.text || '', source: 'local', tableCount: result.tableCount, pages: result.pages };
+            const result = await extractViaGeometryWorker(bytesForWorker, (msg) => showStatus(msg), pdfState.docId);
+            data = { html: result.html, text: result.text || '', styles: result.styles || '', source: 'local', tableCount: result.tableCount, pages: result.pages };
             if (pdfIndex === 1) _maybeSuggestOcr();
         }
+
+        // The document's own CSS goes to the app's stylesheet, not into the
+        // document string. A string that has to carry its own <style> block
+        // cannot survive a parse/serialize round trip — see docStyles.js.
+        setDocumentStyles(data.styles || '');
 
         pdfState.extractedHTML = data.html;
         pdfState.extractedText = data.text || '';
         // The typed IR mirrors the rendered HTML so exporters and the MCP fast
         // path can read blocks without re-parsing the DOM (import-export-gateway.md).
         pdfState.gxDoc = htmlToGxDoc(data.html, {
-            source: data.source === 'local-ocr-geometry' ? 'pdf-scanned' : 'pdf',
+            source: (data.source === 'local-ocr-geometry' || data.source === 'docling-ocr')
+                ? 'pdf-scanned' : 'pdf',
             title: file.name,
             pageCount: data.pages?.length ?? null,
         });
@@ -1261,6 +1603,36 @@ async function handleFile(file, pdfIndex) {
                 _autoTunePages(data.pages).catch(e =>
                     console.warn('[AI tune] auto pass failed:', e.message));
             }
+            // Docling's semantic view lands whenever it lands — typically after
+            // the document is already on screen. It replaces nothing: it records
+            // the classification alongside the extraction and runs the invariant
+            // check that pdf-extraction-v2.md §Pass 1 specifies.
+            if (semanticPromise) {
+                semanticPromise.then(async (sem) => {
+                    if (!sem || !sem.assets) return;
+                    const report = await _crossCheckDocling(sem.assets);
+                    pdfState.semantic = {
+                        source: 'docling',
+                        assets: sem.assets,
+                        html: sem.html ?? null,
+                        pageCount: sem.page_count ?? null,
+                        // Null, not 1, when nothing was adjudicated — a vacuous
+                        // agreement must not be stored as a verified one.
+                        agreement: report?.claims ? report.agreementScore : null,
+                        claims: report?.claims ?? 0,
+                        flags: report?.flags ?? [],
+                    };
+                    _phCapture('semantic_pass_completed', {
+                        primary_source: data.source,
+                        agreement: report?.claims ? report.agreementScore : null,
+                        claims: report?.claims ?? 0,
+                        flag_count: report?.flags?.length ?? 0,
+                        docling_tables: sem.assets.tables?.length ?? 0,
+                        geometry_tables: data.tableCount ?? null,
+                    });
+                }).catch(e =>
+                    console.warn('[Semantic] pass failed after extraction:', e.message));
+            }
         } else {
             _onSlotLoaded(2);
         }
@@ -1268,10 +1640,12 @@ async function handleFile(file, pdfIndex) {
         const SOURCE_LABELS = {
             'local': 'deterministic vector pipeline',
             'local-ocr-geometry': 'local layout + OCR (scanned)',
+            'docling-ocr': 'Docling OCR + TableFormer (scanned)',
         };
         const source = SOURCE_LABELS[data.source] || 'Smart OCR (Docling)';
         const warnSuffix = data.warning ? ` (${data.warning})` : '';
-        const tableSuffix = (data.source === 'local' || data.source === 'local-ocr-geometry') && data.tableCount != null
+        const COUNTED_SOURCES = new Set(['local', 'local-ocr-geometry', 'docling-ocr']);
+        const tableSuffix = COUNTED_SOURCES.has(data.source) && data.tableCount != null
             ? ` — ${data.tableCount} table${data.tableCount !== 1 ? 's' : ''} detected`
             : '';
         _onSlotLoaded(pdfIndex);
@@ -1337,13 +1711,25 @@ export function populateHTMLPreview(html, containerId = 'html-preview') {
  *   extraction (facts about the engine that produced this), slot (1|2)
  */
 export async function mountExtractedDocument({
-    file, bytes = null, html = '', text = '', gxDoc = null,
-    pages = [], extraction = null, slot = 1,
+    file, bytes = null, html = '', text = '', styles = '', gxDoc = null,
+    pages = [], extraction = null, slot = 1, docId = null,
 }) {
     const pdfState = slot === 2 ? state.pdf2 : state.pdf1;
     const label = slot === 2 ? 'file2' : 'file1';
 
     pdfState.file = file || null;
+    // Whichever document is mounted owns the stylesheet. Two documents define
+    // `.f0` differently, so this replaces rather than merges — mounting a batch
+    // item must not leave the previous one's fonts applied to it.
+    //
+    // `splitLeadingStyles` covers documents whose markup still has the block
+    // prepended (anything extracted before docStyles.js, and the cached batch
+    // results those runs produced): the CSS is lifted out to where it works
+    // instead of being handed to a parser that will drop it.
+    const lead = splitLeadingStyles(html);
+    if (slot === 1) setDocumentStyles(styles || lead.css);
+    html = lead.html;
+    if (docId) pdfState.docId = docId;
     // Keep a pristine copy: pdf.js and pdf-lib both detach the buffer they are
     // handed, so the slot must never hold the same array anything else consumes.
     pdfState.bytes = bytes ? bytes.slice() : null;
@@ -1523,13 +1909,19 @@ export async function downloadExtractedHTML() {
         }
     }
 
-    // Preserve font CSS that was in the extracted HTML's <style> block.
-    // DOMParser moves it into <head>; doc.body.innerHTML drops it, so
-    // we extract it explicitly before discarding the parsed document.
-    const styleTags = doc.head?.querySelectorAll('style') || [];
-    const fontCss = Array.from(styleTags)
+    // Re-attach the document's own CSS. It is no longer in the string — it
+    // lives in the app's stylesheet (docStyles.js), precisely because a leading
+    // <style> block does not survive a parse/serialize round trip. An exported
+    // file has no app around it, so this is where the two are rejoined.
+    //
+    // doc.head is still read as well: a document mounted from a pre-docStyles
+    // cache may still carry the block, and the parser will have parked it there.
+    const headCss = Array.from(doc.head?.querySelectorAll('style') || [])
         .map(s => s.outerHTML)
         .join('\n');
+    const ownCss = getDocumentStyles();
+    const fontCss = [ownCss ? `<style>\n${ownCss}\n</style>` : '', headCss]
+        .filter(Boolean).join('\n');
 
     // Restore body innerHTML as the document string
     html = doc.body.innerHTML;

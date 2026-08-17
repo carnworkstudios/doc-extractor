@@ -957,7 +957,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             const scopedItems = _scopeItems(region, textItems, textMeta);
             const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set(), region.proximityPx);
             if (tableHtml) {
-                html = `<div class="pdf-table-wrap pdf-table--lattice">${tableHtml}</div>`;
+                html = `<div class="pdf-table-wrap pdf-table--lattice" data-region-id="${region.id}">${tableHtml}</div>`;
                 tables = 1;
             }
             break;
@@ -968,7 +968,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             const scopedItems = _scopeItems(region, textItems, textMeta);
             const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set(), region.proximityPx);
             if (tableHtml) {
-                html = `<div class="pdf-table-wrap pdf-table--borderless">${tableHtml}</div>`;
+                html = `<div class="pdf-table-wrap pdf-table--borderless" data-region-id="${region.id}">${tableHtml}</div>`;
                 tables = 1;
             }
             break;
@@ -981,17 +981,45 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 
         case RegionType.IMAGE: {
             const imgEntry = extractedImages[region.id];
+            // The crop's address in the blob store, written by the producer
+            // (which is the only side that knows the page number — a region id
+            // is page-local). `dataUrl` is the legacy shape, still accepted for
+            // producers with no store to write to, but nothing in the app uses
+            // it: pixels belong in IndexedDB, not in the document string.
+            const storeKey = imgEntry?.key ?? null;
             const dataUrl  = imgEntry?.dataUrl ?? null;
 
             let imgTag, imgHtml;
-            if (dataUrl) {
-                // pw/ph are the crop dimensions at 4× render scale.
-                // Divide by 4 to get CSS px at 1× (96 dpi equivalent of PDF pt).
-                // max-width: 100% ensures it never overflows its column.
-                const natW = Math.round(imgEntry.pw / 4);
-                const natH = Math.round(imgEntry.ph / 4);
-                imgTag  = `<img class="extracted-pdf-image" src="${dataUrl}" width="${natW}" height="${natH}" alt="PDF Image ${region.id}" style="max-width: 100%; height: auto; display: block;">`;
-                imgHtml = `<div class="pdf-image-placeholder" style="margin: 10px 0;">${imgTag}</div>`;
+            if (storeKey || dataUrl) {
+                // pw/ph are the crop dimensions at the producer's render scale
+                // (`scale`, 4× for the geometry worker's page render). Divide by
+                // it to get CSS px at 1× (96 dpi equivalent of PDF pt). The
+                // scale is carried on the entry rather than assumed: the scanned
+                // bridge crops off a 2× canvas, and a hardcoded 4 would halve
+                // every picture it produced.
+                const cropScale = imgEntry.scale || 4;
+                const natW = Math.round(imgEntry.pw / cropScale);
+                const natH = Math.round(imgEntry.ph / cropScale);
+                // The box these pixels were cut from, in viewport space. Stated
+                // on the element so a later pass can tell whether the crop still
+                // describes the region: re-extraction re-classifies the page, and
+                // a picture whose box did not move needs no new pixels. Without
+                // it, reuse would be a guess and the only safe move would be to
+                // render the page again for every re-extract.
+                const cb = region.bbox;
+                const cropAttr = cb
+                    ? ` data-crop="${Math.round(cb.x)},${Math.round(cb.y)},${Math.round(cb.w)},${Math.round(cb.h)}"`
+                    : '';
+                // Reference, not payload. `hydrateImages` resolves the key to a
+                // blob: object URL when this markup reaches a live surface, and
+                // the export re-inlines base64 into the downloaded file. The
+                // width/height stay on the tag so the page reserves the right
+                // box before — and if — the pixels arrive.
+                const srcAttr = storeKey
+                    ? ` data-img-id="${storeKey}"`
+                    : ` src="${dataUrl}"`;
+                imgTag  = `<img class="extracted-pdf-image"${srcAttr} width="${natW}" height="${natH}" alt="PDF Image ${region.id}" style="max-width: 100%; height: auto; display: block;">`;
+                imgHtml = `<div class="pdf-image-placeholder" data-region-id="${region.id}"${cropAttr} style="margin: 10px 0;">${imgTag}</div>`;
             } else {
                 // Placeholder: use bbox proportions so layout reserves the right space
                 const bboxW = region.bbox ? region.bbox.w : 0;
@@ -1002,8 +1030,12 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                 const aspectStyle = (bboxW > 0 && bboxH > 0)
                     ? `aspect-ratio: ${Math.round(bboxW)} / ${Math.round(bboxH)}; height: auto;`
                     : `min-height: 120px;`;
+                // Bare region id, not a store key: there are no pixels to
+                // address. It marks the element as an image for the IR
+                // (htmlToGxDoc) and keeps it addressable if a crop is produced
+                // for it later.
                 imgTag  = `<img class="extracted-pdf-image" data-img-id="${region.id}" alt="PDF Image ${region.id}" style="width: 100%; height: auto; display: block;">`;
-                imgHtml = `<div class="pdf-image-placeholder" style="width: ${widthPct}%; ${aspectStyle} border: 2px dashed #ccc; background: #f9f9f9; margin: 10px 0; overflow: hidden;">` +
+                imgHtml = `<div class="pdf-image-placeholder" data-region-id="${region.id}" style="width: ${widthPct}%; ${aspectStyle} border: 2px dashed #ccc; background: #f9f9f9; margin: 10px 0; overflow: hidden;">` +
                     `<span style="display: block; padding: 8px; font-size: 10px; font-family: monospace; color: #999;">[${region.id}]</span>` +
                     imgTag + `</div>`;
             }

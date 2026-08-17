@@ -7,7 +7,13 @@
 //
 // Message in:
 //   { type: 'process',   bytes: Uint8Array }           — full extraction
-//   { type: 'reprocess', page: number, pipeline: {} }  — single page re-extract
+//   { type: 'reprocess', page: number, pipeline: {}, carryImages?: {} }
+//        — single page re-extract. `carryImages` is the crops the page is
+//        ALREADY showing ({ regionId: { key, w, h, crop:[x,y,w,h] } }, from
+//        `getPageImageCrops`). Re-extraction re-classifies the page; it does not
+//        repaint it, so a picture whose box comes back unchanged keeps those
+//        pixels and nothing is rendered. Omit it and every picture is re-cropped
+//        off a fresh 4× page render — correct, just needlessly expensive.
 //   { type: 'score-external', requestId, space, pages } — grade a FOREIGN
 //        extractor's regions against this document's own text (externalScorer.js)
 // Messages out:
@@ -36,6 +42,9 @@ import { pageTextMeta, bboxToViewport, scoreExternalPage, REGION_SPACES }
     from '../extraction/vector/externalScorer.js';
 import { scoreFlow, geometricOrder } from '../extraction/vector/flowScorer.js';
 import { readStructOrder } from '../extraction/vector/structTreeReader.js';
+// IndexedDB is available in workers, so the crop never has to cross the wire as
+// a string. The worker writes the blob and sends only its key.
+import { saveImages, cropKey, deleteDoc } from '../utils/imageStore.js';
 
 // pdfjs-dist v4 — point to the ESM worker bundle.
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -64,6 +73,7 @@ class OffscreenCanvasFactory {
 
 // Cached PDF bytes, font registry, and docScale — kept after initial 'process'
 // so 'reprocess' can re-run a single page without re-parsing the whole document.
+let _docId             = null;   // document namespace for stored crops
 let _cachedBytes       = null;
 let _cachedFontRegistry = null;
 let _cachedDocScale    = null;
@@ -144,19 +154,37 @@ async function _cropFromDecodedImage(page, id, minWidth) {
         }
 
         const blob = await canvas.convertToBlob({ type: 'image/png' });
-        const arr = new Uint8Array(await blob.arrayBuffer());
-        let binary = '';
-        for (let b = 0; b < arr.length; b += 8192) {
-            binary += String.fromCharCode(...arr.subarray(b, b + 8192));
-        }
-        return { dataUrl: 'data:image/png;base64,' + btoa(binary), pw: w, ph: h };
+        return { blob, pw: w, ph: h };
     } catch {
         return null;
     }
 }
 
-async function _extractPageImages(page, regions) {
+/**
+ * Crop every picture region on a page and put the pixels in the blob store.
+ *
+ * Returns store REFERENCES — `{ key, pw, ph, scale }` — not pixels. The crops
+ * are written to IndexedDB here rather than serialised into the reply because
+ * the reply becomes the document string: base64 in the HTML meant the same
+ * megabytes lived in the message, the string, the Monaco model and the DOM at
+ * once, and an image line too long for the editor to render.
+ *
+ * @param {number} srcScale — viewport scale the region bboxes were measured in.
+ *   The geometry pipeline runs at 2.0; the scanned bridge synthesises its own
+ *   viewport and may not. Passing it explicitly keeps the crop rectangle honest
+ *   instead of assuming one caller's scale for all of them.
+ * @param {number} pageNum — 1-based page, half of the store key. Region ids are
+ *   page-local, so a key without it would collide across pages.
+ */
+async function _extractPageImages(page, regions, srcScale = 2.0, pageNum = page?.pageNumber) {
     const extractedImages = {};
+    // { storeKey: Blob } — written once at the end, in one transaction.
+    const blobs = {};
+    const _keep = (id, entry) => {
+        const key = cropKey(_docId, pageNum, id);
+        blobs[key] = entry.blob;
+        extractedImages[id] = { key, pw: entry.pw, ph: entry.ph, scale: entry.scale };
+    };
     // Crop the PICTURE REGIONS, not the raw image operators. One figure can be
     // painted as hundreds of tiny masks (a service-manual diagram runs to 458
     // fragments of 1×9 px); cropping per operator produced hundreds of useless
@@ -169,7 +197,7 @@ async function _extractPageImages(page, regions) {
     }
 
     const IMG_SCALE = 4.0;
-    const upRatio   = IMG_SCALE / 2.0;
+    const upRatio   = IMG_SCALE / (srcScale || 2.0);
 
     // Split the work. A region that is exactly ONE un-composited, axis-aligned
     // XObject can be taken straight from PDF.js's decoded image: native
@@ -192,11 +220,16 @@ async function _extractPageImages(page, regions) {
 
     for (const pic of direct) {
         const entry = await _cropFromDecodedImage(page, pic.id, pic.bbox.w * upRatio);
-        if (entry) extractedImages[pic.id] = entry;
+        // The decoded image is native-resolution and was fetched at ~4× the
+        // placed size, so it sizes like the render crop: scale stays 4.
+        if (entry) _keep(pic.id, { ...entry, scale: 4 });
         else viaRender.push(pic);   // unresolved, unsupported, or lower-res
     }
 
-    if (!viaRender.length) return extractedImages;
+    if (!viaRender.length) {
+        await _saveCrops(blobs);
+        return extractedImages;
+    }
 
     try {
         const imgViewport = page.getViewport({ scale: IMG_SCALE });
@@ -221,21 +254,101 @@ async function _extractPageImages(page, regions) {
                 const crop = new OffscreenCanvas(sw, sh);
                 crop.getContext('2d').drawImage(pageCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
                 const blob = await crop.convertToBlob({ type: 'image/png' });
-                const arr = new Uint8Array(await blob.arrayBuffer());
-                let binary = '';
-                for (let b = 0; b < arr.length; b += 8192) {
-                    binary += String.fromCharCode(...arr.subarray(b, b + 8192));
-                }
-                extractedImages[id] = {
-                    dataUrl: 'data:image/png;base64,' + btoa(binary),
+                _keep(id, {
+                    blob,
                     pw: sw,  // pixel width of the crop at IMG_SCALE
                     ph: sh,  // pixel height of the crop at IMG_SCALE
-                };
+                    scale: IMG_SCALE,   // so the assembler can size it in CSS px
+                });
             } catch (_) { /* skip uncroppable region */ }
         }
     } catch (_) { /* render failed — no images for this page */ }
 
+    await _saveCrops(blobs);
     return extractedImages;
+}
+
+/**
+ * Persist a page's crops. A failed write is not a failed extraction: the page
+ * still assembles, the images simply do not hydrate, which is the same visible
+ * result as a crop that could not be taken. Throwing here would lose the
+ * page's text and layout over a picture.
+ */
+async function _saveCrops(blobs) {
+    if (!blobs || !Object.keys(blobs).length) return;
+    try {
+        await saveImages(blobs);
+    } catch (err) {
+        console.warn('[geometryWorker] crop store write failed:', err?.message || err);
+    }
+}
+
+/**
+ * Split a re-extracted page's pictures into the ones that can KEEP the crop the
+ * page is already showing and the ones that actually need new pixels.
+ *
+ * Re-extraction re-classifies a page; it does not repaint it. A picture region
+ * that comes back with the same id and the same box is the same pixels, and the
+ * caller is holding them already (`carryImages`, harvested from the live page).
+ * Reusing them is not an optimisation detail — a 4× page render is the single
+ * most expensive thing a re-extract does, and on the common re-extract (a
+ * threshold nudged, the figures untouched) it buys nothing at all.
+ *
+ * The box is compared, not just the id, because a re-extract is precisely when
+ * regions merge, split and grow. A carried crop whose box no longer matches
+ * would be the RIGHT id over the WRONG pixels — worse than re-cropping.
+ */
+function _splitCarriedCrops(regions, carryImages) {
+    const carried = {};
+    const missing = [];
+    const pics = (regions || []).filter(r => r.type === 'IMAGE' && r.bbox && r.id);
+    const same = (a, b) => Math.abs(a - b) <= 1;
+    for (const r of pics) {
+        const c = carryImages?.[r.id];
+        if (c?.key && Array.isArray(c.crop) &&
+            same(c.crop[0], r.bbox.x) && same(c.crop[1], r.bbox.y) &&
+            same(c.crop[2], r.bbox.w) && same(c.crop[3], r.bbox.h)) {
+            // Nothing but the key travels: the pixels never left the store, so
+            // carrying a crop forward now costs one string instead of a
+            // megabyte. `w`/`h` are already CSS px (the assembler divided by
+            // the producing scale), so scale 1 reproduces identical markup.
+            carried[r.id] = { key: c.key, pw: c.w, ph: c.h, scale: 1 };
+        } else {
+            missing.push(r);
+        }
+    }
+    return { carried, missing };
+}
+
+/**
+ * Crops for a SCANNED page's picture regions that could not be carried forward.
+ *
+ * The scanned bridge re-classifies cached synthetic text items, so there is no
+ * operator list — but the crops never came from the operator list. They come
+ * from the page render, and an image-only page renders like any other. This
+ * runs ONLY for regions whose box changed, so a re-extract that leaves the
+ * figures alone opens nothing and renders nothing.
+ *
+ * Returns {} when the document's bytes were never cached (a standalone fork, or
+ * a document mounted without them) — the caller then renders placeholders,
+ * which is the old behaviour and still better than failing the re-extract.
+ */
+async function _extractScannedPageImages(pageNum, regions) {
+    if (!_cachedBytes || !regions.length) return {};
+    const srcScale = _scannedPages.get(pageNum)?.viewportScale ?? 2.0;
+    try {
+        const canvasFactoryOpt = typeof OffscreenCanvas !== 'undefined'
+            ? { CanvasFactory: OffscreenCanvasFactory }
+            : {};
+        const pdf = await pdfjsLib.getDocument({ data: _cachedBytes.slice(), ...canvasFactoryOpt }).promise;
+        const page = await pdf.getPage(pageNum);
+        const images = await _extractPageImages(page, regions, srcScale, pageNum);
+        page.cleanup();
+        return images;
+    } catch (err) {
+        console.warn(`[geometryWorker] scanned page ${pageNum}: image crops unavailable —`, err?.message || err);
+        return {};
+    }
 }
 
 /**
@@ -432,6 +545,11 @@ async function _handleScoreExternal(data) {
 }
 
 self.onmessage = async (e) => {
+    // Which document this worker is extracting. It namespaces every crop this
+    // worker stores. A batch runs several of these workers CONCURRENTLY into
+    // one store, so without it the pictures of whichever document finished last
+    // would be served to all of them.
+    if (e.data.docId != null) _docId = e.data.docId;
     if (e.data.type === 'cache-bytes') {
         _cachedBytes = e.data.bytes ? e.data.bytes.slice() : null;
         return;
@@ -465,6 +583,15 @@ self.onmessage = async (e) => {
 
     if (pdfWorkerSrc) {
         pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+    }
+
+    // A full extraction replaces this document's pictures wholesale — a retry,
+    // a re-add, or the same slot loaded again. Dropping the old crops first
+    // keeps the store's byte accounting honest (it charges what it holds) and
+    // stops an abandoned run's pixels from lingering under live keys.
+    if (_docId != null) {
+        await deleteDoc(_docId).catch(err =>
+            console.warn('[geometryWorker] could not retire previous crops:', err?.message || err));
     }
 
     // Cache bytes for single-page re-extraction
@@ -573,7 +700,7 @@ self.onmessage = async (e) => {
             // Runs AFTER classification so vector line-art figures (diagrams the
             // classifier detected from path segments) get cropped too, not just
             // raster XObjects.
-            const extractedImages = await _extractPageImages(page, regions);
+            const extractedImages = await _extractPageImages(page, regions, 2.0, p);
 
             // ── Phase 3+4: Scoped extraction + assembly ─────────────────────
             const result = assemblePage(
@@ -652,7 +779,7 @@ self.onmessage = async (e) => {
 };
 
 // ── Single-page re-extraction ─────────────────────────────────────────────────
-async function _handleReprocess({ page: pageNum, pipeline = {} }) {
+async function _handleReprocess({ page: pageNum, pipeline = {}, carryImages = {} }) {
     if (!_cachedBytes) {
         self.postMessage({
             type: 'error',
@@ -719,8 +846,15 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
             },
         );
 
-        // Image + vector-figure crops (after classification, same as process path)
-        const extractedImages = await _extractPageImages(page, regions);
+        // Image + vector-figure crops (after classification, same as process
+        // path) — but only for pictures whose box actually changed. Everything
+        // still sitting where it was keeps the pixels the page already has, so
+        // the usual re-extract (a threshold nudged, the figures untouched)
+        // renders nothing at all.
+        const { carried, missing } = _splitCarriedCrops(regions, carryImages);
+        const extractedImages = missing.length
+            ? { ...carried, ...(await _extractPageImages(page, missing, 2.0, pageNum)) }
+            : carried;
 
         const fontRegistry = _cachedFontRegistry ?? createFontRegistry();
         const result = assemblePage(
@@ -777,7 +911,7 @@ async function _handleReprocess({ page: pageNum, pipeline = {} }) {
 // ── Single-page re-extraction for a SCANNED page ───────────────────────────────
 // Sources from the cached synthetic text items (no PDF re-parse — the page has
 // no operator list). Honors the same slider/split pipeline as the vector path.
-async function _handleScannedReprocess({ page: pageNum, pipeline = {} }) {
+async function _handleScannedReprocess({ page: pageNum, pipeline = {}, carryImages = {} }) {
     const cached = _scannedPages.get(pageNum);
     if (!cached) {
         self.postMessage({ type: 'error', reprocess: true, page: pageNum,
@@ -800,10 +934,22 @@ async function _handleScannedReprocess({ page: pageNum, pipeline = {} }) {
             },
         );
 
+        // Picture crops. Passing {} here (what this did before) rebuilt every
+        // IMAGE region as an empty dashed placeholder, so re-extracting a
+        // scanned page silently deleted every picture on it while the region,
+        // its bbox and its tag all survived — the artifacts panel still listed
+        // an image the document no longer showed. The pixels the page already
+        // has are reused; only a region whose box actually changed is re-cropped
+        // off a render.
+        const { carried, missing } = _splitCarriedCrops(regions, carryImages);
+        const extractedImages = missing.length
+            ? { ...carried, ...(await _extractScannedPageImages(pageNum, missing)) }
+            : carried;
+
         const fontRegistry = _cachedFontRegistry ?? createFontRegistry();
         const result = assemblePage(
             regions, textMeta, textItems, viewport, pageWidthPt, pageNum,
-            fontRegistry, rawSplits ?? columnSplits, {}, null,
+            fontRegistry, rawSplits ?? columnSplits, extractedImages, null,
         );
 
         self.postMessage({

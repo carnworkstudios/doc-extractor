@@ -271,6 +271,12 @@ body {
 
 /* ── SELECTION MODE ─────────────────────────────────────────────────────── */
 
+/* Preview owns drag gestures in selection mode (marquee, divider, handles) */
+#html-preview.selection-mode,
+#visual-diff-html.selection-mode {
+  touch-action: none;
+}
+
 /* Zone: parent container — bold left border + tinted background */
 #html-preview.selection-mode .pdf-zone,
 #visual-diff-html.selection-mode .pdf-zone {
@@ -2007,6 +2013,10 @@ mark.diff-inline-add {
 }
 
 .analyze-meta-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
   padding: 8px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
@@ -2016,14 +2026,14 @@ mark.diff-inline-add {
 .analyze-status-msg {
   font-size: 12px;
   color: var(--text-muted);
-  display: block;
-  margin-bottom: 4px;
+  margin-right: auto;   /* keeps the page nav at the far right of the bar */
 }
 
 .analyze-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 0;
+  flex: 1 1 100%;       /* file info wraps to its own full row */
 }
 
 .ameta-row {
@@ -2095,6 +2105,7 @@ mark.diff-inline-add {
   border: 1px solid var(--border);
   border-radius: 4px;
   max-width: 100%;
+  touch-action: none;   /* marquee / drag / resize must own the gesture (mouse, touch, stylus) */
 }
 
 .analyze-legend {
@@ -3129,6 +3140,7 @@ mark.diff-inline-add {
 /* ── PDF Annotation layer ──────────────────────────────────────────────── */
 .annotation-layer {
   overflow: visible;
+  touch-action: none; /* draw / move / resize gestures must own the gesture */
 }
 .annotation-layer .ann-selection-box,
 .annotation-layer .ann-handle {

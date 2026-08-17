@@ -229,6 +229,15 @@ function _mount(stubEl) {
     parent.replaceChild(fresh, stubEl);
     _parked.delete(key);
     _observer.observe(fresh);
+
+    // The parked string references pictures by store key, so a page coming back
+    // into view has to be re-hydrated or its figures mount blank. A page parked
+    // before its first hydration finished never had a blob: URL to preserve.
+    // Dynamic import: htmlSync imports this module, and a static edge back
+    // would close the cycle.
+    if (fresh.querySelector?.('img[data-img-id]')) {
+        import('./htmlSync.js').then(m => m.hydrateImages(fresh)).catch(() => {});
+    }
 }
 
 /**

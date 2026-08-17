@@ -69,6 +69,7 @@ export function initToolbar() {
 
     $('#sel-block').on('change', function() {
         const v = $(this).val();
+        if (v === 'small') { _applySmall(); $(this).val(''); return; }
         fmt('formatBlock', v || 'p');
         $(this).val('');
     });
@@ -220,9 +221,9 @@ function syncToolbarToSelection() {
 
     const $block = $('#sel-block');
     if ($block.length && !$block.is(':focus')) {
-        const blockEl = node?.closest?.('h1, h2, h3, h4, p, div');
+        const blockEl = node?.closest?.('h1, h2, h3, h4, h5, h6, p, div, small');
         const tag = blockEl?.tagName?.toLowerCase();
-        $block.val(['h1', 'h2', 'h3', 'h4'].includes(tag) ? tag : '');
+        $block.val(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'small'].includes(tag) ? tag : '');
     }
 }
 
@@ -253,6 +254,27 @@ function _focusPdfTargetIfActive() {
 function fmt(cmd, val) {
     _focusPdfTargetIfActive();
     document.execCommand(cmd, false, val || null);
+}
+
+/**
+ * Wrap the selection in a <small> element. formatBlock only accepts
+ * block-level tags, so "Small text" cannot ride the same execCommand path
+ * as the headings — it gets its own range-based wrap instead.
+ */
+function _applySmall() {
+    _focusPdfTargetIfActive();
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return;
+    const range = sel.getRangeAt(0);
+    const frag = range.extractContents();
+    const small = document.createElement('small');
+    small.appendChild(frag);
+    range.insertNode(small);
+    sel.removeAllRanges();
+    const r = document.createRange();
+    r.selectNodeContents(small);
+    sel.addRange(r);
+    syncStructuralEdit();
 }
 
 /**
@@ -947,7 +969,7 @@ function toggleFormatPainter() {
 
     $btn.addClass('painting');
     document.body.classList.add('format-painter-active');
-    document.addEventListener('mouseup', applyFormatPainterOnce, { once: true });
+    document.addEventListener('pointerup', applyFormatPainterOnce, { once: true });
 }
 
 function applyFormatPainterOnce() {
@@ -998,7 +1020,7 @@ function disarmFormatPainter() {
     _paintedStyle = null;
     $('#btn-format-painter').removeClass('painting');
     document.body.classList.remove('format-painter-active');
-    document.removeEventListener('mouseup', applyFormatPainterOnce);
+    document.removeEventListener('pointerup', applyFormatPainterOnce);
 }
 
 /**

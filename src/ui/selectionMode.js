@@ -70,7 +70,7 @@ function _toggle() {
     if (_active) {
         _attachHandles();
         _injectAllResizeDividers();
-        _preview.addEventListener('mousedown', _onMarqueeStart);
+        _preview.addEventListener('pointerdown', _onMarqueeStart);
         _preview.addEventListener('click',     _onSelectClick, true);
         document.addEventListener('keydown',   _onKeyDown);
     } else {
@@ -79,7 +79,7 @@ function _toggle() {
         _removeAllDividers();
         _removeGhostCol();
         _hidePropsPanel();
-        _preview.removeEventListener('mousedown', _onMarqueeStart);
+        _preview.removeEventListener('pointerdown', _onMarqueeStart);
         _preview.removeEventListener('click',     _onSelectClick, true);
         document.removeEventListener('keydown',   _onKeyDown);
     }
@@ -398,7 +398,7 @@ function _injectResizeDividers(zoneEl) {
         div.dataset.selUi = '1';
         div.dataset.colIdx = i;
         div.style.left = left + 'px';
-        div.addEventListener('mousedown', _onDividerMouseDown);
+        div.addEventListener('pointerdown', _onDividerPointerDown);
         zoneEl.appendChild(div);
     }
 }
@@ -416,7 +416,8 @@ function _removeAllDividers() {
     _preview.querySelectorAll('.sel-col-divider').forEach(d => d.remove());
 }
 
-function _onDividerMouseDown(e) {
+function _onDividerPointerDown(e) {
+    if (e.button !== 0 || e.isPrimary === false) return;
     e.preventDefault();
     const dividerEl = e.currentTarget;
     const zoneEl = dividerEl.closest('.pdf-zone');
@@ -429,11 +430,12 @@ function _onDividerMouseDown(e) {
     _resizeDrag = { dividerEl, zoneEl, startX: e.clientX, startWidths: widths, colIdx };
     dividerEl.classList.add('sel-col-divider--dragging');
 
-    document.addEventListener('mousemove', _onDividerMouseMove);
-    document.addEventListener('mouseup', _onDividerMouseUp);
+    document.addEventListener('pointermove', _onDividerPointerMove);
+    document.addEventListener('pointerup',   _onDividerPointerUp);
+    document.addEventListener('pointercancel', _onDividerPointerUp);
 }
 
-function _onDividerMouseMove(e) {
+function _onDividerPointerMove(e) {
     if (!_resizeDrag) return;
     const { dividerEl, zoneEl, startX, startWidths, colIdx } = _resizeDrag;
     const delta = e.clientX - startX;
@@ -447,9 +449,10 @@ function _onDividerMouseMove(e) {
     dividerEl.style.left = cumulative + 'px';
 }
 
-function _onDividerMouseUp() {
-    document.removeEventListener('mousemove', _onDividerMouseMove);
-    document.removeEventListener('mouseup', _onDividerMouseUp);
+function _onDividerPointerUp() {
+    document.removeEventListener('pointermove', _onDividerPointerMove);
+    document.removeEventListener('pointerup',   _onDividerPointerUp);
+    document.removeEventListener('pointercancel', _onDividerPointerUp);
     if (!_resizeDrag) return;
 
     const { dividerEl, zoneEl } = _resizeDrag;
@@ -610,8 +613,8 @@ function _clearSelection() {
 function _onMarqueeStart(e) {
     if (!e.shiftKey) return;
     if (e.target.closest('.pdf-region, .pdf-zone, .sel-drag-handle')) return;
-    if (e.button !== 0) return;
-    e.preventDefault(); // prevent browser text-selection drag on shift+mousedown
+    if (e.button !== 0 || e.isPrimary === false) return;
+    e.preventDefault(); // prevent browser text-selection drag on shift+drag
 
     const previewRect = _preview.getBoundingClientRect();
     _marqueeOrigin = {
@@ -623,8 +626,9 @@ function _onMarqueeStart(e) {
     _marqueeEl.className = 'sel-marquee';
     _preview.appendChild(_marqueeEl);
 
-    document.addEventListener('mousemove', _onMarqueeMove);
-    document.addEventListener('mouseup',   _onMarqueeEnd);
+    document.addEventListener('pointermove', _onMarqueeMove);
+    document.addEventListener('pointerup',   _onMarqueeEnd);
+    document.addEventListener('pointercancel', _onMarqueeEnd);
 }
 
 function _onMarqueeMove(e) {
@@ -645,8 +649,9 @@ function _onMarqueeMove(e) {
 }
 
 function _onMarqueeEnd(e) {
-    document.removeEventListener('mousemove', _onMarqueeMove);
-    document.removeEventListener('mouseup',   _onMarqueeEnd);
+    document.removeEventListener('pointermove', _onMarqueeMove);
+    document.removeEventListener('pointerup',   _onMarqueeEnd);
+    document.removeEventListener('pointercancel', _onMarqueeEnd);
     if (!_marqueeEl || !_marqueeOrigin) return;
 
     const marqueeRect = _marqueeEl.getBoundingClientRect();

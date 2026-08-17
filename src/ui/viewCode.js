@@ -48,9 +48,9 @@ export function initViewCode() {
 
     if (!_dialog || !_container || !_preview) return;
 
-    document.getElementById('vc-apply')?.addEventListener('click',  _applyCode);
-    document.getElementById('vc-cancel')?.addEventListener('click', () => _dialog.close());
-    document.getElementById('vc-close')?.addEventListener('click',  () => _dialog.close());
+    window.GxPointer.onPress(document.getElementById('vc-apply'), _applyCode);
+    window.GxPointer.onPress(document.getElementById('vc-cancel'), () => _dialog.close());
+    window.GxPointer.onPress(document.getElementById('vc-close'),  () => _dialog.close());
 
     // Close on backdrop click
     _dialog.addEventListener('click', e => { if (e.target === _dialog) _dialog.close(); });

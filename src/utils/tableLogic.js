@@ -125,7 +125,7 @@ function initAccordions(root) {
     root.querySelectorAll('.accordion-header').forEach(header => {
         if (header.dataset.accInit) return;
         header.dataset.accInit = '1';
-        header.addEventListener('click', () => {
+        window.GxPointer.onPress(header, () => {
             header.classList.toggle('actives');
             let next = header.closest('tr')?.nextElementSibling;
             while (next && !next.classList.contains('accordion-header')) {
@@ -138,7 +138,7 @@ function initAccordions(root) {
     root.querySelectorAll('.accordion').forEach(btn => {
         if (btn.dataset.accInit) return;
         btn.dataset.accInit = '1';
-        btn.addEventListener('click', () => {
+        window.GxPointer.onPress(btn, () => {
             btn.classList.toggle('active');
             const panel = btn.nextElementSibling;
             if (panel?.classList.contains('panel')) {
@@ -154,7 +154,7 @@ function initSpSelectors(root) {
     root.querySelectorAll('.sp-option').forEach(opt => {
         if (opt.dataset.spInit) return;
         opt.dataset.spInit = '1';
-        opt.addEventListener('click', () => {
+        window.GxPointer.onPress(opt, () => {
             const panel = opt.closest('.panel');
             if (!panel) return;
             const table = panel.querySelector('.tablecoil');

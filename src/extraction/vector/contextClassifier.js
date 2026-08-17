@@ -44,6 +44,58 @@ function insideBBox(px, py, bbox, pad = 0) {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+/**
+ * Guarantee every region has an id before it leaves classification.
+ *
+ * A region id is HALF of the address cross-tool artifacts use to find their way
+ * home (page + regionId — see `origin` in assets/os/tables.js). Most detectors
+ * assign one: `vecfig_0`, `picture_0`, `struct_table_0`. Two paths did not —
+ * STREAM_TABLE (the common deterministic table) and the opts-supplied IMAGE
+ * regions — so those reached the UI with `id: undefined`. They could still be
+ * listed and selected as tags, but never resolved back to their content, and
+ * the HTML emitter wrote `data-region-id="undefined"` for them.
+ *
+ * Ids are page-local and type-scoped, matching the convention the other
+ * detectors already use, and are assigned LAST so a detector's own id always
+ * wins. Collisions with an existing id are stepped over rather than
+ * overwritten: two regions sharing an id is the same failure as having none.
+ */
+function _ensureRegionIds(regions) {
+    const seen = new Set();
+    // Pass 1: keep every id that arrives, but make sure no two regions carry the
+    // same one. A picture region that is exactly one raster XObject takes that
+    // XObject's id — and the SAME XObject painted twice on a page (a repeated
+    // warning icon, a logo on every panel) therefore produces several regions
+    // with one id between them. That is the same failure as having no id: the
+    // address stops identifying a region, so every lookup — the artifacts panel,
+    // back-annotation, `getRegionHtml`, and the picture crop keyed by region id
+    // — silently resolves all of them to whichever one came first, and the
+    // repeats render the first placement's crop instead of their own.
+    for (const r of regions) {
+        if (!r || r.id == null) continue;
+        let id = String(r.id);
+        if (seen.has(id)) {
+            let n = 2;
+            while (seen.has(`${id}__${n}`)) n++;
+            id = `${id}__${n}`;
+            r.id = id;
+        }
+        seen.add(id);
+    }
+    const counters = Object.create(null);
+    for (const r of regions) {
+        if (!r || r.id != null) continue;
+        const base = String(r.type || 'region').toLowerCase();
+        let n = counters[base] || 0;
+        let id;
+        do { id = `${base}_${n++}`; } while (seen.has(id));
+        counters[base] = n;
+        seen.add(id);
+        r.id = id;
+    }
+    return regions;
+}
+
 export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMeta = [], opts = {}) {
     const filledRects  = opts.filledRects  ?? [];
     const fontStyleMap = opts.fontStyleMap ?? {};
@@ -563,7 +615,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
             for (const cr of customInjectedRegions) finalRegions2.push(cr);
         }
         finalRegions2.sort((a, b) => a.yCenter - b.yCenter);
-        return { regions: finalRegions2, textMeta, columnSplits: columnSplitsEarly, rawSplits, scale };
+        return { regions: _ensureRegionIds(finalRegions2), textMeta, columnSplits: columnSplitsEarly, rawSplits, scale };
     }
 
     // No manual splits — fall through to automatic detection below
@@ -735,7 +787,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     // columnSplits returned as plain X array (what pageAssembler expects).
     // rawSplits carries the full {x, leftFraction, rightFraction} objects for
     // callers that need the fractions (geometryWorker postMessage, zone layout).
-    return { regions: finalRegions, textMeta, columnSplits: rawSplits.map(s => s.x), rawSplits, scale };
+    return { regions: _ensureRegionIds(finalRegions), textMeta, columnSplits: rawSplits.map(s => s.x), rawSplits, scale };
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────

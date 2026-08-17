@@ -333,19 +333,19 @@ export function wireLayers(handle) {
     if (handle.readOnly || handle.wired) return;
     handle.wired = true;
 
-    handle.container.addEventListener('mousedown', onMouseDown);
+    handle.container.addEventListener('pointerdown', onPointerDown);
     handle.container.addEventListener('dblclick', onDblClick);
     document.addEventListener('keydown', onKeyDown);
     handle._cleanup = () => {
-        handle.container.removeEventListener('mousedown', onMouseDown);
+        handle.container.removeEventListener('pointerdown', onPointerDown);
         handle.container.removeEventListener('dblclick', onDblClick);
         document.removeEventListener('keydown', onKeyDown);
     };
 }
 
-function onMouseDown(e) {
+function onPointerDown(e) {
     if (engine.getMode() !== 'annotate') return;
-    if (e.button !== 0) return;
+    if (e.button !== 0 || e.isPrimary === false) return;
     const svg = e.target.closest?.('.annotation-layer');
     if (!svg) return;
     e.preventDefault();
@@ -369,12 +369,14 @@ function startDrawGesture(e, svg, pageNum, pt) {
     engine.beginDrag(pageNum, pt);
     const move = ev => engine.updateDraft(toDisplay(svg, ev.clientX, ev.clientY));
     const up = () => {
-        document.removeEventListener('mousemove', move);
-        document.removeEventListener('mouseup', up);
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        document.removeEventListener('pointercancel', up);
         engine.endDrag();
     };
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', up);
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+    document.addEventListener('pointercancel', up);
 }
 
 function startSelectGesture(e, wrapper, pageNum, pt) {
@@ -424,12 +426,14 @@ function startMoveGesture(e, wrapper, ann, pt) {
         engine.updateAnnotationLive(annId, patch);
     };
     const up = () => {
-        document.removeEventListener('mousemove', move);
-        document.removeEventListener('mouseup', up);
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        document.removeEventListener('pointercancel', up);
         engine.endGesture();
     };
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', up);
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+    document.addEventListener('pointercancel', up);
 }
 
 function startResizeGesture(e, wrapper, ann, b, handle, startPt) {
@@ -445,12 +449,14 @@ function startResizeGesture(e, wrapper, ann, b, handle, startPt) {
         engine.updateAnnotationLive(annId, { rect: resizeRect(origRect, handle, dx, dy) });
     };
     const up = () => {
-        document.removeEventListener('mousemove', move);
-        document.removeEventListener('mouseup', up);
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        document.removeEventListener('pointercancel', up);
         engine.endGesture();
     };
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', up);
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+    document.addEventListener('pointercancel', up);
 }
 
 function resizeRect(b, handle, dx, dy) {

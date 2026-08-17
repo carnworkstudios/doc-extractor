@@ -85,8 +85,8 @@ export function promptDialog(message, defaultValue = '') {
             resolve(value);
         }
 
-        backdrop.querySelector('.gx-pdlg-btn--ok').addEventListener('click', () => finish(input.value));
-        backdrop.querySelector('.gx-pdlg-btn--cancel').addEventListener('click', () => finish(null));
+        window.GxPointer.onPress(backdrop.querySelector('.gx-pdlg-btn--ok'), () => finish(input.value));
+        window.GxPointer.onPress(backdrop.querySelector('.gx-pdlg-btn--cancel'), () => finish(null));
         backdrop.addEventListener('click', (e) => { if (e.target === backdrop) finish(null); });
         input.addEventListener('keydown', (e) => {
             e.stopPropagation();

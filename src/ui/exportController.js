@@ -138,6 +138,22 @@ function tableToGrid(tableEl) {
     );
 }
 
+// Same walk as tableToGrid, but keeps colSpan/rowSpan/header per cell instead
+// of flattening to a plain string — what sendTablesToTafne needs so a merged
+// header (common on a scanned invoice) survives into GxTables.createTable
+// instead of becoming the 'merged-header-inferred' FLAG gx-doc records today
+// (a note that a merge existed, not the geometry to rebuild it).
+function tableToCells(tableEl) {
+    return [...tableEl.querySelectorAll('tr')].map(tr =>
+        [...tr.querySelectorAll('td, th')].map(td => ({
+            text: td.textContent.trim(),
+            colSpan: td.colSpan || 1,
+            rowSpan: td.rowSpan || 1,
+            header: td.tagName === 'TH',
+        }))
+    );
+}
+
 async function exportToIntegration(provider, html) {
     const tables = [...parseDoc(html).querySelectorAll('table')];
     if (!tables.length) {
@@ -196,6 +212,36 @@ window.addEventListener('message', (e) => {
     }
 });
 
+/**
+ * The return address for a table in the extracted document.
+ *
+ * pageAssembler wraps every extracted table in
+ * `<div class="pdf-table-wrap" data-region-id="…">` inside
+ * `<section class="pdf-page-content" data-page="N">`, so the address is
+ * already in the DOM at this point and is read back off it rather than
+ * re-derived.
+ *
+ * BOTH halves or null — never a partial. Region ids restart per page
+ * (`lattice_0` exists on every page with a table), so a regionId with no page
+ * resolves to whichever page comes first, silently and wrongly. GxTables
+ * rejects a partial origin for the same reason; this returns null so an
+ * unaddressable table is honestly unaddressable instead of mis-addressed.
+ *
+ * Backend/OCR-extracted documents carry no region ids at all — those tables
+ * legitimately get null, and the receiving tool says so rather than offering a
+ * round trip it cannot honour.
+ */
+function tableOriginOf(tableEl, docName) {
+    const wrap = tableEl.closest?.('[data-region-id]');
+    const regionId = wrap?.getAttribute('data-region-id');
+    const pageEl = tableEl.closest?.('section.pdf-page-content[data-page]');
+    const page = parseInt(pageEl?.getAttribute('data-page'), 10);
+    // 'undefined' is a real value here: the pre-_ensureRegionIds emitter wrote
+    // it as a literal string, and those documents are still on disk.
+    if (!regionId || regionId === 'undefined' || isNaN(page)) return null;
+    return { tool: 'pdf-processor', doc: docName, page, regionId: String(regionId) };
+}
+
 async function sendTablesToTafne() {
     const html = state.pdf1.extractedHTML;
     if (!html) {
@@ -212,53 +258,74 @@ async function sendTablesToTafne() {
         return;
     }
 
-    // gx-tables-v1 rows are objects keyed by header — headers must be unique.
     // Candidate-artifact contract (tool-intelligence-spec.md §04.2): a table
     // extracted from a PDF is a CANDIDATE, not a finished fact. We attach its
     // extraction confidence and mark candidate:true so TAFNE's trust stage
     // treats it as "to verify", not "trusted" — the two-stage trust model
     // (extracted-uncertain → validated-trusted). The score is the region's own
     // classifier confidence when the table maps to an extracted region.
+    //
+    // Sent through window.GxTables (root-injected, private) when present, which
+    // is what keeps a merged header cell intact end to end instead of collapsing
+    // to gx-doc's 'merged-header-inferred' flag. Falls back to the legacy flat
+    // envelope — headers deduped, colSpan/rowSpan silently dropped — for a
+    // forked standalone tool that never gets tables.js injected.
+    const useGx = !!window.GxTables;
     const tables = domTables.map((t, i) => {
+        const name = domTables.length > 1 ? `${baseName()} — table ${i + 1}` : baseName();
+        const conf = parseFloat(t.getAttribute?.('data-confidence'));
+        // Extraction confidence: prefer a data-confidence on the table element,
+        // fall back to 'uncertain' (0.7) so downstream always knows it's a candidate.
+        const extractionScore = !isNaN(conf) ? conf : 0.7;
+        // The return address rides along. It exists only here, at the moment the
+        // table leaves the document it was extracted from — a receiver cannot
+        // reconstruct it later. Omitting it is what made TAFNE's (fully built)
+        // back-annotation to this tool unreachable for everything sent from this
+        // button: no address, so nothing to return to, so the route was hidden.
+        const origin = tableOriginOf(t, baseName());
+
+        if (useGx) {
+            return window.GxTables.createTable({
+                name, rows: tableToCells(t), candidate: true, confidence: extractionScore, origin,
+            });
+        }
+        // Legacy path: gx-tables-v1 rows are objects keyed by header — headers
+        // must be unique.
         const grid = tableToGrid(t);
         const seen = {};
         const headers = (grid[0] || []).map((h, j) => {
-            let name = (h || '').trim() || `Column ${j + 1}`;
-            if (seen[name]) name = `${name} (${++seen[name]})`;
-            seen[name] = seen[name] || 1;
-            return name;
+            let hname = (h || '').trim() || `Column ${j + 1}`;
+            if (seen[hname]) hname = `${hname} (${++seen[hname]})`;
+            seen[hname] = seen[hname] || 1;
+            return hname;
         });
         const rows = grid.slice(1).map(r =>
             Object.fromEntries(headers.map((h, j) => [h, r[j] ?? ''])));
-        // Extraction confidence: prefer a data-confidence on the table element,
-        // fall back to 'uncertain' (0.7) so downstream always knows it's a candidate.
-        const conf = parseFloat(t.getAttribute?.('data-confidence'));
-        const extractionScore = !isNaN(conf) ? conf : 0.7;
-        return {
-            name: domTables.length > 1 ? `${baseName()} — table ${i + 1}` : baseName(),
-            rows,
-            candidate: true,
-            extractionScore,
-        };
+        return { name, rows, candidate: true, extractionScore, origin };
     }).filter(t => t.rows.length);
     if (!tables.length) {
         showToast('Tables have no data rows to send.', 'error');
         return;
     }
+    // Counted after the empty-table filter, so the number reported is the number
+    // actually sent without a return address.
+    const unaddressed = tables.filter(t => !t.origin).length;
 
     try {
         window.CwsBridge.send('cws:tool:launch', { toolId: 'tifany', focusAfterLaunch: true }, 'os');
         await waitForToolReady('tifany', 8000);
         // meta.candidate flags the whole handoff as extracted-uncertain, so the
         // receiver (TAFNE) knows to route it through its validate/trust stage.
-        const payload = { schema: 'gx-tables-v1', tables, meta: { source: 'pdf-processor', title: baseName(), candidate: true } };
+        const payload = useGx
+            ? window.GxTables.createEnvelope({ source: 'pdf-processor', title: baseName(), tables })
+            : { schema: 'gx-tables-v1', tables, meta: { source: 'pdf-processor', title: baseName(), candidate: true } };
         // Lineage assembly is an optional host-provided capability. When
         // window.GxProvenance is absent no lineage is sent and the tool works
         // exactly as before. This tool is a pipeline SOURCE, so there is nothing
         // incoming to inherit; build() returns its own extraction record.
         // Aggregate extraction confidence across the candidate tables → the
         // extraction-stage score on the lineage spine.
-        const avgScore = tables.reduce((s, t) => s + (t.extractionScore || 0), 0) / tables.length;
+        const avgScore = tables.reduce((s, t) => s + (t.extractionScore || t.confidence || 0), 0) / tables.length;
         const provenance = window.GxProvenance
             ? window.GxProvenance.build('pdf-processor', window.CwsContracts.PROVENANCE_STAGES.EXTRACTION, {
                 source: baseName(),
@@ -277,7 +344,13 @@ async function sendTablesToTafne() {
             hints: { suggestedTarget: 'tifany', action: 'load-candidate-tables' },
             provenance,
         }));
-        showToast(`Sent ${tables.length} table${tables.length > 1 ? 's' : ''} to TAFNE`, 'success');
+        // Say when the round trip will NOT be available, at the moment it is
+        // decided. Discovering it later — as a back-annotate route that simply
+        // isn't offered in the other tool — reads as a missing feature.
+        showToast(
+            `Sent ${tables.length} table${tables.length > 1 ? 's' : ''} to TAFNE` +
+            (unaddressed ? ` (${unaddressed} cannot be edited back — no source region)` : ''),
+            'success');
     } catch (err) {
         showToast(`Send failed: ${err.message || err}`, 'error');
     }
