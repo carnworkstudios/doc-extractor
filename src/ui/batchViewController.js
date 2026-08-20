@@ -51,7 +51,7 @@ async function decodeDocument({ bytes, format, name }) {
     if (format === 'html' || format === 'md') {
         const html = format === 'md' ? markdownToHtml(raw) : raw;
         const clean = typeof DOMPurify !== 'undefined'
-            ? DOMPurify.sanitize(html, { ADD_TAGS: ['style'], ALLOW_DATA_ATTR: true, FORCE_BODY: false })
+            ? DOMPurify.sanitize(html, { ADD_TAGS: ['style'], ALLOW_DATA_ATTR: true, ADD_ATTR: ['style'], FORCE_BODY: false })
             : html;
         return {
             html: clean,

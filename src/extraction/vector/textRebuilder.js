@@ -419,11 +419,24 @@ function _getItemStyle(item) {
         bold:      item.bold   ?? /bold|heavy|black/i.test(name),
         italic:    item.italic ?? /italic|oblique|slanted/i.test(name),
         underlined: !!item.underlined,
+        // Attached by pageAssembler._scopeItems when a LinkAnnotation covers
+        // this item. Carried into the style key so runs with different hrefs
+        // never merge.
+        link:      item._gxLink ?? null,
     };
 }
 
 function _styleKey(s) {
-    return (s.bold ? 'b' : '') + (s.italic ? 'i' : '') + (s.underlined ? 'u' : '');
+    return (s.bold ? 'b' : '') + (s.italic ? 'i' : '') + (s.underlined ? 'u' : '') +
+           (s.link ? `:${s.link.href}` : '');
+}
+
+function _escAttr(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 }
 
 function _wrapInlineStyle(text, style) {
@@ -431,6 +444,12 @@ function _wrapInlineStyle(text, style) {
     if (style.underlined) html = `<u>${html}</u>`;
     if (style.italic)     html = `<em>${html}</em>`;
     if (style.bold)       html = `<strong>${html}</strong>`;
+    if (style.link) {
+        const link = style.link;
+        const src = link.source ? ` data-link-source="${_escAttr(link.source)}"` : '';
+        const pg  = link.page != null ? ` data-link-page="${_escAttr(String(link.page))}"` : '';
+        html = `<a href="${_escAttr(link.href)}"${src}${pg}>${html}</a>`;
+    }
     return html;
 }
 

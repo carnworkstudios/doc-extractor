@@ -543,9 +543,21 @@ export function mergeFlowChains(doc) {
 }
 
 // Structural wrappers the semantic exporters descend through — reading order is
-// child order within each (page-row → col → zone → region), so a plain
+// child order within each (page-row → col → zone → region → figure), so a plain
 // depth-first walk over children yields blocks in reading order.
-export const FLOW_WRAPPER_RE = /\bpdf-(page-row|col|zone|region)\b/;
+//
+// `pdf-figure` is the <figure> a picture gets once _mergeFigureCaptions has
+// paired it with its caption. Leaving it out stopped the walk ON the figure,
+// so the whole thing — image and caption — collapsed into one paragraph.
+export const FLOW_WRAPPER_RE = /\bpdf-(page-row|col|zone|region|figure)\b/;
+
+// A picture leaf. `pdf-image-stack` is the wrapper a picture gets when the
+// classifier recovered its own labels (callouts, axis ticks) and positioned
+// them over the crop as `.pdf-image-textlayer`. It is NOT a flow wrapper — the
+// walkers stop on it — so matching only `pdf-image-placeholder` sent every
+// labelled figure down the paragraph branch, which emitted the label glyphs as
+// prose and dropped the image entirely.
+export const IMAGE_BLOCK_RE = /\bpdf-image-(placeholder|stack)\b/;
 
 // ── Markdown export ───────────────────────────────────────────────────────────
 
@@ -619,8 +631,8 @@ async function exportToMarkdown(gxDoc, html) {
             return;
         }
 
-        // Image placeholder
-        if (tag === 'div' && cls.includes('pdf-image-placeholder')) {
+        // Image placeholder (bare, or wrapped in a labelled image stack)
+        if (tag === 'div' && IMAGE_BLOCK_RE.test(cls)) {
             const img = el.querySelector('img[data-img-id]');
             const id = img?.getAttribute('data-img-id') || 'img';
             lines.push(`![Image ${id}](image_${id}.png)\n`);
@@ -713,8 +725,8 @@ function exportToXML(gxDoc, html) {
             return;
         }
 
-        // Image placeholder
-        if (cls.includes('pdf-image-placeholder')) {
+        // Image placeholder (bare, or wrapped in a labelled image stack)
+        if (IMAGE_BLOCK_RE.test(cls)) {
             const img = el.querySelector('img[data-img-id]');
             const id = img?.getAttribute('data-img-id') || '';
             xml += `    <image ref="${xmlEsc(id)}"/>\n`;
@@ -880,10 +892,11 @@ function exportToJson(gxDoc) {
 function runsToMarkdown(block) {
     if (!Array.isArray(block.runs) || !block.runs.length) return block.text || '';
     return block.runs.map(r => {
-        const s = r.text || '';
-        if (r.bold && r.italic) return `***${s}***`;
-        if (r.bold) return `**${s}**`;
-        if (r.italic) return `*${s}*`;
+        let s = r.text || '';
+        if (r.bold && r.italic) s = `***${s}***`;
+        else if (r.bold) s = `**${s}**`;
+        else if (r.italic) s = `*${s}*`;
+        if (r.link?.href) s = `[${s}](${r.link.href})`;
         return s;
     }).join('');
 }

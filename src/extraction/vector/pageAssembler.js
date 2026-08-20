@@ -17,6 +17,7 @@
 
 import { buildTable } from './tableBuilder.js';
 import { rebuildText } from './textRebuilder.js';
+import { buildDisplayMath } from './mathBuilder.js';
 import { RegionType } from './classifiers/regionTypes.js';
 import { linkFlows } from './classifiers/flowLinker.js';
 import { detectZoneColumns } from './contextClassifier.js';
@@ -24,6 +25,7 @@ import { PageScale } from './pageScale.js';
 import { layoutTreeBuilder, compareBoxes } from './layoutTreeBuilder.js';
 import { resolveLayout } from '@canwork/boxwood';
 import { createPdfMeasure } from './pdfMeasure.js';
+import katex from 'katex';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -407,9 +409,12 @@ export function _buildContainers(regions, viewportWidth) {
  * @param {number}             pageNum      — 1-based page number
  * @param {Map}                fontRegistry — shared registry; mutated in place
  * @param {number[]}           columnSplits — array of X coordinates for column gutters
+ * @param {object}             opts         — { skipMath } — MATH switched off in
+ *   the Regions legend, so a paragraph that reconstructs to LaTeX still renders
+ *   as prose.
  * @returns {{ html: string, text: string, tableCount: number }}
  */
-export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt, pageNum, fontRegistry, columnSplits = [], extractedImages = {}, docScale = null) {
+export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt, pageNum, fontRegistry, columnSplits = [], extractedImages = {}, docScale = null, links = [], opts = {}) {
     const parts = [];
     const textParts = [];
     let tableCount = 0;
@@ -542,14 +547,33 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
     // re-running the extractor.
     const textEntries = [];
     const containers = _buildContainers(regions, viewport.width);
+
+    // Item → link map (first link over an item wins). _scopeItems copies the
+    // matched link onto the item as `_gxLink`, and textRebuilder wraps any run
+    // carrying one in <a href>. Links that cover no rendered text (figures,
+    // tables, whole-page graphics) instead surface as a data-link attribute on
+    // the region wrapper below.
+    // Each entry carries the character span the link actually covers, because
+    // pdf.js routinely emits a whole line as one item and only a few words of
+    // it are the link.
+    const linkByIndex = new Map();
+    for (const l of links || []) {
+        const spans = (l.spans && l.spans.length)
+            ? l.spans
+            : (l.itemIndices || []).map(i => ({ index: i, start: 0, end: Infinity }));
+        for (const s of spans) {
+            if (!linkByIndex.has(s.index)) linkByIndex.set(s.index, { link: l, start: s.start, end: s.end });
+        }
+    }
+
     const rendered = regions.map(region => {
-        const { html, text, tables } = _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages, pageScaleOpts, containers);
+        const { html, text, tables } = _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages, pageScaleOpts, containers, linkByIndex, { skipMath: !!opts.skipMath });
         tableCount += tables;
         if (text) textEntries.push({ region, text });
         const ry = Math.round(region.yCenter ?? 0);
         const rx = Math.round(region.bbox?.x ?? 0);
         return {
-            html: html ? `<div class="pdf-region" data-ry="${ry}" data-rx="${rx}">${html}</div>` : '',
+            html: html ? `<div class="pdf-region" data-ry="${ry}" data-rx="${rx}"${_regionLinkAttr(region, links)}>${html}</div>` : '',
             colIdx: region.columnIndex,
             ry,
             rx,
@@ -668,7 +692,7 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
     }
 
     const html = hasContent
-        ? `<article class="pdf-doc">\n<section class="pdf-page-content" data-page="${pageNum}" data-page-width="${Math.round(pageWidth)}" data-zones='${zonesJson}'>\n` +
+        ? `<article class="pdf-doc">\n<section class="pdf-page-content" id="page-${pageNum}" data-page="${pageNum}" data-page-width="${Math.round(pageWidth)}" data-zones='${zonesJson}'>\n` +
           `<h4 class="page-label">Page ${pageNum}</h4>\n` +
           contentHtml + '\n' + extraStyles + '\n</section>\n</article>'
         : '';
@@ -880,35 +904,126 @@ function _mergeFigureCaptions(regions, textMeta) {
 
 // Merge bold/italic/underlined flags from textMeta (which has the reliable
 // font-style data from page.commonObjs) onto the raw PDF.js items so
-// textRebuilder can emit <strong>/<em>/<u> wrappers per-item.
-function _scopeItems(region, textItems, textMeta) {
-    return (region.textItemIndices || []).map(i => {
+// textRebuilder can emit <strong>/<em>/<u> wrappers per-item. Link coverage is
+// attached the same way: an item under a LinkAnnotation carries `_gxLink` so
+// textRebuilder wraps its run in <a href>.
+function _scopeItems(region, textItems, textMeta, linkByIndex = null) {
+    const out = [];
+    for (const i of (region.textItemIndices || [])) {
         const raw  = textItems[i];
         const meta = textMeta[i];
-        if (!meta) return raw;
-        const needsMerge = meta.bold || meta.italic || meta.underlined;
-        if (!needsMerge) return raw;
-        return {
-            ...raw,
-            bold:      meta.bold,
-            italic:    meta.italic,
-            underlined: meta.underlined,
-        };
-    });
+        const hit  = linkByIndex ? linkByIndex.get(i) : null;
+        if (!meta && !hit) { out.push(raw); continue; }
+        const merged = (meta && (meta.bold || meta.italic || meta.underlined))
+            ? { ...raw, bold: meta.bold, italic: meta.italic, underlined: meta.underlined }
+            : raw;
+        if (!hit) { out.push(merged); continue; }
+        const gxLink = { href: hit.link.href, source: 'pdf', page: hit.link.page };
+        for (const piece of _splitItemAtSpan(merged, hit.start, hit.end, gxLink)) out.push(piece);
+    }
+    return out;
 }
 
 /**
- * Build a positioned, editable text layer for a picture's own labels.
+ * Slice one text item into up to three items: the text before the link, the
+ * linked text, and the text after it. Geometry is interpolated proportionally
+ * (x advance and width scale with character count), the same approximation the
+ * math atomizer uses — the consumers only compare these against thresholds of
+ * roughly a third of a font size.
  *
- * Geometry is emitted in PERCENTAGES of the region box and font size in `cqw`
- * (container query width) units, so the layer tracks the image under
- * `max-width: 100%` instead of drifting off it the moment the column narrows.
- * Absolute px would only line up at one viewport size.
- *
- * `vy` from the classifier is the text BASELINE; CSS `top` is the box top, so
- * it is lifted by roughly the cap height.
+ * Without this a link over "Fig. 8" makes the whole sentence clickable,
+ * because pdf.js hands the extractor a full line as a single item.
  */
-function _imageTextLayer(region, textMeta) {
+function _splitItemAtSpan(item, start, end, gxLink) {
+    const str = item.str || '';
+    const s = Math.max(0, Math.min(str.length, start | 0));
+    const e = Math.max(s, Math.min(str.length, end === Infinity ? str.length : (end | 0)));
+    if (s <= 0 && e >= str.length) return [{ ...item, _gxLink: gxLink }];
+
+    const width   = item.width || 0;
+    const perChar = width / Math.max(str.length, 1);
+    const x0      = item.transform ? item.transform[4] : 0;
+    const cut = (from, to, link) => {
+        const text = str.slice(from, to);
+        if (!text) return null;
+        const piece = {
+            ...item,
+            str: text,
+            width: perChar * (to - from),
+        };
+        if (item.transform) {
+            piece.transform = [...item.transform];
+            piece.transform[4] = x0 + perChar * from;
+        }
+        if (link) piece._gxLink = link;
+        else delete piece._gxLink;
+        return piece;
+    };
+    return [cut(0, s, null), cut(s, e, gxLink), cut(e, str.length, null)].filter(Boolean);
+}
+
+/**
+ * data-link attribute for links this region must carry but cannot express as
+ * item-level <a> wrappers — a figure, table, or full-page graphic that a link
+ * annotation points at. Text-rendering regions skip links whose covered items
+ * are all inside their own text item set: textRebuilder already wrapped them.
+ * Image/table regions never render item-level <a>, so any link whose rect
+ * touches them is carried here (their caption/label items, even if covered,
+ * do not become clickable text).
+ */
+const LINK_TEXT_REGION_TYPES = new Set(['PARAGRAPH', 'HEADING', 'LIST', 'BOX', 'HEADER', 'FOOTER']);
+
+function _regionLinkAttr(region, links, slack = 4) {
+    const b = region.bbox;
+    if (!b) return '';
+    const regionIdx = new Set(region.textItemIndices || []);
+    const rendersText = LINK_TEXT_REGION_TYPES.has(region.type);
+    const hrefs = [];
+    for (const l of links || []) {
+        const r = l.rect;
+        if (!r) continue;
+        if (!(r.x - slack < b.x + b.w && r.x + r.w + slack > b.x &&
+              r.y - slack < b.y + b.h && r.y + r.h + slack > b.y)) continue;
+        const covered = l.itemIndices || [];
+        if (rendersText && covered.length && covered.every(i => regionIdx.has(i))) continue;
+        hrefs.push(l.href);
+    }
+    return hrefs.length ? ` data-link="${hrefs.join(',')}"` : '';
+}
+
+/**
+ * Build a positioned text layer for a picture's own labels, as an SVG overlay.
+ *
+ * This was CSS: absolutely positioned spans, percentage offsets, font size in
+ * `cqw`. It required `container-type: inline-size` on the wrapper to give the
+ * container query a container, and that is what destroyed the picture — see
+ * `_imageStack` below. It also had to guess a cap height to convert a baseline
+ * into a CSS `top`.
+ *
+ * TWO things make an SVG overlay land exactly, and both are about refusing to
+ * round:
+ *
+ *   1. The viewBox is the CROP'S OWN PIXEL GRID (`pw × ph`), not the region
+ *      bbox. `preserveAspectRatio="none"` stretches the viewBox onto the
+ *      element box, and the element box is showing exactly those `pw × ph`
+ *      pixels stretched the same way — so bitmap pixel and user unit are the
+ *      same thing by construction, whatever the layout does. Using the bbox
+ *      instead re-derives the mapping from `width`/`height` attributes that are
+ *      INTEGERS: a 97-viewport-px crop declares 48 where it is really 48.5, and
+ *      the 0.5 becomes a 1.5% horizontal/vertical scale MISMATCH that skews
+ *      every label a little further out the further it sits from the origin.
+ *
+ *   2. Each run declares `textLength` — the advance width pdf.js measured — with
+ *      `lengthAdjust="spacingAndGlyphs"`. The overlay is not drawn in the
+ *      document's embedded font (it is drawn in whatever `font-family: inherit`
+ *      resolves to), so an unconstrained run drifts from its raster twin as it
+ *      gets longer. The PDF already states the true width; forcing the run into
+ *      it is the same correction pdf.js's own text layer applies.
+ *
+ * And SVG `<text>` is positioned by its BASELINE, which is exactly what the
+ * classifier measured, so the old cap-height fudge disappears with it.
+ */
+function _imageTextLayer(region, textMeta, imgPixels = null) {
     const bbox = region.bbox;
     const idxs = region.textItemIndices || [];
     if (!bbox || !bbox.w || !bbox.h || !idxs.length) return { html: '', text: '' };
@@ -919,30 +1034,74 @@ function _imageTextLayer(region, textMeta) {
         .sort((a, b) => a.vy - b.vy || a.vx - b.vx);
     if (!items.length) return { html: '', text: '' };
 
-    const spans = [];
+    // Viewport px → crop px. Falls back to 1:1 (viewport units) for a region
+    // with no crop, where the placeholder box IS the bbox.
+    const vbW = imgPixels?.pw || bbox.w;
+    const vbH = imgPixels?.ph || bbox.h;
+    const sx = vbW / bbox.w;
+    const sy = vbH / bbox.h;
+
+    const texts = [];
     for (const tm of items) {
-        const left = ((tm.vx - bbox.x) / bbox.w) * 100;
-        const top  = ((tm.vy - (tm.vFont || 0) * 0.8 - bbox.y) / bbox.h) * 100;
-        if (!isFinite(left) || !isFinite(top)) continue;
-        // Font size as a fraction of the region's width, so it scales with the
-        // container rather than staying pinned to the extraction scale.
-        const fs = ((tm.vFont || 10) / bbox.w) * 100;
-        spans.push(
-            `<span class="pdf-img-label" contenteditable="true" ` +
-            `style="position:absolute;left:${left.toFixed(2)}%;top:${top.toFixed(2)}%;` +
-            `font-size:${fs.toFixed(2)}cqw;line-height:1;white-space:pre;">` +
-            esc(tm.str) + `</span>`
+        const x = (tm.vx - bbox.x) * sx;
+        const y = (tm.vy - bbox.y) * sy;   // baseline, straight through
+        if (!isFinite(x) || !isFinite(y)) continue;
+        const fs = (tm.vFont || 10) * sy;
+        // A single glyph has no inter-character spacing to redistribute, and a
+        // zero/absent advance means pdf.js never measured one.
+        const adv = (tm.vWidth || 0) * sx;
+        const fit = (adv > 0 && tm.str.length > 1)
+            ? ` textLength="${adv.toFixed(2)}" lengthAdjust="spacingAndGlyphs"`
+            : '';
+        // A rotated run (a chart's y-axis label) rotates about its own baseline
+        // origin, so x/y stay the anchor and only the direction changes.
+        const rot = (tm.rot && Math.abs(tm.rot) > 0.0087)
+            ? ` transform="rotate(${(tm.rot * 180 / Math.PI).toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)})"`
+            : '';
+        texts.push(
+            `<text class="pdf-img-label" x="${x.toFixed(2)}" y="${y.toFixed(2)}" ` +
+            `font-size="${fs.toFixed(2)}"${fit}${rot} xml:space="preserve">${esc(tm.str)}</text>`
         );
     }
-    if (!spans.length) return { html: '', text: '' };
+    if (!texts.length) return { html: '', text: '' };
 
     return {
-        html: `<div class="pdf-image-textlayer" style="position:absolute;inset:0;">${spans.join('')}</div>`,
+        html: `<svg class="pdf-image-textlayer" viewBox="0 0 ${_num(vbW)} ${_num(vbH)}" ` +
+              `preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" ` +
+              `style="position:absolute;left:0;top:0;width:100%;height:100%;` +
+              `fill:currentColor;font-family:inherit;">${texts.join('')}</svg>`,
         text: items.map(tm => tm.str).join(' ').replace(/\s+/g, ' ').trim(),
     };
 }
 
-function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages = {}, _pageScaleOpts = {}, containers = null) {
+/** Trim a float to a short, exact-enough string without forcing an integer. */
+function _num(v) {
+    return Number.isInteger(v) ? String(v) : Number(v.toFixed(2)).toString();
+}
+
+/**
+ * Wrap a picture and its label overlay in a box that is exactly the picture.
+ *
+ * Two things must hold and both were broken:
+ *
+ *   1. NO `container-type` here. Inline-size containment makes a box compute
+ *      its inline size as if it had no contents, and this box is shrink-to-fit
+ *      (`display: inline-block`) — so it resolved to zero, `max-width: 100%`
+ *      on the image resolved against zero, and every labelled picture in the
+ *      document rendered 0×0. Measured, not theorised: removing this one
+ *      declaration took the image from 0×0 back to 206×112.
+ *   2. The overlay is positioned against THIS box, so this box has to be the
+ *      picture's box. The placeholder's `margin: 10px 0` moves to the wrapper;
+ *      left on the inner div it pushed the picture down inside the wrapper and
+ *      every label sat ~10px high.
+ */
+function _imageStack(imgHtml, layerHtml) {
+    const inner = imgHtml.replace(/(<div class="pdf-image-placeholder"[^>]*style="[^"]*?)margin:\s*10px 0;\s*/, '$1');
+    return `<div class="pdf-image-stack" style="position: relative; display: inline-block; ` +
+           `max-width: 100%; margin: 10px 0;">${inner}${layerHtml}</div>`;
+}
+
+function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages = {}, _pageScaleOpts = {}, containers = null, linkByIndex = null, renderOpts = {}) {
     const container = containers
         ? (containers.byCol.get(region.columnIndex ?? -1) || containers.page)
         : null;
@@ -954,7 +1113,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
         case RegionType.LATTICE_TABLE:
         case RegionType.TABLE: {          // TABLE kept as legacy alias
             if (!region.lattice) break;
-            const scopedItems = _scopeItems(region, textItems, textMeta);
+            const scopedItems = _scopeItems(region, textItems, textMeta, linkByIndex);
             const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set(), region.proximityPx);
             if (tableHtml) {
                 html = `<div class="pdf-table-wrap pdf-table--lattice" data-region-id="${region.id}">${tableHtml}</div>`;
@@ -965,7 +1124,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 
         case RegionType.STREAM_TABLE: {
             if (!region.lattice) break;
-            const scopedItems = _scopeItems(region, textItems, textMeta);
+            const scopedItems = _scopeItems(region, textItems, textMeta, linkByIndex);
             const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set(), region.proximityPx);
             if (tableHtml) {
                 html = `<div class="pdf-table-wrap pdf-table--borderless" data-region-id="${region.id}">${tableHtml}</div>`;
@@ -1046,14 +1205,14 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             // CLAIMS them so they don't scatter into the paragraph flow, and
             // without this they were then dropped from both the markup and the
             // text output, silently deleting every label on the page.
-            const layer = _imageTextLayer(region, textMeta);
+            const layer = _imageTextLayer(region, textMeta, imgEntry || null);
             if (layer.html) {
-                imgHtml = `<div class="pdf-image-stack" style="position: relative; display: inline-block; max-width: 100%; container-type: inline-size;">${imgHtml}${layer.html}</div>`;
+                imgHtml = _imageStack(imgHtml, layer.html);
                 text = layer.text;
             }
 
             if (region.captionRegion) {
-                const capData = _renderRegion(region.captionRegion, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages, _pageScaleOpts, containers);
+                const capData = _renderRegion(region.captionRegion, textMeta, textItems, viewport, pageWidthPt, fontRegistry, extractedImages, _pageScaleOpts, containers, linkByIndex, renderOpts);
                 html = `<figure class="pdf-figure" style="margin: 16px 0;">${imgHtml}<figcaption class="pdf-figcaption" style="text-align: center; font-size: 0.9em; color: #666; margin-top: 8px;">${capData.html}</figcaption></figure>`;
                 text = text ? `${text}\n${capData.text}` : capData.text;
             } else {
@@ -1063,7 +1222,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
         }
 
         case RegionType.HEADING: {
-            const scopedItems = _scopeItems(region, textItems, textMeta);
+            const scopedItems = _scopeItems(region, textItems, textMeta, linkByIndex);
             const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
             // Use inline-html to get styled runs without a wrapping <p>
             const headingHtml = rebuildText(scopedItems, pageWidthPt, { format: 'inline-html', ..._pageScaleOpts });
@@ -1080,7 +1239,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
         }
 
         case RegionType.LIST: {
-            const scopedItems = _scopeItems(region, textItems, textMeta);
+            const scopedItems = _scopeItems(region, textItems, textMeta, linkByIndex);
             const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
             const rawList = _buildList(scopedItems, pageWidthPt, region.listOrdered);
             if (!rawList) break;
@@ -1089,16 +1248,42 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             const fontClass = _registerFont(fontRegistry, family, sizePt, bold, italic);
 
             // Parse the raw <ul>/<ol> into standalone list with correct semantics
-            html = _buildStandaloneList(rawList, fontClass);
+            html = _buildStandaloneList(rawList.html, fontClass, rawList.startNum);
             text = scopedItems.map(i => i.str?.trim()).filter(Boolean).join('\n');
             break;
         }
 
+        // MATH is the same renderer as PARAGRAPH with the detector forced on:
+        // a region the user tagged by hand goes to LaTeX even when the gate
+        // would have refused it, and falls back to prose if it cannot be built.
+        case RegionType.MATH:
         case RegionType.PARAGRAPH: {
-            const scopedItems = _scopeItems(region, textItems, textMeta);
+            const forceMath = region.type === RegionType.MATH;
+            const scopedItems = _scopeItems(region, textItems, textMeta, linkByIndex);
             const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
+
+            // Display math: a math-dense line with structure (fractions,
+            // series limits, radicals, scripts) assembles to LaTeX and is
+            // rendered worker-side through the vendored KaTeX build — no CDN,
+            // offline. Plain text and prose paragraphs fall through to
+            // rebuildText unchanged.
+            let mathLatex = null;
+            let mathHtml = null;
+            try {
+                if (renderOpts.skipMath) mathLatex = null;
+                else mathLatex = buildDisplayMath(scopedItems, { force: forceMath });
+                if (mathLatex) {
+                    mathHtml = katex.renderToString(mathLatex, {
+                        displayMode: true,
+                        output: 'html',
+                        throwOnError: false,
+                        strict: false,
+                    });
+                }
+            } catch { /* any failure degrades to the plain-text path */ }
+
             const paraHtml = rebuildText(scopedItems, pageWidthPt, { format: 'html', ..._pageScaleOpts });
-            if (!paraHtml.trim()) break;
+            if (!paraHtml.trim() && !mathHtml) break;
 
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
             const fontClass  = _registerFont(fontRegistry, family, sizePt, bold, italic);
@@ -1118,6 +1303,25 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                     }
                 }
             }
+
+            if (mathHtml) {
+                // A real math block: the raw TeX rides along in data-latex
+                // (escaped for the attribute) so downstream tooling can re-
+                // render or export it without re-deriving geometry. KaTeX's
+                // output relies on inline style attributes — the sanitizer
+                // allows them for extracted content (see ADD_ATTR ['style']).
+                const texAttr = String(mathLatex).replace(/"/g, '&quot;');
+                html = `<p class="${fontClass} ${alignClass} pdf-paragraph pdf-math-block"` +
+                       `${firstFlowAttrs} data-math="" data-latex="${texAttr}">${mathHtml}</p>`;
+                text = mathLatex;
+                // Tell the analyze overlay what this actually became, so the
+                // Regions legend can show — and switch off — the equations.
+                region.type = RegionType.MATH;
+                break;
+            }
+            // A MATH region whose LaTeX could not be built is prose again, and
+            // must say so or the legend would show an equation that is not one.
+            if (forceMath) region.type = RegionType.PARAGRAPH;
 
             // Flatten: extract <p> contents from rebuildText's html output
             // and re-wrap in proper <p> tags with font/alignment classes.
@@ -1154,7 +1358,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
         }
 
         case RegionType.BOX: {
-            let scopedItems = _scopeItems(region, textItems, textMeta);
+            let scopedItems = _scopeItems(region, textItems, textMeta, linkByIndex);
             let scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
 
             // In-box banner: when the black "! WARNING" bar shares the same
@@ -1224,7 +1428,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 
         case RegionType.HEADER:
         case RegionType.FOOTER: {
-            const scopedItems = _scopeItems(region, textItems, textMeta);
+            const scopedItems = _scopeItems(region, textItems, textMeta, linkByIndex);
             const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
             const innerHtml   = rebuildText(scopedItems, pageWidthPt, { format: 'inline-html', ..._pageScaleOpts });
             if (!innerHtml.trim()) break;
@@ -1256,7 +1460,16 @@ function _itemStyle(item) {
         bold:      item.bold   ?? /bold|heavy|black/i.test(name),
         italic:    item.italic ?? /italic|oblique|slanted/i.test(name),
         underlined: !!item.underlined,
+        link:      item._gxLink ?? null,
     };
+}
+
+function _escAttr(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 }
 
 function _wrapStyle(text, style) {
@@ -1264,6 +1477,12 @@ function _wrapStyle(text, style) {
     if (style.underlined) html = `<u>${html}</u>`;
     if (style.italic)     html = `<em>${html}</em>`;
     if (style.bold)       html = `<strong>${html}</strong>`;
+    if (style.link) {
+        const link = style.link;
+        const src = link.source ? ` data-link-source="${_escAttr(link.source)}"` : '';
+        const pg  = link.page != null ? ` data-link-page="${_escAttr(String(link.page))}"` : '';
+        html = `<a href="${_escAttr(link.href)}"${src}${pg}>${html}</a>`;
+    }
     return html;
 }
 
@@ -1307,12 +1526,22 @@ function _buildList(textItems, pageWidthPt, isOrdered) {
         itemGroups[itemGroups.length - 1].push(l);
     }
 
+    // The first ordered marker is the list's START NUMBER. A source that begins
+    // at 5 must assemble as <ol start="5">, not restart at 1. The marker is
+    // stripped from the <li> text below, so capture it from the raw string here
+    // and hand it to the standalone wrapper — detecting it afterwards can never
+    // work because the prefix is already gone.
+    let startNum = 1;
     const listItems = itemGroups
-        .map(group => {
+        .map((group, gi) => {
             const styled = group.flatMap((l, lineIdx) =>
                 l.items.map((item, idx) => {
                     let str = item.str.trim();
-                    if (lineIdx === 0 && idx === 0) str = str.replace(stripRe, '').trim();
+                    if (lineIdx === 0 && idx === 0) {
+                        const numMatch = /^(\d{1,3})[.)](?!\d)/.exec(str);
+                        if (gi === 0 && numMatch) startNum = parseInt(numMatch[1], 10);
+                        str = str.replace(stripRe, '').trim();
+                    }
                     return str ? _wrapStyle(str, _itemStyle(item)) : '';
                 })
             ).filter(Boolean).join(' ');
@@ -1321,21 +1550,26 @@ function _buildList(textItems, pageWidthPt, isOrdered) {
         .filter(Boolean);
 
     if (!listItems.length) return '';
-    return `<${tag}>\n${listItems.join('\n')}\n</${tag}>`;
+    return {
+        html: `<${tag}>\n${listItems.join('\n')}\n</${tag}>`,
+        startNum,
+    };
 }
 
 /**
  * Wraps a raw <ul>/<ol> string as a standalone, semantically-correct list.
  *
  * Improvements over the previous rawList.replace() approach:
- *  - Detects ordered start number from the first <li> text prefix and sets start="N"
+ *  - Carries the ordered start number (captured by _buildList before it strips
+ *    the marker) onto <ol start="N"> so a list that begins at 5 does not
+ *    restart at 1
  *  - Strips numeric/bullet prefixes that _buildList may have left on <li> text
  *  - Detects nested items (deeper indentation prefix inside an <li>) and wraps
  *    them as child <ul>/<ol> inside the parent <li>
  *  - Wraps the whole thing in <div class="pdf-list-wrap"> so adjacent lists
  *    never merge in the DOM (contenteditable collapses adjacent same-type lists)
  */
-function _buildStandaloneList(rawHtml, fontClass) {
+function _buildStandaloneList(rawHtml, fontClass, startNum = 1) {
     const isOrdered = rawHtml.trimStart().startsWith('<ol');
 
     // Parse via DOM (we're in a Worker — use a lightweight regex approach instead)
@@ -1347,11 +1581,6 @@ function _buildStandaloneList(rawHtml, fontClass) {
         liContents.push(m[1]);
     }
     if (!liContents.length) return rawHtml; // fallback — return as-is
-
-    // Detect start number from first item's visible text
-    const firstText = liContents[0].replace(/<[^>]+>/g, '').trim();
-    const orderedStartMatch = /^(\d+)[.)]\s/.exec(firstText);
-    const startNum = orderedStartMatch ? parseInt(orderedStartMatch[1], 10) : 1;
 
     // Build <li> elements — detect nested sub-items within each li
     const liTags = liContents.map(content => {
@@ -1386,7 +1615,7 @@ function _buildStandaloneList(rawHtml, fontClass) {
     });
 
     const tag        = isOrdered ? 'ol' : 'ul';
-    const startAttr  = (isOrdered && startNum !== 1) ? ` start="${startNum}"` : '';
+    const startAttr  = isOrdered ? ` start="${startNum}"` : '';
     const listHtml   = `<${tag} class="${fontClass}"${startAttr}>\n${liTags.join('\n')}\n</${tag}>`;
 
     return `<div class="pdf-list-wrap">${listHtml}</div>`;

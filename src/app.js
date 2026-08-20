@@ -4,6 +4,7 @@
 
 import $ from 'jquery';
 import DOMPurify from 'dompurify';
+import 'katex/dist/katex.min.css';
 import { initViewTabs, syncToolbarToView } from './ui/viewController.js';
 import { initFileInputs } from './ui/fileUpload.js';
 import { initExportSystem } from './ui/exportController.js';

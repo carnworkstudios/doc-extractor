@@ -283,8 +283,8 @@ body {
 /* Zone: parent container — bold left border + tinted background */
 #html-preview.selection-mode .pdf-zone,
 #visual-diff-html.selection-mode .pdf-zone {
-  border-left: 3px solid var(--accent);
-  background: rgba(79, 172, 254, 0.04);
+  border-left: 3px solid #227308;
+  /* background: rgba(79, 172, 254, 0.04); */
   /* border-radius: 2px; */
   cursor: grab;
   transition:

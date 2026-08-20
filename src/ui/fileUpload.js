@@ -23,6 +23,7 @@ import { buildStructuredPayload } from './structuredExtract.js';
 import { initMcpVerbs } from './mcpVerbs.js';
 import { classifyPage } from '../extraction/vector/contextClassifier.js';
 import { assemblePage, createFontRegistry } from '../extraction/vector/pageAssembler.js';
+import { katexExportCss } from '../extraction/vector/katexExport.css.js';
 import { synthesizeFromWords, makeSyntheticViewport } from '../extraction/vector/rasterSynth.js';
 import { ensureTesseract, recognizePage } from './tesseractOcr.js';
 import { htmlToGxDoc } from '../ir/htmlToGxDoc.js';
@@ -1128,6 +1129,7 @@ async function handleDocumentFile(file, slot = 1) {
         ? DOMPurify.sanitize(html, {
             ADD_TAGS: ['style'],
             ALLOW_DATA_ATTR: true,
+            ADD_ATTR: ['style'],
             FORCE_BODY: false,
           })
         : html;
@@ -1683,7 +1685,7 @@ export function populateHTMLPreview(html, containerId = 'html-preview') {
     const el = document.getElementById(containerId);
     if (!el) return;
     const clean = typeof DOMPurify !== 'undefined'
-        ? DOMPurify.sanitize(html, { ADD_TAGS: ['img'], ALLOW_DATA_ATTR: true })
+        ? DOMPurify.sanitize(html, { ADD_TAGS: ['img'], ALLOW_DATA_ATTR: true, ADD_ATTR: ['style'] })
         : html;
     el.innerHTML = clean;
     // VisualGridMapper is invoked here via initTableFeatures → initCrosshair,
@@ -1923,6 +1925,14 @@ export async function downloadExtractedHTML() {
     const fontCss = [ownCss ? `<style>\n${ownCss}\n</style>` : '', headCss]
         .filter(Boolean).join('\n');
 
+    // Math blocks are KaTeX markup, which needs its stylesheet (and fonts) to
+    // render. A standalone export has no app to load them, so inline the
+    // generated self-contained KaTeX CSS (fonts as base64 data URIs) whenever
+    // the document actually contains math.
+    const katexCss = /class="[^"]*katex/.test(html) || /data-math=""/.test(html)
+        ? `<style>\n${katexExportCss}\n</style>`
+        : '';
+
     // Restore body innerHTML as the document string
     html = doc.body.innerHTML;
 
@@ -1931,6 +1941,7 @@ export async function downloadExtractedHTML() {
         '<meta charset="utf-8"/>',
         `<title>${title}</title>`,
         fontCss,
+        katexCss,
         '<style>body{font-family:sans-serif;max-width:1000px;margin:0 auto;padding:2rem;}img{max-width:100%;}',
         '.pdf-doc .f0,.pdf-doc .f1,.pdf-doc .f2,.pdf-doc .f3,.pdf-doc .f4,.pdf-doc .f5,.pdf-doc .f6,.pdf-doc .f7,.pdf-doc .f8,.pdf-doc .f9 { margin: 0; }',
         '.pdf-doc .pdf-paragraph { margin: 0.5em 0; }',

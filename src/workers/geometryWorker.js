@@ -42,6 +42,7 @@ import { pageTextMeta, bboxToViewport, scoreExternalPage, REGION_SPACES }
     from '../extraction/vector/externalScorer.js';
 import { scoreFlow, geometricOrder } from '../extraction/vector/flowScorer.js';
 import { readStructOrder } from '../extraction/vector/structTreeReader.js';
+import { finalizeLinks, associateLinks } from '../extraction/vector/linkExtractor.js';
 // IndexedDB is available in workers, so the crop never has to cross the wire as
 // a string. The worker writes the blob and sends only its key.
 import { saveImages, cropKey, deleteDoc } from '../utils/imageStore.js';
@@ -657,10 +658,11 @@ self.onmessage = async (e) => {
             const viewport = page.getViewport({ scale: 2.0 });
             const pageWidthPt = page.view[2] - page.view[0];
 
-            const [opList, textContent, rawStructTree] = await Promise.all([
+            const [opList, textContent, rawStructTree, annotations] = await Promise.all([
                 page.getOperatorList(),
                 page.getTextContent(),
                 page.getStructTree().catch(() => null),
+                page.getAnnotations({ intent: 'display' }).catch(() => []),
             ]);
 
             // ── Phase 1: Page inventory (ctmAdapter) ─────────────────────────
@@ -702,6 +704,14 @@ self.onmessage = async (e) => {
             // raster XObjects.
             const extractedImages = await _extractPageImages(page, regions, 2.0, p);
 
+            // ── Phase 2.7: Link annotations → normalized, item-associated ────
+            // External urls are sanitized; internal dests resolve to a target
+            // page; each link is hit-tested against textMeta so the assembler
+            // can wrap the covered text in <a> (and fall back to data-link on a
+            // textless region wrapper).
+            const rawLinks = await finalizeLinks(annotations, viewport, p, pdf);
+            const links = associateLinks(rawLinks, textMeta);
+
             // ── Phase 3+4: Scoped extraction + assembly ─────────────────────
             const result = assemblePage(
                 regions,
@@ -713,7 +723,8 @@ self.onmessage = async (e) => {
                 fontRegistry,
                 rawSplits ?? columnSplits,
                 extractedImages,
-                docScale
+                docScale,
+                links
             );
 
             totalTables += result.tableCount;
@@ -725,6 +736,11 @@ self.onmessage = async (e) => {
                 html: result.html,
                 text: result.text.trim(),
                 tables: result.tableCount,
+                links: links.map(l => ({
+                    id: l.id, page: l.page, kind: l.kind, href: l.href,
+                    url: l.url ?? null, destPage: l.destPage ?? null,
+                    rect: l.rect, itemIndices: l.itemIndices, spans: l.spans ?? [], text: l.text,
+                })),
                 regions: regions.map((r, i) => ({
                     id: r.id || `p${p}-r${i}`,
                     type: r.type,
@@ -803,10 +819,11 @@ async function _handleReprocess({ page: pageNum, pipeline = {}, carryImages = {}
         const viewport    = page.getViewport({ scale: 2.0 });
         const pageWidthPt = page.view[2] - page.view[0];
 
-        const [opList, textContent, rawStructTree] = await Promise.all([
+        const [opList, textContent, rawStructTree, annotations] = await Promise.all([
             page.getOperatorList(),
             page.getTextContent(),
             page.getStructTree().catch(() => null),
+            page.getAnnotations({ intent: 'display' }).catch(() => []),
         ]);
 
         const { subpaths, imageMeta, filledRects: rawFilledRects } = extractSubpaths(opList, viewport, OPS);
@@ -857,6 +874,8 @@ async function _handleReprocess({ page: pageNum, pipeline = {}, carryImages = {}
             : carried;
 
         const fontRegistry = _cachedFontRegistry ?? createFontRegistry();
+        const rawLinks = await finalizeLinks(annotations, viewport, pageNum, pdf);
+        const links = associateLinks(rawLinks, textMeta);
         const result = assemblePage(
             regions,
             textMeta,
@@ -868,6 +887,8 @@ async function _handleReprocess({ page: pageNum, pipeline = {}, carryImages = {}
             rawSplits ?? columnSplits,
             extractedImages,
             _cachedDocScale,
+            links,
+            { skipMath: skipSet.has('MATH') },
         );
 
         page.cleanup();
@@ -879,6 +900,11 @@ async function _handleReprocess({ page: pageNum, pipeline = {}, carryImages = {}
             html: result.html,
             text: result.text.trim(),
             tables: result.tableCount,
+            links: links.map(l => ({
+                id: l.id, page: l.page, kind: l.kind, href: l.href,
+                url: l.url ?? null, destPage: l.destPage ?? null,
+                rect: l.rect, itemIndices: l.itemIndices, spans: l.spans ?? [], text: l.text,
+            })),
             regions: regions.map((r, i) => ({
                 id: r.id || `p${pageNum}-r${i}`,
                 type: r.type,
@@ -949,7 +975,8 @@ async function _handleScannedReprocess({ page: pageNum, pipeline = {}, carryImag
         const fontRegistry = _cachedFontRegistry ?? createFontRegistry();
         const result = assemblePage(
             regions, textMeta, textItems, viewport, pageWidthPt, pageNum,
-            fontRegistry, rawSplits ?? columnSplits, extractedImages, null,
+            fontRegistry, rawSplits ?? columnSplits, extractedImages, null, [],
+            { skipMath: skipSet.has('MATH') },
         );
 
         self.postMessage({
@@ -959,6 +986,7 @@ async function _handleScannedReprocess({ page: pageNum, pipeline = {}, carryImag
             html: result.html,
             text: result.text.trim(),
             tables: result.tableCount,
+            links: [],
             regions: regions.map((r, i) => ({
                 id: r.id || `p${pageNum}-r${i}`,
                 type: r.type,

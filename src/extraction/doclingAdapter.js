@@ -295,12 +295,52 @@ function _pictureHtml(pic, regionId, page, sink, docId) {
 
 function _textHtml(item) {
     const tag = LABEL_TAGS[item.label] ?? 'p';
+    // Wrap the anchored text of any link carried by this block in <a href>,
+    // exactly as the geometry pipeline does for LinkAnnotations. The link text
+    // is the child's own `text` (precise, from Docling's body), so a straight
+    // substring replace is reliable — no geometry-to-word guessing.
+    let text = item.text;
+    if (item.links && item.links.length) {
+        let out = '';
+        let remaining = text;
+        for (const l of item.links) {
+            if (!l.href || !l.text) continue;
+            const idx = remaining.indexOf(l.text);
+            if (idx < 0) continue;
+            out += esc(remaining.slice(0, idx));
+            out += `<a href="${esc(l.href)}" data-link-source="docling" data-link-page="${esc(String(item.page_no ?? ''))}">${esc(l.text)}</a>`;
+            remaining = remaining.slice(idx + l.text.length);
+        }
+        text = out + esc(remaining);
+    } else {
+        text = esc(text);
+    }
     if (item.label === 'section_header' && item.level) {
         const h = Math.min(6, Math.max(1, Number(item.level) + 1));
-        return `<h${h}>${esc(item.text)}</h${h}>`;
+        return `<h${h}>${text}</h${h}>`;
     }
-    if (tag === 'li') return `<ul><li>${esc(item.text)}</li></ul>`;
-    return `<${tag}>${esc(item.text)}</${tag}>`;
+    if (tag === 'li') return `<ul><li>${text}</li></ul>`;
+    return `<${tag}>${text}</${tag}>`;
+}
+
+/**
+ * `data-link` attribute for a docling region that a link points at but cannot
+ * carry as an inline <a> — a picture or table. Text blocks wrap their links
+ * themselves via `_textHtml`; these stay on the wrapper, mirroring the
+ * geometry pipeline's `_regionLinkAttr`. Link bboxes are pdf points
+ * (BOTTOMLEFT), the same space as `obj.bbox`, so both go through `_toTopDown`.
+ */
+function _regionLinkAttr(item, links, pageHeight) {
+    if (!item.geom || !links || !links.length) return '';
+    const hrefs = [];
+    for (const l of links) {
+        if (!l.href) continue;
+        const g = _toTopDown(l.bbox, pageHeight);
+        if (!g) continue;
+        const overlaps = item.x0 <= g.x1 && item.x1 >= g.x0 && item.yTop <= g.yBot && item.yBot >= g.yTop;
+        if (overlaps) hrefs.push(l.href);
+    }
+    return hrefs.length ? ` data-link="${hrefs.join(',')}"` : '';
 }
 
 /**
@@ -319,6 +359,7 @@ export function doclingToRegionHtml(assets, docId = null) {
     const tables = assets?.tables || [];
     const pictures = assets?.pictures || [];
     const pageSizes = assets?.page_sizes || {};
+    const links = assets?.links || [];
 
     // `texts` is filtered server-side (empty blocks dropped), so array position
     // is NOT the ref index. `order` addresses the original index, so look up by
@@ -377,8 +418,8 @@ export function doclingToRegionHtml(assets, docId = null) {
         const pageH = pageSizes[String(page)]?.height;
         const geom = _toTopDown(obj.bbox, pageH);
         const common = geom
-            ? { geom: true, ry: Math.round((geom.yTop + geom.yBot) / 2), rx: Math.round(geom.x0), x0: geom.x0, x1: geom.x1 }
-            : { geom: false, ry: bucket.length, rx: 0, x0: 0, x1: 0 };
+            ? { geom: true, ry: Math.round((geom.yTop + geom.yBot) / 2), rx: Math.round(geom.x0), x0: geom.x0, x1: geom.x1, yTop: geom.yTop, yBot: geom.yBot }
+            : { geom: false, ry: bucket.length, rx: 0, x0: 0, x1: 0, yTop: 0, yBot: 0 };
 
         if (ref.kind === 'tables') {
             const inner = _tableHtml(obj);
@@ -424,8 +465,16 @@ export function doclingToRegionHtml(assets, docId = null) {
         // so grouping items under a shared wrapper would make the first click
         // on a zone chip erase the page.
         const width = Math.round(pageSizes[String(pageNo)]?.width || 612);
-        const body = items.map(it =>
-            `<div class="pdf-region" data-ry="${it.ry}" data-rx="${it.rx}">${it.html}</div>`);
+        const pageLinks = links.filter(l => l.page_no === pageNo);
+        const pageHeight = pageSizes[String(pageNo)]?.height;
+        const body = items.map(it => {
+            // Links pointing at a picture or table ride on the wrapper (text
+            // blocks already wrap their own inline links).
+            const linkAttr = (it.type === 'image' || it.type === 'table')
+                ? _regionLinkAttr(it, pageLinks, pageHeight)
+                : '';
+            return `<div class="pdf-region" data-ry="${it.ry}" data-rx="${it.rx}"${linkAttr}>${it.html}</div>`;
+        });
 
         const zones = _detectZones(items, width);
         const zonesJson = JSON.stringify(zones);

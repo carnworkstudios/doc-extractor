@@ -14,7 +14,38 @@
  */
 
 import { createDoc, addPage, addBlock } from './gxDoc.js';
-import { mergeFlowChains, FLOW_WRAPPER_RE } from '../ui/exportController.js';
+import { mergeFlowChains, FLOW_WRAPPER_RE, IMAGE_BLOCK_RE } from '../ui/exportController.js';
+
+/**
+ * A figure's own labels (callouts, axis ticks) as positioned by the classifier.
+ *
+ * Read straight off the SVG overlay: `x`/`y` are picture-box user units and `y`
+ * is the text BASELINE, the same numbers the assembler measured. `labelBox`
+ * records the viewBox those units live in, so the round trip back to HTML
+ * reproduces the layer instead of flattening it into the alt text.
+ */
+function _imageLabels(el) {
+    const layer = el.querySelector?.('.pdf-image-textlayer');
+    const texts = layer?.querySelectorAll?.('text') || [];
+    if (!texts.length) return {};
+    const labels = [];
+    for (const t of texts) {
+        labels.push({
+            text: t.textContent || '',
+            x: parseFloat(t.getAttribute('x')),
+            y: parseFloat(t.getAttribute('y')),
+            size: parseFloat(t.getAttribute('font-size')),
+            // The advance width the PDF measured. Without it a round trip
+            // re-renders the run in the viewer's font at the viewer's metrics,
+            // which is the drift textLength exists to remove.
+            ...(t.getAttribute('textLength') ? { adv: parseFloat(t.getAttribute('textLength')) } : {}),
+            ...(t.getAttribute('transform') ? { rot: t.getAttribute('transform') } : {}),
+        });
+    }
+    const vb = (layer.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+    const box = (vb.length === 4 && vb.every(Number.isFinite)) ? { w: vb[2], h: vb[3] } : null;
+    return box ? { labels, labelBox: box } : { labels };
+}
 
 /**
  * Convert an HTML string into a gx-doc/1 document.
@@ -50,7 +81,32 @@ export function htmlToGxDoc(htmlString, meta = {}) {
         _emitPage(doc.body || doc, page);
     }
 
+    gxDoc.links = _collectLinks(doc);
+
     return gxDoc;
+}
+
+/**
+ * Collect every `<a href>` into the document's top-level links list. Each link
+ * records the page it lives on, its href, provenance, and the anchored text.
+ * The per-run capture in `_runs` keeps the href attached to the exact text
+ * spans; this list is the IR-level index exporters and the nav panel consume.
+ */
+function _collectLinks(doc) {
+    const out = [];
+    for (const a of doc.querySelectorAll('a[href]')) {
+        const href = a.getAttribute('href');
+        if (!href) continue;
+        const pageEl = a.closest?.('section.pdf-page-content');
+        const pageNum = pageEl ? parseInt(pageEl.getAttribute('data-page'), 10) || 1 : 1;
+        out.push({
+            page: pageNum,
+            href,
+            ...(a.getAttribute('data-link-source') ? { source: a.getAttribute('data-link-source') } : {}),
+            text: (a.textContent || '').replace(/\s+/g, ' ').trim(),
+        });
+    }
+    return out;
 }
 
 /** Parse the zone table the assembler stored on the page section. */
@@ -174,12 +230,18 @@ function _emitLeaf(el, page) {
         return;
     }
 
-    if (cls.includes('pdf-image-placeholder')) {
+    // A picture: the bare placeholder, or the `.pdf-image-stack` wrapper it
+    // gets when the classifier recovered the figure's own labels. The stack is
+    // not a flow wrapper, so it lands here as a leaf — and before this matched
+    // it, every labelled figure fell through to the paragraph branch below,
+    // which emitted the axis ticks as prose and dropped the image.
+    if (IMAGE_BLOCK_RE.test(cls)) {
         const img = el.querySelector('img[data-img-id]');
         addBlock(page, {
             type: 'image',
             id: img?.getAttribute('data-img-id') || 'img',
             alt: img?.getAttribute('alt') || '',
+            ..._imageLabels(el),
             colIdx,
             ry,
         });
@@ -236,7 +298,7 @@ function _blockText(el) {
     return _nodeText(el).replace(/\s+/g, ' ').trim();
 }
 
-/** Capture inline typography (bold/italic/super/sub) as optional runs. */
+/** Capture inline typography (bold/italic/super/sub/link) as optional runs. */
 function _runs(el) {
     const runs = [];
     const visit = (node) => {
@@ -252,6 +314,22 @@ function _runs(el) {
         if (tag === 'i' || tag === 'em' || cls.includes('ital')) flags.italic = true;
         if (tag === 'sup') flags.superscript = true;
         if (tag === 'sub') flags.subscript = true;
+        if (tag === 'a' && node.hasAttribute('href')) {
+            const text = node.textContent;
+            if (text) {
+                const href = node.getAttribute('href');
+                runs.push({
+                    text,
+                    ...flags,
+                    link: {
+                        href,
+                        ...(node.getAttribute('data-link-source')
+                            ? { source: node.getAttribute('data-link-source') } : {}),
+                    },
+                });
+            }
+            return;
+        }
         if (node.childNodes.length <= 1 && node.childNodes[0]?.nodeType === Node.TEXT_NODE) {
             const text = node.textContent;
             if (text) runs.push({ text, ...flags });
@@ -267,7 +345,8 @@ function _runs(el) {
         if (!r.text) continue;
         const last = merged[merged.length - 1];
         const same = last && last.bold === r.bold && last.italic === r.italic
-            && last.superscript === r.superscript && last.subscript === r.subscript;
+            && last.superscript === r.superscript && last.subscript === r.subscript
+            && (last.link?.href ?? null) === (r.link?.href ?? null);
         if (same) last.text += r.text;
         else merged.push({ ...r });
     }

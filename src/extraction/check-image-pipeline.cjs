@@ -291,6 +291,90 @@ function splitArgs(src, openIdx) {
     ok(/img\[data-img-id\]/.test(dl) && /readAsDataURL/.test(dl),
        'downloadExtractedHTML re-inlines stored pixels so the exported file is standalone');
 
+    // ── 3b. The semantic walkers must reach a picture wherever it is wrapped ──
+    // A picture that recovered its own labels is wrapped in .pdf-image-stack,
+    // and one paired with a caption is wrapped in <figure class="pdf-figure">.
+    // Neither is the bare .pdf-image-placeholder. Matching only the bare class
+    // made the markdown/XML/IR walkers stop ON the wrapper and fall through to
+    // the paragraph branch, which emitted the figure's axis labels as prose and
+    // dropped the image from every semantic export.
+    const exporter = fs.readFileSync(path.join(SRC, 'ui/exportController.js'), 'utf8');
+    ok(/export const IMAGE_BLOCK_RE = [^\n]*placeholder\|stack/.test(exporter),
+       'IMAGE_BLOCK_RE matches both the bare placeholder and the labelled image stack');
+    ok(/export const FLOW_WRAPPER_RE = [^\n]*\|figure\)/.test(exporter),
+       'FLOW_WRAPPER_RE descends into a captioned <figure> instead of stopping on it');
+    ok((exporter.match(/IMAGE_BLOCK_RE\.test\(cls\)/g) || []).length === 2,
+       'both semantic exporters (markdown, XML) route pictures through IMAGE_BLOCK_RE');
+    ok(!/cls\.includes\('pdf-image-placeholder'\)/.test(exporter),
+       'no walker still tests the bare placeholder class by substring');
+
+    const toIr = fs.readFileSync(path.join(SRC, 'ir/htmlToGxDoc.js'), 'utf8');
+    ok(/IMAGE_BLOCK_RE\.test\(cls\)/.test(toIr),
+       'htmlToGxDoc routes pictures through IMAGE_BLOCK_RE');
+    ok(/pdf-image-textlayer/.test(toIr) && /labelBox/.test(toIr),
+       'htmlToGxDoc carries a figure\'s own labels — and their viewBox — into the image block');
+    const fromIr = fs.readFileSync(path.join(SRC, 'ir/gxDocToHtml.js'), 'utf8');
+    ok(/pdf-image-textlayer/.test(fromIr) && /viewBox/.test(fromIr),
+       'gxDocToHtml re-emits the label layer, so the IR round trip is lossless');
+
+    // ── 3c. The label overlay must never re-introduce a container query ──────
+    // `container-type: inline-size` makes a box compute its inline size as if
+    // it had no contents. The image stack is shrink-to-fit, so it resolved to
+    // ZERO and took the picture with it: every labelled figure rendered 0×0 in
+    // exported HTML. The overlay is an SVG viewBox now — it scales with the
+    // image on its own and needs no container to query.
+    for (const [rel, label] of [
+        ['extraction/vector/pageAssembler.js', 'the assembler'],
+        ['ir/gxDocToHtml.js', 'the IR renderer'],
+    ]) {
+        const src = fs.readFileSync(path.join(SRC, rel), 'utf8');
+        // Scoped to the stack's own emission — both files discuss the property
+        // in comments, and an unrelated block-level grid may legitimately use it
+        // (only a SHRINK-TO-FIT box collapses under inline-size containment).
+        const stackDecls = [];
+        for (let i = src.indexOf('pdf-image-stack'); i !== -1; i = src.indexOf('pdf-image-stack', i + 1)) {
+            stackDecls.push(src.slice(i, i + 260));
+        }
+        ok(stackDecls.length > 0, `${label} still emits a pdf-image-stack (this check is not stale)`);
+        ok(stackDecls.every(d => !/container-type/.test(d)),
+           `${label} puts no container-type on the image stack (it collapses a shrink-to-fit box to 0)`);
+        ok(!/cqw\s*;/.test(src),
+           `${label} does not size labels in cqw (the unit that needed the container)`);
+    }
+    const asm = fs.readFileSync(path.join(SRC, 'extraction/vector/pageAssembler.js'), 'utf8');
+    ok(/<svg class="pdf-image-textlayer" viewBox=/.test(asm),
+       'the label overlay is an SVG viewBox, so it scales with the picture');
+    ok(/y="\$\{y\.toFixed\(2\)\}"/.test(asm),
+       'SVG text is placed on the measured BASELINE — no cap-height guess');
+
+    // The overlay's units are the CROP'S OWN PIXEL GRID, not the region bbox.
+    // Deriving the mapping from the bbox re-reads it through `width`/`height`
+    // attributes, which are INTEGERS — a 97-viewport-px crop declares 48 where
+    // it is really 48.5, and that half pixel became a 1.46% scale MISMATCH
+    // between the two axes that skewed every label further out the further it
+    // sat from the origin. Measured 1.464% → 0.022% by using pw/ph.
+    ok(/const vbW = imgPixels\?\.pw \|\| bbox\.w/.test(asm),
+       'the viewBox is the crop pixel grid, falling back to the bbox only when there is no crop');
+    ok(/_imageTextLayer\(region, textMeta, imgEntry/.test(asm),
+       'the assembler hands the crop entry to the label layer');
+    // The overlay is not drawn in the document's embedded font, so an
+    // unconstrained run drifts from its raster twin as it gets longer.
+    ok(/textLength=/.test(asm) && /lengthAdjust="spacingAndGlyphs"/.test(asm),
+       'each run declares the advance width the PDF measured');
+    ok(/tm\.str\.length > 1/.test(asm),
+       'a single glyph is left unconstrained — it has no spacing to redistribute');
+    ok(/transform="rotate\(/.test(asm),
+       'a rotated run (a chart y-axis label) is rotated about its own baseline origin');
+
+    // Rotation and em height must come off the text matrix, not off |d|.
+    const cls = fs.readFileSync(path.join(SRC, 'extraction/vector/contextClassifier.js'), 'utf8');
+    ok(/Math\.hypot\(t\[2\], t\[3\]\)/.test(cls),
+       'em height is the LENGTH of the matrix y basis (|d| is 0 on a 90° run, which fell through to 12pt)');
+    ok(/Math\.atan2\(ay - vy, ax - vx\)/.test(cls),
+       'baseline direction is measured from the mapped advance vector, not inferred from the flip');
+    ok(/!rotated && Math\.abs\(t\[2\]\) > 0\.05/.test(cls),
+       'shear reads as italic only on an upright run — c is the ROTATION on a rotated one');
+
     // ── 4. One page-local id per region, even for a repeated XObject ─────────
     const { classifyPage } = await import('../extraction/vector/contextClassifier.js');
     const sameImage = id => ([

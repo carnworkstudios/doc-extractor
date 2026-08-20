@@ -107,12 +107,27 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
 
     // ── 1. Convert all text items to viewport coordinates ────────────────────
     const textMeta = textItems.map((item, idx) => {
-        const [vx, vy] = toViewport(vpT, item.transform[4], item.transform[5]);
-        const fontSizePt = Math.abs(item.transform?.[3] || 12);
+        const t = item.transform;
+        const [vx, vy] = toViewport(vpT, t[4], t[5]);
+        // Baseline direction in VIEWPORT space, from the item's own advance
+        // vector rather than from sign reasoning about the flip: map the origin
+        // and origin+advance, and take the angle between them. Unrotated text
+        // yields 0 because the viewport transform flips y only.
+        const [ax, ay] = toViewport(vpT, t[4] + t[0], t[5] + t[1]);
+        const rot = Math.atan2(ay - vy, ax - vx);
+        const rotated = Math.abs(rot) > 0.0087;   // ~0.5°
+        // Em height is the LENGTH of the matrix's y basis vector, not |d|.
+        // For a 90°-rotated run d is 0, so |d| fell through to the 12pt default
+        // and every rotated label was sized wrong; hypot(c, d) reduces to |d|
+        // exactly when the run is upright, so nothing else moves.
+        const fontSizePt = Math.hypot(t[2], t[3]) || 12;
         const widthPt = item.width || (fontSizePt * 0.5 * (item.str?.length || 1));
         const fn = item.fontName || '';
         const fStyle = fontStyleMap[fn];
-        const syntheticItalic = Math.abs(item.transform[2]) > 0.05;
+        // A shear reads as italic only on an upright run — on a rotated one the
+        // c term is the ROTATION, and every vertical axis label was being
+        // reported italic because of it.
+        const syntheticItalic = !rotated && Math.abs(t[2]) > 0.05;
         return {
             idx,
             vx, vy,
@@ -122,6 +137,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
             fontName: fn,
             str: item.str || '',
             underlined: false,
+            ...(rotated ? { rot } : {}),
             bold:   fStyle?.bold   ?? false,
             italic: fStyle?.italic ?? syntheticItalic,
         };

@@ -192,7 +192,7 @@ export function applyHtmlEverywhere(html, skipEl = null) {
 
 function sanitize(html) {
     return typeof window.DOMPurify !== 'undefined'
-        ? window.DOMPurify.sanitize(html, { ADD_TAGS: ['img'], ALLOW_DATA_ATTR: true })
+        ? window.DOMPurify.sanitize(html, { ADD_TAGS: ['img'], ALLOW_DATA_ATTR: true, ADD_ATTR: ['style'] })
         : html;
 }
 

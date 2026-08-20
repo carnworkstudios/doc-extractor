@@ -177,7 +177,32 @@ function _blockToHtml(block) {
         case 'image': {
             const id = esc(block.id || 'img');
             const alt = esc(block.alt || '');
-            return `<div class="pdf-image-placeholder"><img class="extracted-pdf-image" data-img-id="${id}" alt="${alt}"></div>`;
+            const placeholder =
+                `<div class="pdf-image-placeholder"><img class="extracted-pdf-image" data-img-id="${id}" alt="${alt}"></div>`;
+            // A figure that carried its own labels goes back out as the same
+            // SVG overlay it came in as. Emitting the bare placeholder would
+            // silently drop every callout and axis tick on a round trip.
+            const labels = Array.isArray(block.labels) ? block.labels : [];
+            const box = block.labelBox;
+            if (!labels.length || !box || !box.w || !box.h) return placeholder;
+            const texts = labels.map(l => {
+                const fit = l.adv > 0
+                    ? ` textLength="${l.adv}" lengthAdjust="spacingAndGlyphs"`
+                    : '';
+                const rot = typeof l.rot === 'string' && /^rotate\([-\d.\s]+\)$/.test(l.rot)
+                    ? ` transform="${l.rot}"` : '';
+                return `<text class="pdf-img-label" x="${l.x ?? 0}" y="${l.y ?? 0}" ` +
+                    `font-size="${l.size ?? 10}"${fit}${rot} xml:space="preserve">${esc(l.text || '')}</text>`;
+            }).join('');
+            const layer =
+                `<svg class="pdf-image-textlayer" viewBox="0 0 ${box.w} ${box.h}" ` +
+                `preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" ` +
+                `style="position:absolute;left:0;top:0;width:100%;height:100%;` +
+                `fill:currentColor;font-family:inherit;">${texts}</svg>`;
+            // No `container-type` on this wrapper — inline-size containment on a
+            // shrink-to-fit box collapses it, and the picture with it.
+            return `<div class="pdf-image-stack" style="position:relative;display:inline-block;` +
+                `max-width:100%;margin:10px 0;">${placeholder}${layer}</div>`;
         }
         default:
             return `<div class="pdf-paragraph f1 ${align}">${_runsHtml(block)}</div>`;
@@ -209,6 +234,7 @@ function _runsHtml(block) {
         if (r.italic) s = `<em>${s}</em>`;
         if (r.superscript) s = `<sup>${s}</sup>`;
         if (r.subscript) s = `<sub>${s}</sub>`;
+        if (r.link?.href) s = `<a href="${esc(r.link.href)}">${s}</a>`;
         return s;
     }).join('');
 }
