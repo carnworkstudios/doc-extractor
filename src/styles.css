@@ -129,7 +129,8 @@ body {
   margin-left: auto;
   padding: 3px;
   border-radius: 10px;
-  background: #495057; /* #616161 */
+  background: #495057;
+  /* #616161 */
   box-shadow:
     inset 2px 2px 5px rgba(0, 0, 0, 0.12),
     inset -1px -1px 3px rgba(255, 255, 255, 0.55);
@@ -228,6 +229,7 @@ body {
     opacity: 0;
     transform: translateY(-6px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -253,6 +255,7 @@ body {
 .dropdown-item:hover:not(:disabled) {
   background: var(--bg);
 }
+
 .dropdown-item:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -282,7 +285,7 @@ body {
 #visual-diff-html.selection-mode .pdf-zone {
   border-left: 3px solid var(--accent);
   background: rgba(79, 172, 254, 0.04);
-  border-radius: 2px;
+  /* border-radius: 2px; */
   cursor: grab;
   transition:
     border-color 0.1s,
@@ -299,10 +302,10 @@ body {
 /* Region: child block — subtle dashed outline, lighter treatment */
 #html-preview.selection-mode .pdf-region,
 #visual-diff-html.selection-mode .pdf-region {
-  outline: 1px dashed rgba(79, 172, 254, 0.4);
+  outline: 1px dotted rgb(93 99 105 / 40%);
   outline-offset: 2px;
   cursor: grab;
-  border-radius: 2px;
+  /* border-radius: 2px; */
   transition:
     outline-color 0.1s,
     background 0.1s;
@@ -361,26 +364,54 @@ body {
 
 /* Column ghost hint label (sits beside the target region) */
 .sel-drop-indicator--col {
-  width: 100px;
+  width: 110px;
   height: 100%;
-  min-height: 40px;
+  min-height: 44px;
   writing-mode: horizontal-tb;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   vertical-align: top;
-  font-size: 10px;
+  font-size: 11px;
+  background: rgba(79, 172, 254, 0.16);
+  border: 2px dashed var(--accent);
+  border-radius: 4px;
+  margin: 0 4px;
+}
+
+/* Zone side-by-side row indicator */
+.sel-drop-indicator--row {
+  width: 140px;
+  height: 100%;
+  min-height: 60px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  background: rgba(79, 172, 254, 0.16);
+  border: 2px dashed var(--accent);
+  border-radius: 4px;
+  margin: 0 6px;
+}
+
+/* Drop inside zone highlight */
+#html-preview.selection-mode .pdf-zone.sel-zone-drop-inside,
+#visual-diff-html.selection-mode .pdf-zone.sel-zone-drop-inside {
+  background: rgba(79, 172, 254, 0.14) !important;
+  border-left-color: var(--accent) !important;
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
 /* Left/right quadrant hints — shown on the target region itself */
 #html-preview.selection-mode .pdf-region.sel-drop-left,
 #visual-diff-html.selection-mode .pdf-region.sel-drop-left {
-  box-shadow: -3px 0 0 var(--accent);
+  box-shadow: -4px 0 0 var(--accent);
   outline: 2px dashed var(--accent);
 }
+
 #html-preview.selection-mode .pdf-region.sel-drop-right,
 #visual-diff-html.selection-mode .pdf-region.sel-drop-right {
-  box-shadow: 3px 0 0 var(--accent);
+  box-shadow: 4px 0 0 var(--accent);
   outline: 2px dashed var(--accent);
 }
 
@@ -393,10 +424,11 @@ body {
 .sel-marquee {
   position: absolute;
   border: 1.5px dashed var(--accent);
-  background: rgba(0, 120, 212, 0.07);
+  background: rgba(0, 120, 212, 0.08);
   pointer-events: none;
-  border-radius: 2px;
+  border-radius: 3px;
   z-index: 20;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
 }
 
 #btn-select-mode.active {
@@ -448,6 +480,7 @@ body {
   padding: 2px 6px;
   border-radius: 4px;
 }
+
 .vc-btn-icon:hover {
   background: #333;
   color: #fff;
@@ -471,6 +504,7 @@ body {
   color: #fff;
   border-color: var(--accent);
 }
+
 .tool-btn--primary:hover {
   background: var(--accent-dark);
   border-color: var(--accent-dark);
@@ -712,7 +746,7 @@ body {
 }
 
 /* ── Visual Diff — active pane indicator ────────────────────────────────── */
-.work-pane--active > .vd-pane-header {
+.work-pane--active>.vd-pane-header {
   border-bottom: 2px solid var(--accent);
   background: rgba(79, 172, 254, 0.06);
 }
@@ -906,33 +940,42 @@ body.format-painter-active .editable-text-layer {
   grid-template-columns: calc(var(--left-col, 0.5) * 100%) 1fr;
   column-gap: 20px;
 }
+
 .pdf-page-row--cols-1 {
   display: block;
 }
+
 .pdf-page-row--cols-3 {
   grid-template-columns: repeat(3, 1fr);
   column-gap: 14px;
 }
+
 .pdf-page-row--cols-4 {
   grid-template-columns: repeat(4, 1fr);
   column-gap: 10px;
 }
+
 .pdf-col {
   min-width: 0;
 }
+
 .pdf-col--full {
   grid-column: 1 / -1;
 }
+
 .pdf-col--left {
   padding-right: 10px;
 }
+
 .pdf-col--center {
   padding-left: 10px;
   padding-right: 10px;
 }
+
 .pdf-col--right {
   padding-left: 10px;
 }
+
 /* Zone wrappers inside columns — kept for selectionMode / zoneToolbar */
 .pdf-zone--flex-center {
   display: block;
@@ -1224,7 +1267,7 @@ body.format-painter-active .editable-text-layer {
   height: 14px;
   border-radius: 50%;
   text-align: center;
-  background: rgba(255,255,255,0.8);
+  background: rgba(255, 255, 255, 0.8);
 }
 
 .tafne-col-ruler .ruler-seg:hover .ruler-del {
@@ -1302,7 +1345,7 @@ body.format-painter-active .editable-text-layer {
   height: 14px;
   border-radius: 50%;
   text-align: center;
-  background: rgba(255,255,255,0.8);
+  background: rgba(255, 255, 255, 0.8);
 }
 
 .tafne-row-ruler .ruler-seg:hover .ruler-del {
@@ -1362,8 +1405,14 @@ body.format-painter-active .editable-text-layer {
   left: -2px;
   line-height: 0;
 }
-.badge-plus { color: #22c55e; }
-.badge-minus { color: #ef4444; }
+
+.badge-plus {
+  color: #22c55e;
+}
+
+.badge-minus {
+  color: #ef4444;
+}
 
 .tool-btn:disabled {
   opacity: 0.35;
@@ -1382,7 +1431,7 @@ body.format-painter-active .editable-text-layer {
   background: #4facfe;
   color: #fff;
   border: none;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1392,9 +1441,20 @@ body.format-painter-active .editable-text-layer {
   transition: transform 0.15s, background 0.15s;
   user-select: none;
 }
-.tbl-fab:hover { transform: scale(1.1); background: #3b9be0; }
-.tbl-fab--active { background: #22c55e; transform: scale(1.1); }
-.tbl-fab--active:hover { background: #16a34a; }
+
+.tbl-fab:hover {
+  transform: scale(1.1);
+  background: #3b9be0;
+}
+
+.tbl-fab--active {
+  background: #22c55e;
+  transform: scale(1.1);
+}
+
+.tbl-fab--active:hover {
+  background: #16a34a;
+}
 
 .tbl-fab-popover {
   position: fixed;
@@ -1402,7 +1462,7 @@ body.format-painter-active .editable-text-layer {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -1432,10 +1492,12 @@ body.format-painter-active .editable-text-layer {
   padding: 1px 6px;
   font-weight: 600;
 }
+
 .tbl-fab-popover .tbl-pop-header .tbl-pop-toggle:hover {
   background: #4facfe;
   color: #fff;
 }
+
 .tbl-fab-popover .tbl-pop-header .tbl-pop-toggle.active {
   background: #22c55e;
   border-color: #22c55e;
@@ -1462,8 +1524,16 @@ body.format-painter-active .editable-text-layer {
   color: #374151;
   transition: background 0.12s;
 }
-.tbl-fab-popover .tbl-pop-btn:hover { background: #f3f4f6; }
-.tbl-fab-popover .tbl-pop-btn:disabled { opacity: 0.3; cursor: default; background: transparent; }
+
+.tbl-fab-popover .tbl-pop-btn:hover {
+  background: #f3f4f6;
+}
+
+.tbl-fab-popover .tbl-pop-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+  background: transparent;
+}
 
 /* ── PAGED HTML OUTPUT ──────────────────────────────────────────────────────
    When the extracted HTML contains <section class="pdf-page-content">,
@@ -1486,7 +1556,7 @@ body.format-painter-active .editable-text-layer {
   scroll-margin-top: 24px;
 }
 
-.prose-area .pdf-page-content > .page-label {
+.prose-area .pdf-page-content>.page-label {
   position: absolute;
   top: 12px;
   right: 24px;
@@ -1561,16 +1631,43 @@ body.format-painter-active .editable-text-layer {
   border-left-width: 1.5px;
   border-radius: 3px;
 }
-.pdf-box--warning { background: #fff5f5; }
-.pdf-box--caution { background: #fffbe6; }
-.pdf-box--note    { background: #f0f8ff; }
-.pdf-box--tip     { background: #f4fff4; border-color: #107c10; }
+
+.pdf-box--warning {
+  background: #fff5f5;
+}
+
+.pdf-box--caution {
+  background: #fffbe6;
+}
+
+.pdf-box--note {
+  background: #f0f8ff;
+}
+
+.pdf-box--tip {
+  background: #f4fff4;
+  border-color: #107c10;
+}
 
 /* Banner header: black bar with icon + big centered label, matching the PDF. */
-.pdf-box:has(.pdf-box-banner) { padding: 0; overflow: hidden; }
-.pdf-box:has(.pdf-box-banner) > :not(.pdf-box-banner) { margin-left: 14px; margin-right: 14px; }
-.pdf-box:has(.pdf-box-banner) > :first-of-type:not(.pdf-box-banner) { margin-top: 10px; }
-.pdf-box:has(.pdf-box-banner) > :last-child { margin-bottom: 10px; }
+.pdf-box:has(.pdf-box-banner) {
+  padding: 0;
+  overflow: hidden;
+}
+
+.pdf-box:has(.pdf-box-banner)> :not(.pdf-box-banner) {
+  margin-left: 14px;
+  margin-right: 14px;
+}
+
+.pdf-box:has(.pdf-box-banner)> :first-of-type:not(.pdf-box-banner) {
+  margin-top: 10px;
+}
+
+.pdf-box:has(.pdf-box-banner)> :last-child {
+  margin-bottom: 10px;
+}
+
 .pdf-box-banner {
   background: #111;
   color: #fff;
@@ -1585,7 +1682,11 @@ body.format-painter-active .editable-text-layer {
   gap: 10px;
   text-transform: uppercase;
 }
-.pdf-box-icon { font-size: 1.1em; line-height: 1; }
+
+.pdf-box-icon {
+  font-size: 1.1em;
+  line-height: 1;
+}
 
 /* ── Undo / Redo button disabled state ─────────────────────────────────── */
 #btn-undo[disabled],
@@ -1749,15 +1850,19 @@ body.format-painter-active .editable-text-layer {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
 .diff-row--equal {
   background: transparent;
 }
+
 .diff-row--remove {
   background: rgba(239, 68, 68, 0.1);
 }
+
 .diff-row--add {
   background: rgba(34, 197, 94, 0.1);
 }
+
 .diff-row--empty {
   background: rgba(0, 0, 0, 0.04);
 }
@@ -1781,9 +1886,11 @@ body.format-painter-active .editable-text-layer {
   line-height: 1.55;
   opacity: 0.6;
 }
+
 .diff-lineno--left {
   min-width: 30px;
 }
+
 .diff-lineno--right {
   min-width: 30px;
 }
@@ -1795,9 +1902,11 @@ body.format-painter-active .editable-text-layer {
   text-align: center;
   flex-shrink: 0;
 }
+
 .diff-row--remove .diff-glyph {
   color: #ef4444;
 }
+
 .diff-row--add .diff-glyph {
   color: #22c55e;
 }
@@ -1816,6 +1925,7 @@ mark.diff-inline-remove {
   border-radius: 2px;
   padding: 0 1px;
 }
+
 mark.diff-inline-add {
   background: rgba(34, 197, 94, 0.35);
   color: inherit;
@@ -2026,14 +2136,16 @@ mark.diff-inline-add {
 .analyze-status-msg {
   font-size: 12px;
   color: var(--text-muted);
-  margin-right: auto;   /* keeps the page nav at the far right of the bar */
+  margin-right: auto;
+  /* keeps the page nav at the far right of the bar */
 }
 
 .analyze-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 0;
-  flex: 1 1 100%;       /* file info wraps to its own full row */
+  flex: 1 1 100%;
+  /* file info wraps to its own full row */
 }
 
 .ameta-row {
@@ -2105,7 +2217,8 @@ mark.diff-inline-add {
   border: 1px solid var(--border);
   border-radius: 4px;
   max-width: 100%;
-  touch-action: none;   /* marquee / drag / resize must own the gesture (mouse, touch, stylus) */
+  touch-action: none;
+  /* marquee / drag / resize must own the gesture (mouse, touch, stylus) */
 }
 
 .analyze-legend {
@@ -2276,6 +2389,7 @@ mark.diff-inline-add {
 }
 
 @media (max-width: 480px) {
+
   /* Hide the formatting groups that aren't critical on phones; keep
        alignment, page nav, and zoom usable. */
   .toolbar-bar #btn-add-page,
@@ -2319,6 +2433,7 @@ mark.diff-inline-add {
   font-size: 12px;
   transition: background 0.15s;
 }
+
 .sel-ghost-col.sel-ghost-active {
   background: rgba(0, 120, 212, 0.16);
 }
@@ -2333,6 +2448,7 @@ mark.diff-inline-add {
   z-index: 5;
   transform: translateX(-5px);
 }
+
 .sel-col-divider::after {
   content: "";
   position: absolute;
@@ -2343,6 +2459,7 @@ mark.diff-inline-add {
   background: transparent;
   transition: background 0.15s;
 }
+
 .sel-col-divider:hover::after,
 .sel-col-divider--dragging::after {
   background: var(--accent);
@@ -2363,19 +2480,23 @@ mark.diff-inline-add {
   min-width: 200px;
   font-size: 12px;
 }
+
 .sel-props-panel[hidden] {
   display: none;
 }
+
 .sel-props-row {
   display: flex;
   align-items: center;
   gap: 6px;
 }
+
 .sel-props-label {
   color: var(--text-muted);
   width: 64px;
   flex-shrink: 0;
 }
+
 .sel-props-input {
   width: 54px;
   height: 22px;
@@ -2404,6 +2525,7 @@ mark.diff-inline-add {
   min-height: 400px;
   overflow: hidden;
 }
+
 .analyze-paywall-blur-bg {
   position: absolute;
   inset: 0;
@@ -2416,32 +2538,33 @@ mark.diff-inline-add {
   pointer-events: none;
   user-select: none;
 }
+
 .mock-confidence-row {
   height: 36px;
   border-radius: 4px;
-  background: linear-gradient(
-    90deg,
-    rgba(76, 175, 130, 0.25) 65%,
-    rgba(245, 166, 35, 0.2) 65%
-  );
+  background: linear-gradient(90deg,
+      rgba(76, 175, 130, 0.25) 65%,
+      rgba(245, 166, 35, 0.2) 65%);
 }
+
 .mock-confidence-row:nth-child(2) {
-  background: linear-gradient(
-    90deg,
-    rgba(76, 175, 130, 0.25) 88%,
-    rgba(224, 82, 82, 0.25) 88%
-  );
+  background: linear-gradient(90deg,
+      rgba(76, 175, 130, 0.25) 88%,
+      rgba(224, 82, 82, 0.25) 88%);
 }
+
 .mock-tolerance-row {
   height: 28px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.05);
 }
+
 .mock-zone-flag {
   height: 24px;
   border-radius: 4px;
   background: rgba(224, 82, 82, 0.12);
 }
+
 .analyze-paywall-card {
   position: absolute;
   inset: 0;
@@ -2453,6 +2576,7 @@ mark.diff-inline-add {
   background: rgba(10, 16, 24, 0.88);
   text-align: center;
 }
+
 .analyze-paywall-badge {
   display: inline-block;
   padding: 2px 8px;
@@ -2464,19 +2588,22 @@ mark.diff-inline-add {
   color: #1a0f00;
   margin-bottom: 14px;
 }
+
 .analyze-paywall-card h3 {
   font-size: 18px;
   font-weight: 700;
   margin: 0 0 8px;
   color: #d8eaf8;
 }
-.analyze-paywall-card > p {
+
+.analyze-paywall-card>p {
   font-size: 13px;
   opacity: 0.7;
   margin: 0 0 16px;
   max-width: 320px;
   color: #d8eaf8;
 }
+
 .analyze-paywall-features {
   list-style: none;
   padding: 0;
@@ -2485,6 +2612,7 @@ mark.diff-inline-add {
   width: 100%;
   max-width: 340px;
 }
+
 .analyze-paywall-features li {
   font-size: 12px;
   padding: 5px 0;
@@ -2494,6 +2622,7 @@ mark.diff-inline-add {
   gap: 8px;
   color: #d8eaf8;
 }
+
 .analyze-paywall-features li::before {
   content: "";
   width: 14px;
@@ -2503,6 +2632,7 @@ mark.diff-inline-add {
   border: 1px solid rgba(76, 175, 130, 0.5);
   flex-shrink: 0;
 }
+
 .analyze-paywall-btn {
   padding: 9px 24px;
   border-radius: 5px;
@@ -2517,10 +2647,12 @@ mark.diff-inline-add {
     color 150ms ease;
   margin-bottom: 10px;
 }
+
 .analyze-paywall-btn:hover {
   background: #f5a623;
   color: #1a0f00;
 }
+
 .analyze-paywall-note {
   font-size: 10px;
   opacity: 0.45;
@@ -2548,6 +2680,7 @@ mark.diff-inline-add {
   overflow-x: auto;
   scrollbar-width: none;
 }
+
 .analyze-toolbar::-webkit-scrollbar {
   display: none;
 }
@@ -2704,6 +2837,7 @@ mark.diff-inline-add {
 .atb-label-short {
   display: none;
 }
+
 .atb-label-full {
   display: inline;
 }
@@ -2712,6 +2846,7 @@ mark.diff-inline-add {
 .atb-mobile-only {
   display: none;
 }
+
 .atb-desktop-only {
   display: inline-flex;
 }
@@ -2735,6 +2870,7 @@ mark.diff-inline-add {
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.12);
   animation: agd-slide-in 0.2s ease;
 }
+
 .analyze-guide-panel[hidden] {
   display: none;
 }
@@ -2744,6 +2880,7 @@ mark.diff-inline-add {
     opacity: 0;
     transform: translateX(16px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -2764,6 +2901,7 @@ mark.diff-inline-add {
   align-items: center;
   justify-content: center;
 }
+
 .analyze-guide-close:hover {
   background: var(--bg);
   color: var(--text);
@@ -2782,6 +2920,7 @@ mark.diff-inline-add {
   padding-bottom: 20px;
   border-bottom: 1px solid var(--border);
 }
+
 .agd-section:last-child {
   border-bottom: none;
   margin-bottom: 0;
@@ -2802,6 +2941,7 @@ mark.diff-inline-add {
   color: var(--text-secondary, var(--text-muted));
   margin: 0 0 8px;
 }
+
 .agd-p:last-child {
   margin-bottom: 0;
 }
@@ -2820,6 +2960,7 @@ mark.diff-inline-add {
   gap: 6px;
   margin-top: 8px;
 }
+
 .agd-chip {
   font-size: 11px;
   padding: 3px 9px;
@@ -2838,6 +2979,7 @@ mark.diff-inline-add {
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
 }
+
 .agd-tool-card:last-child {
   border-bottom: none;
 }
@@ -2928,19 +3070,24 @@ mark.diff-inline-add {
 
 /* ── Responsive analyze panel ────────────────────────────────────────────── */
 @media (max-width: 640px) {
+
   /* Toolbar: hide desktop-only buttons, show mobile ones */
   .atb-desktop-only {
     display: none !important;
   }
+
   .atb-mobile-only {
     display: inline-flex !important;
   }
+
   .atb-label-full {
     display: none;
   }
+
   .atb-label-short {
     display: inline;
   }
+
   .atb-sep-desktop {
     display: none;
   }
@@ -2969,9 +3116,11 @@ mark.diff-inline-add {
     transition: transform 0.22s ease;
     padding: 12px 16px 32px;
   }
+
   .analyze-stats-wrap.is-open {
     transform: translateY(0);
   }
+
   /* Backdrop — tapping outside closes the drawer */
   .analyze-stats-wrap.is-open::before {
     content: "";
@@ -2992,6 +3141,7 @@ mark.diff-inline-add {
   .analyze-legend {
     gap: 4px;
   }
+
   .legend-toggle {
     padding: 2px 8px 2px 6px;
     font-size: 10px;
@@ -3008,11 +3158,13 @@ mark.diff-inline-add {
     height: 72vh;
     animation: agd-slide-up 0.22s ease;
   }
+
   @keyframes agd-slide-up {
     from {
       opacity: 0;
       transform: translateY(16px);
     }
+
     to {
       opacity: 1;
       transform: translateY(0);
@@ -3021,10 +3173,12 @@ mark.diff-inline-add {
 }
 
 @media (min-width: 641px) and (max-width: 1024px) {
+
   /* Tablet: toolbar buttons visible but tighter */
   .atb-label-full {
     display: none;
   }
+
   .atb-label-short {
     display: inline;
   }
@@ -3048,10 +3202,12 @@ mark.diff-inline-add {
   transition: border-color 0.15s, color 0.15s;
   user-select: none;
 }
+
 .gx-mcp-pill:hover {
   border-color: var(--accent, #4fa8f5);
   color: var(--accent, #4fa8f5);
 }
+
 .gx-mcp-pill svg {
   flex-shrink: 0;
 }
@@ -3071,9 +3227,11 @@ mark.diff-inline-add {
   font-size: 12px;
   line-height: 1.6;
 }
+
 .gx-mcp-popover.open {
   display: block;
 }
+
 .gx-mcp-popover-title {
   font-size: 11px;
   font-weight: 700;
@@ -3082,6 +3240,7 @@ mark.diff-inline-add {
   color: var(--text-secondary, #888);
   margin-bottom: 10px;
 }
+
 .gx-mcp-popover-ref {
   display: flex;
   align-items: center;
@@ -3094,6 +3253,7 @@ mark.diff-inline-add {
   font-size: 12px;
   margin-bottom: 10px;
 }
+
 .gx-mcp-popover-ref button {
   margin-left: auto;
   background: none;
@@ -3103,14 +3263,17 @@ mark.diff-inline-add {
   color: var(--text-secondary, #888);
   border-radius: 4px;
 }
+
 .gx-mcp-popover-ref button:hover {
   color: var(--accent, #4fa8f5);
 }
+
 .gx-mcp-popover-sample {
   font-size: 11px;
   color: var(--text-secondary, #888);
   margin-bottom: 4px;
 }
+
 .gx-mcp-popover-sample code {
   display: block;
   margin-top: 4px;
@@ -3122,15 +3285,18 @@ mark.diff-inline-add {
   color: var(--text-primary, #e0e0e0);
   word-break: break-word;
 }
+
 .gx-mcp-popover-docs {
   margin-top: 10px;
   font-size: 11px;
   text-align: right;
 }
+
 .gx-mcp-popover-docs a {
   color: var(--accent, #4fa8f5);
   text-decoration: none;
 }
+
 .gx-mcp-pill-wrap {
   position: relative;
   display: flex;
@@ -3140,12 +3306,15 @@ mark.diff-inline-add {
 /* ── PDF Annotation layer ──────────────────────────────────────────────── */
 .annotation-layer {
   overflow: visible;
-  touch-action: none; /* draw / move / resize gestures must own the gesture */
+  touch-action: none;
+  /* draw / move / resize gestures must own the gesture */
 }
+
 .annotation-layer .ann-selection-box,
 .annotation-layer .ann-handle {
   shape-rendering: crispEdges;
 }
+
 .ann-inline-edit {
   position: absolute;
   z-index: 4;
@@ -3162,6 +3331,7 @@ mark.diff-inline-add {
   word-break: break-word;
   cursor: text;
 }
+
 .ann-inline-edit:focus {
   border-color: var(--accent, #4fa8f5);
 }
@@ -3360,10 +3530,21 @@ mark.diff-inline-add {
   color: var(--text-muted, rgba(0, 0, 0, 0.7));
 }
 
-.nav-indent-1 { padding-left: 18px; }
-.nav-indent-2 { padding-left: 28px; }
-.nav-indent-3 { padding-left: 38px; }
-.nav-indent-4 { padding-left: 48px; }
+.nav-indent-1 {
+  padding-left: 18px;
+}
+
+.nav-indent-2 {
+  padding-left: 28px;
+}
+
+.nav-indent-3 {
+  padding-left: 38px;
+}
+
+.nav-indent-4 {
+  padding-left: 48px;
+}
 
 .nav-tree-icon {
   display: flex;
@@ -3690,6 +3871,48 @@ mark.diff-inline-add {
   display: flex;
   flex-direction: row;
   align-items: center;
+  flex-wrap: wrap;
+  max-width: min(92vw, 880px);
+}
+
+.doc-ctx-ribbon-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.doc-ctx-sep-v {
+  width: 1px;
+  height: 18px;
+  background: var(--border-dark, rgba(0, 0, 0, 0.15));
+  margin: 0 3px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+#doc-context-popover .ribbon-btn-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border-dark, rgba(0, 0, 0, 0.15));
+  margin: 0 3px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+#doc-context-popover .split-btn .dropdown-menu {
+  z-index: 10005;
+}
+
+#doc-context-popover .tool-btn {
+  height: 24px;
+  min-width: 24px;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+#doc-context-popover .tool-btn iconify-icon {
+  font-size: 15px;
 }
 
 .doc-ctx-mode-element .doc-ctx-group--element {
@@ -3754,23 +3977,23 @@ mark.diff-inline-add {
   transition: transform 0.16s ease;
 }
 
-.gx-switch-label input:checked ~ .gx-switch {
+.gx-switch-label input:checked~.gx-switch {
   background: var(--accent, #4facfe);
 }
 
-.gx-switch-label input:checked ~ .gx-switch::after {
+.gx-switch-label input:checked~.gx-switch::after {
   transform: translateX(12px);
 }
 
 /* Keyboard focus has to stay visible even though the input is invisible. */
-.gx-switch-label input:focus-visible ~ .gx-switch {
+.gx-switch-label input:focus-visible~.gx-switch {
   outline: 2px solid var(--accent, #4facfe);
   outline-offset: 2px;
 }
 
 /* Locked (free tier): the whole control reads as unavailable. The Pro
    interceptor overlay still sits on top and handles the click. */
-.gx-switch-label input:disabled ~ .gx-switch {
+.gx-switch-label input:disabled~.gx-switch {
   opacity: 0.5;
 }
 
@@ -3810,9 +4033,10 @@ mark.diff-inline-add {
   display: contents;
 }
 
-#workspace-split.t-split > #pane-stack {
+#workspace-split.t-split>#pane-stack {
   display: flex;
-  flex-direction: column;   /* Original above Extracted */
+  flex-direction: column;
+  /* Original above Extracted */
   flex: 1 1 0;
   min-width: 0;
   min-height: 0;
@@ -3821,7 +4045,7 @@ mark.diff-inline-add {
 
 /* Inside the T, #pane-divider separates the two stacked doc panes, so it runs
    horizontally. Everywhere else it stays the vertical column divider. */
-#workspace-split.t-split > #pane-stack > #pane-divider {
+#workspace-split.t-split>#pane-stack>#pane-divider {
   flex: 0 0 4px;
   width: auto;
   height: 4px;
@@ -3829,6 +4053,7 @@ mark.diff-inline-add {
 }
 
 @media (max-width: 1024px) {
+
   /* The T rotates: canvas full-width on top, the two document panes paired
      beneath it. The doc panes are the ones that belong side by side (same
      content in two forms); the canvas is the one that wants the full width
@@ -3837,16 +4062,24 @@ mark.diff-inline-add {
     flex-direction: column;
   }
 
-  #workspace-split.t-split > #pane-analyze { order: 1; }
-  #workspace-split.t-split > #stack-divider { order: 2; }
-  #workspace-split.t-split > #pane-stack    { order: 3; }
+  #workspace-split.t-split>#pane-analyze {
+    order: 1;
+  }
+
+  #workspace-split.t-split>#stack-divider {
+    order: 2;
+  }
+
+  #workspace-split.t-split>#pane-stack {
+    order: 3;
+  }
 
   /* Stack becomes a row, so its inner divider becomes vertical... */
-  #workspace-split.t-split > #pane-stack {
+  #workspace-split.t-split>#pane-stack {
     flex-direction: row;
   }
 
-  #workspace-split.t-split > #pane-stack > #pane-divider {
+  #workspace-split.t-split>#pane-stack>#pane-divider {
     flex: 0 0 4px;
     width: 4px;
     height: auto;
@@ -3854,7 +4087,7 @@ mark.diff-inline-add {
   }
 
   /* ...and the stack/canvas divider becomes horizontal. */
-  #workspace-split.t-split > #stack-divider {
+  #workspace-split.t-split>#stack-divider {
     flex: 0 0 4px;
     width: auto;
     height: 4px;
@@ -3975,8 +4208,15 @@ mark.diff-inline-add {
 }
 
 @keyframes popoverFadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .pdf-ctx-btn {
@@ -4134,4 +4374,3 @@ mark.diff-inline-add {
   color: #ef4444;
   font-size: 12px;
 }
-
