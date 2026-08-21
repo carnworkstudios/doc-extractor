@@ -26,10 +26,12 @@ import { assemblePage, createFontRegistry } from '../extraction/vector/pageAssem
 import { katexExportCss } from '../extraction/vector/katexExport.css.js';
 import { synthesizeFromWords, makeSyntheticViewport } from '../extraction/vector/rasterSynth.js';
 import { ensureTesseract, recognizePage } from './tesseractOcr.js';
-import { htmlToGxDoc } from '../ir/htmlToGxDoc.js';
+import { htmlToGxDoc, htmlToGxDocAddressable } from '../ir/htmlToGxDoc.js';
 import { gxDocToHtml } from '../ir/gxDocToHtml.js';
 import { docxToGxDoc } from '../ir/docxToGxDoc.js';
 import { jsonToGxDoc } from '../ir/jsonToGxDoc.js';
+import { ensureBlockIds } from '../ir/gxDoc.js';
+import { gxDocToRegions } from '../ir/gxDocToRegions.js';
 import * as annotationEngine from '../annotation/engine.js';
 import { mountLayers as mountAnnotationLayers, unmountLayers as unmountAnnotationLayers } from '../annotation/layer.js';
 // The analyze panel is an optional add-on loaded at runtime by the host.
@@ -437,6 +439,38 @@ async function _maybeSuggestOcr() {
 
 const pushRegionPage    = (n, r, s, v)    => _core()?._dispatchRegionPage(n, r, s, v);
 const resetAnalysisData = ()              => _core()?._dispatchReset();
+
+/**
+ * Publish an imported document's artifacts.
+ *
+ * Regions are what the whole platform is built on: the analyze canvas reads
+ * them, the artifact/tag panel turns each one into a tag, and every cross-tool
+ * handoff resolves a tag back to content. A PDF gets them from the classifier.
+ * An imported DOCX/HTML/Markdown/JSON never touched the classifier, so it
+ * produced none, and the document arrived with no tags — which meant no
+ * artifacts, which meant nothing could be sent to another tool. It rendered,
+ * and it was inert.
+ *
+ * The IR already knows the structure, so this maps it across rather than
+ * re-detecting it. Call AFTER the document's HTML is in state, because the
+ * panel resolves a region id against the rendered markup.
+ */
+function publishImportedRegions(gxDoc, algorithm) {
+    if (!gxDoc) return;
+    // Ids first: gxDocToRegions and the rendered markup both address blocks by
+    // block.id, and they have to be looking at the same strings.
+    ensureBlockIds(gxDoc);
+    // A previous document's regions are not this document's.
+    resetAnalysisData();
+    for (const { page, regions } of gxDocToRegions(gxDoc, { algorithm })) {
+        pushRegionPage(page, regions, null, null);
+    }
+    _core()?._dispatchAnalysisReady({
+        metadata: { title: gxDoc.meta?.title || null },
+        source: algorithm,
+        pageCount: gxDoc.pages?.length ?? null,
+    });
+}
 const setAnalyzeWorker  = (w)             => { window.__GX_PDF_GEO_WORKER__ = w; _core()?._dispatchWorkerReady(w); };
 const onReprocessResult = (n, h, r, s, v) => _core()?._dispatchReprocessResult(n, h, r, s, v);
 const onReprocessError  = (n, e)       => _core()?._dispatchReprocessError(n, e);
@@ -1137,13 +1171,21 @@ async function handleDocumentFile(file, slot = 1) {
     const pdfState = slot === 2 ? state.pdf2 : state.pdf1;
     const label = slot === 2 ? 'file2' : 'file1';
 
-    pdfState.extractedHTML = clean;
-    pdfState.extractedText = clean.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    pdfState.file = file;
-    pdfState.gxDoc = htmlToGxDoc(clean, {
-        source: /\.md$/i.test(file.name) ? 'markdown' : 'html',
+    // Addressable, not plain: the walk stamps data-region-id onto the elements
+    // that produced blocks and wraps generic markup in the page scope the rest
+    // of the pipeline addresses through. The document still renders from its
+    // OWN markup, so its styles and structure survive; it is simply reachable
+    // now. Without this an imported file's artifacts all resolved to null.
+    const source = /\.md$/i.test(file.name) ? 'markdown' : 'html';
+    const { gxDoc, html: addressable } = htmlToGxDocAddressable(clean, {
+        source,
         title: file.name,
     });
+
+    pdfState.extractedHTML = addressable;
+    pdfState.extractedText = clean.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    pdfState.file = file;
+    pdfState.gxDoc = gxDoc;
     // An imported HTML/Markdown document was never run through the PDF
     // pipeline — no page model, no scanned classification, nothing measured.
     pdfState.extraction = {
@@ -1161,7 +1203,8 @@ async function handleDocumentFile(file, slot = 1) {
         return;
     }
 
-    applyHtmlEverywhere(clean, null);
+    applyHtmlEverywhere(addressable, null);
+    publishImportedRegions(gxDoc, `${source}-import`);
     switchView('html');
     _onSlotLoaded(1);
     showToast(`${file.name} loaded`, 'success');
@@ -1170,6 +1213,9 @@ async function handleDocumentFile(file, slot = 1) {
 async function handleDocxFile(file, slot = 1) {
     const buf = await file.arrayBuffer();
     const gxDoc = await docxToGxDoc(buf, { source: 'docx', title: file.name });
+    // Ids before render: gxDocToHtml writes block.id out as data-region-id, so
+    // the markup and the regions address each other by the same string.
+    ensureBlockIds(gxDoc);
     const html = gxDocToHtml(gxDoc);
     const pdfState = slot === 2 ? state.pdf2 : state.pdf1;
     const label = slot === 2 ? 'file2' : 'file1';
@@ -1194,6 +1240,7 @@ async function handleDocxFile(file, slot = 1) {
     }
 
     applyHtmlEverywhere(html, null);
+    publishImportedRegions(gxDoc, 'docx-import');
     switchView('html');
     _onSlotLoaded(1);
     showToast(`${file.name} loaded`, 'success');
@@ -1203,6 +1250,7 @@ async function handleJsonFile(file, slot = 1) {
     try {
         const text = await file.text();
         const gxDoc = jsonToGxDoc(text, { source: 'json', title: file.name });
+        ensureBlockIds(gxDoc);
         const html = gxDocToHtml(gxDoc);
         const pdfState = slot === 2 ? state.pdf2 : state.pdf1;
         const label = slot === 2 ? 'file2' : 'file1';
@@ -1228,6 +1276,7 @@ async function handleJsonFile(file, slot = 1) {
         }
 
         applyHtmlEverywhere(html, null);
+        publishImportedRegions(gxDoc, 'json-import');
         switchView('html');
         _onSlotLoaded(1);
         showToast(`${file.name} loaded`, 'success');
@@ -1236,8 +1285,52 @@ async function handleJsonFile(file, slot = 1) {
     }
 }
 
+/**
+ * GitHub-flavoured pipe tables → HTML, lifted out before any other rule runs.
+ *
+ * A markdown table used to fall through every rule here and land as a run of
+ * paragraphs, one per row. The document looked roughly right and the TABLE
+ * artifact was gone: nothing to tag, nothing to send to the table tool, which
+ * is the single most useful thing an imported document has. The delimiter row
+ * is also indistinguishable from a thematic break once split, so tables have
+ * to be claimed before `---` means anything else.
+ *
+ * Each table is swapped for a placeholder so the inline rules below cannot
+ * reach inside it and mangle the markup.
+ */
+function _extractMdTables(md, out) {
+    const ROW = /^\s*\|(.+)\|\s*$/;
+    const DELIM = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+    const cells = (line) => line.replace(/^\s*\|/, '').replace(/\|\s*$/, '')
+        .split('|').map(c => c.trim());
+
+    const lines = md.split('\n');
+    const kept = [];
+    for (let i = 0; i < lines.length; i++) {
+        const isTable = ROW.test(lines[i]) && i + 1 < lines.length && DELIM.test(lines[i + 1]);
+        if (!isTable) { kept.push(lines[i]); continue; }
+
+        const headers = cells(lines[i]);
+        const rows = [];
+        let j = i + 2;
+        for (; j < lines.length && ROW.test(lines[j]); j++) rows.push(cells(lines[j]));
+
+        const head = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
+        const body = rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('');
+        out.push(`<div class="pdf-table-wrap pdf-table--lattice">` +
+                 `<table class="tablecoil"><tbody>${head}${body}</tbody></table></div>`);
+        kept.push(`@@GXTABLE${out.length - 1}@@`);
+        i = j - 1;
+    }
+    return kept.join('\n');
+}
+
 export function markdownToHtml(md) {
-    return md
+    const tables = [];
+    const html = _extractMdTables(md, tables)
+        // A thematic break is a real block: it becomes a DIVIDER artifact.
+        // Claimed after tables so a delimiter row cannot be mistaken for one.
+        .replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, '<hr>')
         .replace(/^#{6}\s+(.+)$/gm, '<h6>$1</h6>')
         .replace(/^#{5}\s+(.+)$/gm, '<h5>$1</h5>')
         .replace(/^#{4}\s+(.+)$/gm, '<h4>$1</h4>')
@@ -1253,9 +1346,12 @@ export function markdownToHtml(md) {
         .replace(/\n{2,}/g, '</p><p>')
         .replace(/^(?!<[h|u|l|p])/gm, '')
         .replace(/^(.+)$/gm, (line) => {
-            if (/^<(h[1-6]|ul|li|p)/.test(line)) return line;
+            if (/^<(h[1-6]|ul|li|p|hr|div|table)/.test(line)) return line;
+            if (/^@@GXTABLE\d+@@$/.test(line)) return line;
             return `<p class="pdf-region type-paragraph">${line}</p>`;
         });
+
+    return html.replace(/@@GXTABLE(\d+)@@/g, (_, i) => tables[Number(i)] || '');
 }
 
 async function handleFile(file, pdfIndex) {

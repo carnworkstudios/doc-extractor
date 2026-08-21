@@ -51,6 +51,11 @@ const LAYOUT_CSS = `
 .pdf-doc .pdf-list-wrap ol, .pdf-doc .pdf-list-wrap ul { margin: 0; padding-left: 1.4em; }
 .pdf-doc .pdf-list-wrap li { margin: 2px 0; }
 .pdf-doc .pdf-paragraph { margin: 0.5em 0; }
+.pdf-doc .pdf-math-block { margin: 0.8em 0; text-align: center; }
+.pdf-doc .pdf-references { margin: 6px 0; padding-left: 1.6em; }
+.pdf-doc .pdf-references li { margin: 3px 0; }
+.pdf-doc .pdf-header { font-size: 0.78em; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-bottom: 12px; }
+.pdf-doc .pdf-footer { font-size: 0.78em; color: #555; border-top: 1px solid #ddd; padding-top: 4px; margin-top: 12px; }
 @media (max-width: 720px) { .pdf-doc .pdf-page-row { grid-template-columns: 1fr; } }
 `;
 
@@ -150,35 +155,71 @@ function _zoneToHtml(zone) {
 
 const ALIGN_CLASS = { left: 'ta-l', center: 'ta-c', right: 'ta-r', justify: 'ta-j' };
 
+/**
+ * The attribute that makes a rendered block addressable.
+ *
+ * getRegionHtml(page, regionId) locates content by `data-region-id` inside the
+ * page section. Without it an imported document rendered fine and could not be
+ * pointed at: every artifact resolved to null, so nothing could be sent to
+ * another tool. ensureBlockIds() puts block.id there; gxDocToRegions() reads
+ * the same field, so markup and regions address each other by construction.
+ */
+function _idAttr(block) {
+    return block.id ? ` data-region-id="${esc(block.id)}"` : '';
+}
+
 function _blockToHtml(block) {
     const alignClass = ALIGN_CLASS[block.align] || '';
+    const idAttr = _idAttr(block);
 
     switch (block.type) {
         case 'heading': {
             const level = Math.min(Math.max(block.level || 1, 1), 6);
             const cls = alignClass ? ` class="${alignClass}"` : '';
-            return `<h${level}${cls}>${_runsHtml(block)}</h${level}>`;
+            return `<h${level}${cls}${idAttr}>${_runsHtml(block)}</h${level}>`;
         }
-        case 'paragraph':
-            return `<div class="pdf-paragraph f1${alignClass ? ` ${alignClass}` : ''}">${_runsHtml(block)}</div>`;
+        case 'paragraph': {
+            // Page furniture keeps its own element, so a running head does not
+            // come back as a body paragraph in the middle of the text.
+            if (block.role === 'header' || block.role === 'footer') {
+                const tag = block.role;
+                return `<${tag} class="pdf-${tag}${alignClass ? ` ${alignClass}` : ''}"${idAttr}>${_runsHtml(block)}</${tag}>`;
+            }
+            return `<div class="pdf-paragraph f1${alignClass ? ` ${alignClass}` : ''}"${idAttr}>${_runsHtml(block)}</div>`;
+        }
+        case 'equation': {
+            // The TeX is the content and rides in the attribute; the text node
+            // is the fallback rendering for anything that cannot typeset. The
+            // IR deliberately does NOT store KaTeX markup — it is a view, and
+            // storing a view is how a round trip loses the equation.
+            const tex = esc(block.latex || block.text || '');
+            return `<p class="pdf-paragraph pdf-math-block f1 ta-c"${idAttr} data-math="" data-latex="${tex}">${tex}</p>`;
+        }
+        case 'reference': {
+            const items = (block.entries || [])
+                .map((e, i) => `<li class="pdf-reference" data-ref-index="${i}">${esc(e)}</li>`)
+                .join('');
+            const cont = block.continuation ? ' data-ref-continuation=""' : '';
+            return `<ol class="pdf-references f1"${cont}${idAttr}>${items}</ol>`;
+        }
         case 'table':
-            return _tableToHtml(block);
+            return _tableToHtml(block, idAttr);
         case 'list': {
             const tag = block.ordered ? 'ol' : 'ul';
             const items = (block.items || []).map(item => `<li>${esc(item)}</li>`).join('');
-            return `<div class="pdf-list-wrap">${items ? `<${tag}>${items}</${tag}>` : ''}</div>`;
+            return `<div class="pdf-list-wrap"${idAttr}>${items ? `<${tag}>${items}</${tag}>` : ''}</div>`;
         }
         case 'callout': {
             const kind = block.kind || 'note';
-            return `<aside class="pdf-box pdf-box--${esc(kind)}">${_runsHtml(block)}</aside>`;
+            return `<aside class="pdf-box pdf-box--${esc(kind)}"${idAttr}>${_runsHtml(block)}</aside>`;
         }
         case 'divider':
-            return '<hr class="pdf-divider">';
+            return `<hr class="pdf-divider"${idAttr}>`;
         case 'image': {
             const id = esc(block.id || 'img');
             const alt = esc(block.alt || '');
             const placeholder =
-                `<div class="pdf-image-placeholder"><img class="extracted-pdf-image" data-img-id="${id}" alt="${alt}"></div>`;
+                `<div class="pdf-image-placeholder"${idAttr}><img class="extracted-pdf-image" data-img-id="${id}" alt="${alt}"></div>`;
             // A figure that carried its own labels goes back out as the same
             // SVG overlay it came in as. Emitting the bare placeholder would
             // silently drop every callout and axis tick on a round trip.
@@ -205,11 +246,11 @@ function _blockToHtml(block) {
                 `max-width:100%;margin:10px 0;">${placeholder}${layer}</div>`;
         }
         default:
-            return `<div class="pdf-paragraph f1 ${align}">${_runsHtml(block)}</div>`;
+            return `<div class="pdf-paragraph f1${alignClass ? ` ${alignClass}` : ''}"${idAttr}>${_runsHtml(block)}</div>`;
     }
 }
 
-function _tableToHtml(block) {
+function _tableToHtml(block, idAttr = '') {
     const latticeClass = block.borderless ? 'pdf-table--borderless' : 'pdf-table--lattice';
     const tableClass = block.borderless ? 'tablecoil borderless' : 'tablecoil';
     const conf = block.confidence != null ? ` data-confidence="${block.confidence}"` : '';
@@ -219,7 +260,7 @@ function _tableToHtml(block) {
     const body = (block.rows || []).map(row =>
         `<tr>${row.map(cell => `<td>${esc(cell)}</td>`).join('')}</tr>`,
     ).join('');
-    return `<div class="pdf-table-wrap ${latticeClass}">\n` +
+    return `<div class="pdf-table-wrap ${latticeClass}"${idAttr}>\n` +
            `<table class="${tableClass}"${conf}>\n<tbody>\n${head}${body}\n</tbody>\n</table>\n</div>`;
 }
 

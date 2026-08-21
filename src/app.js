@@ -5,6 +5,7 @@
 import $ from 'jquery';
 import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
+import katex from 'katex';
 import { initViewTabs, syncToolbarToView } from './ui/viewController.js';
 import { initFileInputs } from './ui/fileUpload.js';
 import { initExportSystem } from './ui/exportController.js';
@@ -267,6 +268,67 @@ window.__GX_PDF_CORE__ = {
             patchPageHtml(page, (wrapper || pageEl).outerHTML);
             return true;
         } catch (_) { return false; }
+    },
+
+    /**
+     * Write corrected LaTeX back over the equation region it came from.
+     *
+     * The receiving half of the equation round trip: the extractor reconstructs
+     * display math into TeX, TAFNE edits the TeX, and it comes back addressed
+     * by the origin (page + regionId) it has carried the whole way.
+     *
+     * `data-latex` is the content and is written first; the KaTeX markup beside
+     * it is a rendering of that attribute and is regenerated, never merged. A
+     * patch that updated the rendering and left the attribute stale would make
+     * the next export disagree with what is on screen — the document would say
+     * one equation and show another.
+     *
+     * A TeX string that will not typeset is REFUSED rather than written, because
+     * a region whose stored LaTeX cannot render is worse than the wrong
+     * equation: it is an equation that disappears on the next re-render.
+     */
+    applyRegionLatex(page, regionId, latex) {
+        try {
+            const tex = String(latex == null ? '' : latex);
+            if (!tex.trim()) return false;
+
+            let rendered;
+            try {
+                rendered = katex.renderToString(tex, {
+                    displayMode: true, output: 'html', throwOnError: true, strict: false,
+                });
+            } catch (_) { return false; }
+
+            const doc = new DOMParser().parseFromString(state.pdf1.extractedHTML || '', 'text/html');
+            const scope = doc.querySelector(`section.pdf-page-content[data-page="${page}"]`);
+            if (!scope) return false;
+            const region = scope.querySelector(`[data-region-id="${CSS.escape(String(regionId))}"]`);
+            if (!region) return false;
+            const mathEl = region.matches('[data-latex]') ? region : region.querySelector('[data-latex]');
+            if (!mathEl) return false;
+
+            mathEl.setAttribute('data-latex', tex);
+            mathEl.setAttribute('data-gx-annotated', 'true');
+            mathEl.innerHTML = rendered;
+
+            const pageEl = doc.querySelector(`section.pdf-page-content[data-page="${page}"]`);
+            const wrapper = pageEl?.closest('article.pdf-doc');
+            state.pdf1.extractedHTML = doc.body.innerHTML;
+            patchPageHtml(page, (wrapper || pageEl).outerHTML);
+            return true;
+        } catch (_) { return false; }
+    },
+
+    /** The LaTeX currently stored on an equation region, or null. */
+    getRegionLatex(page, regionId) {
+        try {
+            const doc = new DOMParser().parseFromString(state.pdf1.extractedHTML || '', 'text/html');
+            const scope = doc.querySelector(`section.pdf-page-content[data-page="${page}"]`);
+            const region = scope?.querySelector(`[data-region-id="${CSS.escape(String(regionId))}"]`);
+            if (!region) return null;
+            const mathEl = region.matches('[data-latex]') ? region : region.querySelector('[data-latex]');
+            return mathEl ? mathEl.getAttribute('data-latex') : null;
+        } catch (_) { return null; }
     },
 
     /**

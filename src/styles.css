@@ -45,7 +45,7 @@ body {
   align-items: center;
   gap: 12px;
   padding: 0 16px;
-  background: var(--header-bg);
+  /* background: var(--header-bg); */
   flex-shrink: 0;
   z-index: 100;
 }
@@ -76,7 +76,7 @@ body {
   gap: 7px;
   font-weight: 600;
   font-size: 13px;
-  color: #fff;
+  /* color: #fff; */
   white-space: nowrap;
   letter-spacing: 0.2px;
 }
@@ -92,9 +92,9 @@ body {
   gap: 6px;
   padding: 5px 12px;
   border-radius: 5px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgb(105 101 101 / 43%);;
   background: rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.85);
+  color: inherit;
   cursor: pointer;
   font-size: 12px;
   font-family: inherit;
@@ -3967,7 +3967,7 @@ mark.diff-inline-add {
 .gx-switch::after {
   content: "";
   position: absolute;
-  top: 2px;
+  /* top: 2px; */
   left: 2px;
   width: 15px;
   height: 15px;

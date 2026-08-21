@@ -2159,6 +2159,13 @@
                   </button>
                   <button
                     class="legend-toggle active"
+                    data-region="REFERENCE"
+                    style="--lc: #0ea5e9"
+                  >
+                    Refs
+                  </button>
+                  <button
+                    class="legend-toggle active"
                     data-region="IMAGE"
                     style="--lc: #ef4444"
                   >
@@ -2371,16 +2378,61 @@
           });
           if (matched) targetView = viewMap[matched];
         }
+        // Clicking a tab does nothing until the app has bound its tab
+        // handlers, and that happens inside an async init that is not finished
+        // at DOMContentLoaded. The click here is fire-and-hope: it lands on a
+        // button with no listener, silently, and the deep link opens the
+        // default view instead. Whether it worked came down to which of the
+        // two won the race on the day.
+        //
+        // So the route is retried until the view it asked for is actually the
+        // active one, and then given up on rather than retried forever.
+        function _clickWhenLive(activate, isDone, tries) {
+          if (isDone()) return;
+          activate();
+          if (tries <= 0) return;
+          setTimeout(function () {
+            _clickWhenLive(activate, isDone, tries - 1);
+          }, 100);
+        }
+        var _isActive = function (view) {
+          return function () {
+            var b = document.querySelector('.tab-btn[data-view="' + view + '"]');
+            return !!b && b.classList.contains("active");
+          };
+        };
         if (targetView === "visual-diff") {
-          var docTab = document.querySelector('.tab-btn[data-view="html"]');
-          if (docTab) docTab.click();
-          var mirrorToggle = document.getElementById("doc-pdf-mirror-toggle");
-          if (mirrorToggle) mirrorToggle.click();
-        } else if (targetView) {
-          var btn = document.querySelector(
-            '.tab-btn[data-view="' + targetView + '"]',
+          // /visual-diff/ is the Doc tab with the PDF mirrored beside it.
+          _clickWhenLive(
+            function () {
+              var docTab = document.querySelector('.tab-btn[data-view="html"]');
+              if (docTab) docTab.click();
+            },
+            _isActive("html"),
+            20,
           );
-          if (btn && !btn.disabled) btn.click();
+          _clickWhenLive(
+            function () {
+              var m = document.getElementById("doc-pdf-mirror-toggle");
+              if (m) m.click();
+            },
+            function () {
+              var m = document.getElementById("doc-pdf-mirror-toggle");
+              return !!m && m.classList.contains("active");
+            },
+            20,
+          );
+        } else if (targetView) {
+          _clickWhenLive(
+            function () {
+              var btn = document.querySelector(
+                '.tab-btn[data-view="' + targetView + '"]',
+              );
+              if (btn && !btn.disabled) btn.click();
+            },
+            _isActive(targetView),
+            20,
+          );
         }
 
         // On switch: keep URL in sync

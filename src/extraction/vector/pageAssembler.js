@@ -20,6 +20,7 @@ import { rebuildText } from './textRebuilder.js';
 import { buildDisplayMath } from './mathBuilder.js';
 import { RegionType } from './classifiers/regionTypes.js';
 import { linkFlows } from './classifiers/flowLinker.js';
+import { entryOffsets } from './classifiers/referenceDetector.js';
 import { detectZoneColumns } from './contextClassifier.js';
 import { PageScale } from './pageScale.js';
 import { layoutTreeBuilder, compareBoxes } from './layoutTreeBuilder.js';
@@ -572,8 +573,17 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
         if (text) textEntries.push({ region, text });
         const ry = Math.round(region.yCenter ?? 0);
         const rx = Math.round(region.bbox?.x ?? 0);
+        // The sentinel is where a region becomes ADDRESSABLE. Only tables and
+        // pictures used to carry `data-region-id`, so every text, math, box,
+        // header and footer artifact resolved to null in getRegionHtml() and
+        // could not be jumped to, previewed, or sent anywhere. The id belongs
+        // on the wrapper, not the leaf, because it is the one element every
+        // region type produces.
+        const idAttr = region.id != null
+            ? ` data-region-id="${_escAttr(String(region.id))}" data-region-type="${_escAttr(String(region.type || ''))}"`
+            : '';
         return {
-            html: html ? `<div class="pdf-region" data-ry="${ry}" data-rx="${rx}"${_regionLinkAttr(region, links)}>${html}</div>` : '',
+            html: html ? `<div class="pdf-region"${idAttr} data-ry="${ry}" data-rx="${rx}"${_regionLinkAttr(region, links)}>${html}</div>` : '',
             colIdx: region.columnIndex,
             ry,
             rx,
@@ -971,7 +981,7 @@ function _splitItemAtSpan(item, start, end, gxLink) {
  * touches them is carried here (their caption/label items, even if covered,
  * do not become clickable text).
  */
-const LINK_TEXT_REGION_TYPES = new Set(['PARAGRAPH', 'HEADING', 'LIST', 'BOX', 'HEADER', 'FOOTER']);
+const LINK_TEXT_REGION_TYPES = new Set(['PARAGRAPH', 'HEADING', 'LIST', 'MATH', 'REFERENCE', 'BOX', 'HEADER', 'FOOTER']);
 
 function _regionLinkAttr(region, links, slack = 4) {
     const b = region.bbox;
@@ -1426,6 +1436,33 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             break;
         }
 
+        case RegionType.REFERENCE: {
+            const scopedItems = _scopeItems(region, textItems, textMeta, linkByIndex);
+            const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
+            const innerHtml   = rebuildText(scopedItems, pageWidthPt, { format: 'inline-html', ..._pageScaleOpts });
+            if (!innerHtml.trim()) break;
+
+            const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
+            const fontClass = _registerFont(fontRegistry, family, sizePt, bold, italic);
+
+            // A bibliography that cannot be addressed per entry is not usable
+            // as an artifact — you cannot cite, count, or export "the wall of
+            // text on page 21". The detector recorded where each entry begins;
+            // split the rebuilt line on those boundaries so every entry is its
+            // own <li>. A continuation carries no boundaries of its own and
+            // stays one item, marked as such.
+            const groups = _splitReferenceItems(scopedItems);
+            const contAttr = region.continuationOf ? ' data-ref-continuation=""' : '';
+            const items = (groups.length > 1 ? groups : [scopedItems])
+                .map(g => rebuildText(g, pageWidthPt, { format: 'inline-html', ..._pageScaleOpts }))
+                .filter(h => h.trim())
+                .map((h, i) => `<li class="pdf-reference" data-ref-index="${i}">${h}</li>`)
+                .join('');
+            html = `<ol class="pdf-references ${fontClass}"${contAttr}>${items}</ol>`;
+            text = rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
+            break;
+        }
+
         case RegionType.HEADER:
         case RegionType.FOOTER: {
             const scopedItems = _scopeItems(region, textItems, textMeta, linkByIndex);
@@ -1462,6 +1499,45 @@ function _itemStyle(item) {
         underlined: !!item.underlined,
         link:      item._gxLink ?? null,
     };
+}
+
+/**
+ * Split a reference block's text items into one group per bibliography entry.
+ *
+ * The boundaries are recomputed here rather than read off `region.entryOffsets`
+ * on purpose: those offsets index the classifier's joined text, and _scopeItems
+ * may not hand back that exact sequence. Recomputing against the items actually
+ * being rendered means the split lands between items instead of near them.
+ *
+ * Returns one group per entry, or a single group when no boundary was found.
+ */
+function _splitReferenceItems(items) {
+    // Item index → character offset of that item in the joined text, built the
+    // same way the detector builds it (single spaces, collapsed runs).
+    const starts = [];
+    let joined = '';
+    for (const item of items) {
+        const str = String(item?.str ?? '');
+        if (joined) joined += ' ';
+        starts.push(joined.length);
+        joined += str;
+    }
+    joined = joined.replace(/\s+/g, ' ');
+    // The collapse can shift offsets; redo it on the collapsed string by
+    // walking the same items, which is exact for the single-space join above.
+    const offsets = entryOffsets(joined);
+    if (offsets.length < 2) return [items];
+
+    const groups = [];
+    let cursor = 0;
+    for (const off of offsets) {
+        // First item whose start is at or past this boundary.
+        let idx = starts.findIndex((s, i) => i > cursor - 1 && s >= off);
+        if (idx < 0) idx = items.length;
+        if (idx > cursor) { groups.push(items.slice(cursor, idx)); cursor = idx; }
+    }
+    if (cursor < items.length) groups.push(items.slice(cursor));
+    return groups.filter(g => g.length);
 }
 
 function _escAttr(s) {

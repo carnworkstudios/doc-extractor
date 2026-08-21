@@ -16,10 +16,13 @@ import { detectUnderlines } from './classifiers/underlineDetector.js';
 import { detectPictureRegions, filterTableSegs } from './classifiers/imageRegionDetector.js';
 import { detectLatticeTables } from './classifiers/latticeDetector.js';
 import { detectStreamTableRegions } from './classifiers/streamTableDetector.js';
+import { detectStreamTables } from './streamDetector.js';
 import { detectBoxRegions } from './classifiers/boxDetector.js';
 import { analyzeBlock } from './classifiers/proseGate.js';
 import { detectDividers } from './classifiers/dividerDetector.js';
 import { detectHeadersFooters } from './classifiers/headerFooterDetector.js';
+import { detectReferences } from './classifiers/referenceDetector.js';
+import { mergeMathRegions } from './classifiers/mathRegionMerger.js';
 import { classifyHeading } from './classifiers/headingDetector.js';
 import { classifyList, BULLET_RE as _BULLET_RE, ORDERED_RE as _ORDERED_RE } from './classifiers/listDetector.js';
 import { RegionType } from './classifiers/regionTypes.js';
@@ -40,6 +43,275 @@ function toViewport(vpTransform, pdfX, pdfY) {
 function insideBBox(px, py, bbox, pad = 0) {
     return px >= bbox.x - pad && px <= bbox.x + bbox.w + pad &&
         py >= bbox.y - pad && py <= bbox.y + bbox.h + pad;
+}
+
+// ── Custom-region helpers ─────────────────────────────────────────────────────
+
+const _TABLE_TYPES = new Set(['LATTICE_TABLE', 'TABLE', 'STREAM_TABLE']);
+
+// Types whose yCenter the pipeline measures off the TEXT (see _flushBlock).
+// Everything else (IMAGE, BOX, DIVIDER) uses the bbox midpoint, so measuring
+// their label text instead would move them relative to the natural result.
+const _TEXT_FLOW_TYPES = new Set(['PARAGRAPH', 'HEADING', 'LIST', 'MATH', 'REFERENCE', 'HEADER', 'FOOTER']);
+
+/**
+ * Assign text items to custom (user-overridden) regions, exclusively.
+ *
+ * Two rules, both learned the hard way:
+ *
+ * 1. Containment is unpadded and uses the item's CENTRE for prose. The old
+ *    test padded every region by the TABLE cell padding and matched on the
+ *    item's left edge / baseline, so a one-line region reached into the line
+ *    below it and claimed it too. Table types keep the pad: cell text hugs
+ *    the rules and genuinely sits on the boundary.
+ *
+ * 2. An item belongs to exactly ONE region. Regions were previously matched
+ *    in isolation, so an item inside two boxes was rendered by both and the
+ *    text came out duplicated. Contested items go to the SMALLEST region,
+ *    which is the more specific override; ties break on array order so the
+ *    result is deterministic.
+ *
+ * Returns Map<customRegion, { textIndices, matchedItems }>.
+ */
+function _claimCustomText(customRegions, textMeta, scale, claimBboxes) {
+    const tablePad = scale.tablePadPx ?? 5;
+    const out = new Map();
+    const targets = [];
+    for (const cr of customRegions) {
+        out.set(cr, { textIndices: [], matchedItems: [] });
+        if (!cr.bbox || cr.skip) continue;
+        // A ruled table claims against its reconstructed grid, which is
+        // usually wider than the box drawn around it. See _gridBounds.
+        const bbox = claimBboxes?.get(cr) || cr.bbox;
+        targets.push({
+            cr,
+            bbox,
+            area: Math.max(bbox.w * bbox.h, 0),
+            pad: _TABLE_TYPES.has(cr.type) ? tablePad : 0,
+            isTable: _TABLE_TYPES.has(cr.type),
+            ruled: cr.type === 'LATTICE_TABLE' || cr.type === 'TABLE',
+        });
+    }
+    if (!targets.length) return out;
+
+    const assign = (t, tm) => {
+        const slot = out.get(t.cr);
+        slot.textIndices.push(tm.idx);
+        slot.matchedItems.push(tm);
+    };
+    const pick = (tm, relaxed) => {
+        // Prose matches on the glyph-run centre; a table cell matches on its
+        // anchor, because a wide cell value can start left of its column rule.
+        const cx = tm.vx + (tm.vWidth || 0) / 2;
+        let best = null;
+        for (const t of targets) {
+            const px = (t.isTable || relaxed) ? tm.vx : cx;
+            const pad = relaxed ? tablePad : t.pad;
+            if (!insideBBox(px, tm.vy, t.bbox, pad)) continue;
+            if (!best) { best = t; continue; }
+            // Ruled tables outrank stream tables for the same cell, mirroring
+            // the pipeline's own detector order (lattice claims first, stream
+            // takes what is left). Without this a stream table nested inside a
+            // ruled one stole its cells, because it is the smaller box.
+            // Table-vs-table only: a PARAGRAPH drawn inside a table is a
+            // deliberate override and must still win on size.
+            if (t.isTable && best.isTable && t.ruled !== best.ruled) {
+                if (t.ruled) best = t;
+                continue;
+            }
+            if (t.area < best.area) best = t;
+        }
+        return best;
+    };
+
+    // Pass 1 — strict containment. Everything that unambiguously belongs to a
+    // region is settled here, so pass 2 can never take a line off a region
+    // that already owns it.
+    const leftover = [];
+    for (const tm of textMeta) {
+        if (!tm.str.trim()) continue;
+        const best = pick(tm, false);
+        if (best) assign(best, tm);
+        else leftover.push(tm);
+    }
+
+    // Pass 2 — relaxed containment for what pass 1 left homeless. Strict
+    // matching is tighter than the classifier's own region bounds, so an item
+    // sitting on a boundary could end up claimed by nobody while the natural
+    // region that would have held it was filtered out for overlapping a
+    // custom region: the item then vanished from the page entirely (a figure
+    // label went missing this way). Still exclusive — an item lands in one
+    // region or none.
+    for (const tm of leftover) {
+        const best = pick(tm, true);
+        if (best) assign(best, tm);
+    }
+    return out;
+}
+
+/** Midpoint of the claimed text's vertical extent — how _flushBlock measures it. */
+function _textYCenter(items) {
+    if (!items?.length) return null;
+    let yMin = Infinity, yMax = -Infinity;
+    for (const tm of items) {
+        if (tm.vy < yMin) yMin = tm.vy;
+        if (tm.vy > yMax) yMax = tm.vy;
+    }
+    return (yMin + yMax) / 2;
+}
+
+/** A lattice with only one cell is a flattened region, not a table. */
+function _isUsableLattice(l) {
+    if (!l || !Array.isArray(l.rows) || !Array.isArray(l.cols)) return false;
+    return (l.rows.length - 1) * (l.cols.length - 1) >= 2;
+}
+
+/**
+ * The reconstructed grid that best fills the region, not merely the first one.
+ *
+ * `reconstructAll()` returns every grid it can find in the segments it was
+ * given, in no useful order. A ruled table's segments routinely reconstruct
+ * into several candidates — the whole grid plus, say, the header strip on its
+ * own. Taking [0] handed back the header strip: a 10x6 architecture table
+ * re-extracted as a single 2x4 band. Pick the candidate that covers the most
+ * of the region instead.
+ */
+function _pickLattice(lattices, bbox) {
+    let best = null, bestScore = -1;
+    for (const l of lattices || []) {
+        if (!l?.bbox) continue;
+        const ix = Math.min(bbox.x + bbox.w, l.bbox.x + l.bbox.w) - Math.max(bbox.x, l.bbox.x);
+        const iy = Math.min(bbox.y + bbox.h, l.bbox.y + l.bbox.h) - Math.max(bbox.y, l.bbox.y);
+        const score = (ix > 0 && iy > 0) ? ix * iy : 0;
+        if (score > bestScore) { bestScore = score; best = l; }
+    }
+    return best;
+}
+
+/**
+ * The box a reconstructed table actually occupies: its own bbox unioned with
+ * the grid the rules produced.
+ *
+ * A region bbox is measured off the ink the detector clustered, but
+ * tableBuilder fills cells from the grid, and the grid routinely runs wider.
+ * The ResNet architecture table's LATTICE_TABLE bbox is ~200px narrower than
+ * its own rules, so claiming text by the bbox starved it: nine rows and
+ * thirty cells came back as one header row with no cells at all. Claim
+ * against what the table will render from, not what was drawn around it.
+ */
+function _gridBounds(bbox, lattice) {
+    const xs = lattice.cols, ys = lattice.rows;
+    if (!xs?.length || !ys?.length) return bbox;
+    const x = Math.min(bbox.x, ...xs);
+    const y = Math.min(bbox.y, ...ys);
+    return {
+        x, y,
+        w: Math.max(bbox.x + bbox.w, ...xs) - x,
+        h: Math.max(bbox.y + bbox.h, ...ys) - y,
+    };
+}
+
+/**
+ * A borderless table's grid, built by the page's own stream detector.
+ *
+ * _bandLattice below is a standalone reading of the text and it does not
+ * agree with detectStreamTables: on the ResNet architecture page's right-hand
+ * column it split eight rows into sixteen, because the real detector groups
+ * bands by an adaptive gap while the standalone one bands on y alone. An
+ * override has to reproduce the pipeline's answer, so ask the pipeline.
+ * _bandLattice stays as the fallback for when the detector's gates reject the
+ * items — a hand-drawn box is allowed to be a table even when the detector
+ * would not have found one there.
+ */
+function _streamLattice(bbox, matchedItems, scale, segments) {
+    if (matchedItems.length >= 6) {
+        const found = _pickLattice(detectStreamTables(matchedItems, scale, [], segments, []), bbox);
+        if (_isUsableLattice(found)) return found;
+    }
+    return _bandLattice(bbox, matchedItems, scale);
+}
+
+/**
+ * Grid read off the text: rows from y-bands, columns from x-clusters snapped
+ * to real coverage gaps. This is what a STREAM_TABLE override gets, and what
+ * a LATTICE override falls back to when the ink reconstructs to nothing.
+ *
+ * hLines/vLines are always present. Omitting them on the old lattice fallback
+ * crashed tableBuilder (`Cannot read properties of undefined (reading
+ * 'length')`) and failed the entire page re-extract.
+ */
+function _bandLattice(bbox, matchedItems, scale) {
+    // detectionMethod 'user-drawn': this grid came from a region the user
+    // drew, not from streamDetector's scored candidate search. The 1.0 is
+    // "the human said so", NOT a measurement — tableBuilder only publishes a
+    // data-confidence for genuinely measured sources.
+    const base = {
+        hLines: [], vLines: [], bbox, border: false,
+        detectionMethod: 'user-drawn', confidence: 1.0,
+    };
+    const bands = _groupByYBand(matchedItems, scale.yBandTolPx);
+    if (!bands.length) {
+        return { ...base, rows: [bbox.y, bbox.y + bbox.h], cols: [bbox.x, bbox.x + bbox.w] };
+    }
+
+    const tagged = [];
+    for (let bi = 0; bi < bands.length; bi++) {
+        for (const item of bands[bi].items) {
+            tagged.push({
+                vx: item.vx, vy: item.vy, vWidth: item.vWidth || 0,
+                str: item.str || '', _band: bi,
+            });
+        }
+    }
+    const colAnchors = _clusterByX(tagged, scale.colTolPx)
+        .map(cluster => ({ x: _mean(cluster.map(i => i.vx)), items: cluster }))
+        .sort((a, b) => a.x - b.x);
+
+    let cols;
+    if (colAnchors.length === 0) {
+        cols = [bbox.x, bbox.x + bbox.w];
+    } else {
+        const gutters = _detectGutters(bands, 0.6, scale.S * 0.15) || [];
+        cols = [bbox.x];
+        for (let i = 1; i < colAnchors.length; i++) {
+            const lo = colAnchors[i - 1].x;
+            const hi = colAnchors[i].x;
+            const gutter = gutters.find(x => x > lo && x < hi);
+            cols.push(gutter ?? (lo + hi) / 2);
+        }
+        cols.push(bbox.x + bbox.w);
+    }
+
+    const rows = [bbox.y];
+    for (let i = 1; i < bands.length; i++) rows.push((bands[i - 1].y + bands[i].y) / 2);
+    rows.push(bbox.y + bbox.h);
+
+    return { ...base, rows, cols };
+}
+
+/**
+ * Place regions into a column from their bbox centre. Mirrors the pass the
+ * naturally-classified regions get; custom-injected regions are appended
+ * after that pass runs, so they need their own call or they stay at -1
+ * (= full width) and render across a two-column page.
+ */
+function _assignColumnIndex(regions, columnSplits, viewport) {
+    const epsC = 5;
+    for (const r of regions) {
+        const needs = r._needsColumn;
+        delete r._needsColumn;
+        if (!needs || !columnSplits?.length) continue;
+        if (r.columnIndex !== -1 || !r.bbox) continue;
+        const crossesSplit = columnSplits.some(sx =>
+            r.bbox.x < sx - epsC && (r.bbox.x + r.bbox.w) > sx + epsC);
+        if (r.bbox.w >= viewport.width * 0.65 || crossesSplit) continue;
+        const cx = r.bbox.x + r.bbox.w / 2;
+        for (let ci = 0; ci <= columnSplits.length; ci++) {
+            const lo = ci === 0 ? -Infinity : columnSplits[ci - 1];
+            const hi = ci === columnSplits.length ? Infinity : columnSplits[ci];
+            if (cx >= lo && cx < hi) { r.columnIndex = ci; break; }
+        }
+    }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -231,14 +503,20 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     // tableSegs so the lattice/stream detectors can't reconstruct a region there.
     // The text items remain in textMeta (unclaimed), so they fall through to
     // _classifyBucket and get re-classified naturally.
-    const deletedBboxes = customRegions.filter(cr => cr.skip && cr.bbox).map(cr => cr.bbox);
-    if (deletedBboxes.length) {
-        const pad = scale.tablePadPx ?? 5;
+    const deleted = customRegions.filter(cr => cr.skip && cr.bbox);
+    const deletedBboxes = deleted.map(cr => cr.bbox);
+    if (deleted.length) {
+        // Same containment rule as _claimCustomText: unpadded, on the glyph-run
+        // centre for prose. Padding a deleted line-height box reached into the
+        // line below and silently deleted that line too.
+        const tablePad = scale.tablePadPx ?? 5;
         for (const tm of textMeta) {
             if (!tm.str.trim()) continue;
-            if (deletedBboxes.some(b => insideBBox(tm.vx, tm.vy, b, pad))) {
-                customClaimedTextIndices.add(tm.idx);
-            }
+            const cx = tm.vx + (tm.vWidth || 0) / 2;
+            const hit = deleted.some(cr => _TABLE_TYPES.has(cr.type)
+                ? insideBBox(tm.vx, tm.vy, cr.bbox, tablePad)
+                : insideBBox(cx, tm.vy, cr.bbox, 0));
+            if (hit) customClaimedTextIndices.add(tm.idx);
         }
         // Remove segments inside deleted bboxes from tableSegs so lattice/stream
         // detectors can't reconstruct a region over the deleted area.
@@ -253,6 +531,43 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         for (const s of filteredTableSegs) tableSegs.push(s);
     }
 
+    // Text claiming is resolved for ALL custom regions up front, not per
+    // region in isolation, because two things went wrong when it was not.
+    // The padded anchor test let a one-line region reach the next line's
+    // baseline, and nothing stopped two regions claiming the same item, so
+    // every body line was emitted twice (verified on a two-column paper:
+    // each region rendered its own line plus the following one). See
+    // _claimCustomText for the containment and tie-break rules.
+    // Reconstruct ruled tables BEFORE claiming text: the grid decides how far
+    // the table reaches, and text claiming has to agree with it.
+    //
+    // Reconstruction runs over the WHOLE page's segments, exactly as
+    // detectLatticeTables does, and the region then picks the grid it
+    // overlaps most. Handing the reconstructor only the segments near the
+    // region looks tighter and is wrong: its row/column clustering thresholds
+    // are derived from the extent of the segments it is given
+    // (scale.clusterYGap(yRange)), so a subset clusters differently from the
+    // page. Measured on the ResNet architecture table: the same 24 segments
+    // reconstructed to 10 rows x 6 cols inside the full page set and to 2
+    // rows x 4 cols on their own — the header strip, and nothing else.
+    const customLattices = new Map();
+    const customClaimBboxes = new Map();
+    const ruledCustoms = customRegions.filter(cr => cr.bbox && !cr.skip &&
+        (cr.type === RegionType.LATTICE_TABLE || cr.type === RegionType.TABLE));
+    if (ruledCustoms.length) {
+        const pageLattices = new LatticeReconstructor(tableSegs, {
+            eps: 5, scale, textMeta, pageHeight: viewport.height,
+        }).reconstructAll();
+        for (const cr of ruledCustoms) {
+            const l = _pickLattice(pageLattices, cr.bbox);
+            if (!_isUsableLattice(l)) continue;
+            customLattices.set(cr, l);
+            customClaimBboxes.set(cr, _gridBounds(cr.bbox, l));
+        }
+    }
+
+    const customTextByRegion = _claimCustomText(customRegions, textMeta, scale, customClaimBboxes);
+
     for (const cr of customRegions) {
         if (!cr.bbox) continue;
         if (cr.skip) continue;  // already handled above — nothing to inject
@@ -260,106 +575,66 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         const bbox = cr.bbox;
         const type = cr.type;
 
-        // Find text items and segments inside this custom region
-        const pad = scale.tablePadPx ?? 5;
-        const textIndices = [];
-        const matchedItems = [];
-        for (const tm of textMeta) {
-            if (tm.str.trim() && insideBBox(tm.vx, tm.vy, bbox, pad)) {
-                textIndices.push(tm.idx);
-                matchedItems.push(tm);
-                customClaimedTextIndices.add(tm.idx);
-            }
-        }
-
-        const matchedTableSegs = [];
-        const epsS = 2;
-        for (const s of segments) {
-            if (insideBBox(s.x1, s.y1, bbox, epsS) && insideBBox(s.x2, s.y2, bbox, epsS)) {
-                matchedTableSegs.push(s);
-            }
-        }
+        const claimed = customTextByRegion.get(cr) || { textIndices: [], matchedItems: [] };
+        const textIndices = claimed.textIndices;
+        const matchedItems = claimed.matchedItems;
+        for (const idx of textIndices) customClaimedTextIndices.add(idx);
 
         // Build specific structural properties for tables
         let lattice = null;
         if (type === RegionType.LATTICE_TABLE || type === RegionType.TABLE) {
-            const reconstructor = new LatticeReconstructor(matchedTableSegs, {
-                eps: 5, scale, textMeta, pageHeight: viewport.height,
-            });
-            const lattices = reconstructor.reconstructAll();
-            lattice = lattices[0] || {
-                bbox,
-                cols: [bbox.x, bbox.x + bbox.w],
-                rows: [bbox.y, bbox.y + bbox.h],
-                cells: [[{ x1: bbox.x, y1: bbox.y, x2: bbox.x + bbox.w, y2: bbox.y + bbox.h, textIndices }]]
-            };
-        } else if (type === RegionType.STREAM_TABLE) {
-            const bands = _groupByYBand(matchedItems, scale.yBandTolPx);
-            if (bands.length > 0) {
-                const colTol = scale.colTolPx;
-                const tagged = [];
-                for (let bi = 0; bi < bands.length; bi++) {
-                    for (const item of bands[bi].items) {
-                        tagged.push({
-                            vx: item.vx, vy: item.vy, vWidth: item.vWidth || 0,
-                            str: item.str || '', _band: bi
-                        });
-                    }
-                }
-                const xClusters = _clusterByX(tagged, colTol);
-                const colAnchors = [];
-                for (const cluster of xClusters) {
-                    colAnchors.push({ x: _mean(cluster.map(i => i.vx)), items: cluster });
-                }
-                colAnchors.sort((a, b) => a.x - b.x);
-
-                let cols, rows;
-                if (colAnchors.length === 0) {
-                    cols = [bbox.x, bbox.x + bbox.w];
-                } else {
-                    const gutters = _detectGutters(bands, 0.6, scale.S * 0.15) || [];
-                    cols = [bbox.x];
-                    for (let i = 1; i < colAnchors.length; i++) {
-                        const lo = colAnchors[i - 1].x;
-                        const hi = colAnchors[i].x;
-                        const gutter = gutters.find(x => x > lo && x < hi);
-                        cols.push(gutter ?? (lo + hi) / 2);
-                    }
-                    cols.push(bbox.x + bbox.w);
-                }
-
-                rows = [bbox.y];
-                for (let i = 1; i < bands.length; i++) {
-                    rows.push((bands[i - 1].y + bands[i].y) / 2);
-                }
-                rows.push(bbox.y + bbox.h);
-
-                // detectionMethod 'user-drawn': this grid came from a region the
-                // user drew, not from streamDetector's scored candidate search.
-                // The 1.0 is "the human said so", NOT a measurement — tableBuilder
-                // only publishes a data-confidence for genuinely measured sources.
-                lattice = {
-                    rows, cols, hLines: [], vLines: [], bbox, border: false,
-                    detectionMethod: 'user-drawn', confidence: 1.0
-                };
-            } else {
-                lattice = {
-                    rows: [bbox.y, bbox.y + bbox.h],
-                    cols: [bbox.x, bbox.x + bbox.w],
-                    hLines: [], vLines: [], bbox, border: false,
-                    detectionMethod: 'user-drawn', confidence: 1.0
-                };
+            lattice = customLattices.get(cr) || null;
+            // A reconstruction that yields a single cell is not a table, it is
+            // the whole region flattened into one box. That used to be the
+            // fallback and it silently destroyed real tables: a 9-row, 30-cell
+            // architecture table came back as one row with no cells. Ruled
+            // tables whose outer rules the box clips reconstruct to nothing;
+            // fall through to the same band/column grid a stream table gets,
+            // which reads structure off the text instead of the ink.
+            if (!_isUsableLattice(lattice)) {
+                lattice = _streamLattice(bbox, matchedItems, scale, tableSegs);
             }
+        } else if (type === RegionType.STREAM_TABLE) {
+            lattice = _streamLattice(bbox, matchedItems, scale, tableSegs);
         }
+
+        // fontSize / proximityPx / bannerText / captionRegion are read by
+        // pageAssembler and were not carried, so an overridden region lost
+        // them: every heading fell to <h3> because the h1/h2/h3 choice reads
+        // region.fontSize, table cells fell back to the default proximity,
+        // and box banners and figure captions disappeared. Measure fontSize
+        // off the claimed items when the incoming region has none (a
+        // hand-drawn box never does).
+        const avgFontSize = cr.fontSize ?? (matchedItems.length
+            ? matchedItems.reduce((s, tm) => s + (tm.fontSize || 0), 0) / matchedItems.length
+            : undefined);
 
         customInjectedRegions.push({
             id: cr.id,
             type,
             bbox,
-            yCenter: bbox.y + bbox.h / 2,
+            // yCenter drives reading order and the rendered data-ry. The
+            // natural pipeline measures it off the TEXT extent, which sits
+            // half a font-height above the bbox midpoint because the bbox is
+            // padded by one line's height. Measuring it the same way keeps an
+            // overridden region at exactly the position it had; the bbox
+            // midpoint shifted every region on the page down a few pixels.
+            yCenter: (_TEXT_FLOW_TYPES.has(type) ? _textYCenter(matchedItems) : null)
+                ?? cr.yCenter ?? (bbox.y + bbox.h / 2),
             textItemIndices: textIndices,
+            // -1 means "full width", and the pipeline reaches it two ways: a
+            // bbox that spans columns, or a line-level full-width verdict from
+            // _refineFullWidthByLine. An incoming -1 is a real decision and is
+            // preserved. Only a region with NO columnIndex at all (drawn by
+            // hand, merged, duplicated) gets placed from its bbox below —
+            // without that it rendered across a two-column page.
             columnIndex: cr.columnIndex ?? -1,
+            _needsColumn: cr.columnIndex == null,
             lattice,
+            fontSize: avgFontSize,
+            proximityPx: cr.proximityPx,
+            bannerText: cr.bannerText ?? null,
+            captionRegion: cr.captionRegion ?? null,
             boxRole: cr.boxRole ?? 'generic',
             fillColor: cr.fillColor ?? null,
             listOrdered: cr.listOrdered ?? false,
@@ -592,7 +867,10 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         }
         // Divider detection — same post-classification pass as the automatic path
         if (!skip.has('DIVIDER')) {
-            const dividerRegions0 = detectDividers(hSegs, underlineSegIds, textMeta, scale, viewport, regions);
+            // Custom regions are merged in later, so the divider detector cannot
+            // see them yet — and a ruled table it cannot see leaves its own row
+            // rules looking like standalone dividers. Pass them alongside.
+            const dividerRegions0 = detectDividers(hSegs, underlineSegIds, textMeta, scale, viewport, [...regions, ...customInjectedRegions]);
             for (const r of dividerRegions0) regions.push(r);
         }
         // Skip to header/footer detection and return
@@ -628,6 +906,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
                     return false;
                 });
             });
+            _assignColumnIndex(customInjectedRegions, columnSplitsEarly, viewport);
             for (const cr of customInjectedRegions) finalRegions2.push(cr);
         }
         finalRegions2.sort((a, b) => a.yCenter - b.yCenter);
@@ -753,7 +1032,10 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     // ── 11.5. Divider detection — runs AFTER text classification so paragraph/
     //         heading/list regions are present and the bbox-containment guard works.
     if (!skip.has('DIVIDER')) {
-        const dividerRegions = detectDividers(hSegs, underlineSegIds, textMeta, scale, viewport, regions);
+        // Custom regions are merged in later, so the divider detector cannot
+        // see them yet — and a ruled table it cannot see leaves its own row
+        // rules looking like standalone dividers. Pass them alongside.
+        const dividerRegions = detectDividers(hSegs, underlineSegIds, textMeta, scale, viewport, [...regions, ...customInjectedRegions]);
         for (const r of dividerRegions) regions.push(r);
     }
 
@@ -789,6 +1071,9 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
                 return false;
             });
         });
+        // Injected regions are not in `regions` when the column pass above
+        // runs, so they never got placed and stayed at -1 (= full width).
+        _assignColumnIndex(customInjectedRegions, columnSplits, viewport);
         for (const cr of customInjectedRegions) {
             finalRegions.push(cr);
         }
@@ -799,6 +1084,18 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
 
     // ── 14. Header / Footer detection ───────────────────────────────────────
     detectHeadersFooters(finalRegions, textMeta, viewport, scale, filledRects, opts.chromeSigs);
+
+    // ── 14.2. Rejoin split display equations ────────────────────────────────
+    // After the sort, so adjacency is reading order, and before the reference
+    // pass, so a rejoined equation is never a bibliography candidate.
+    if (!skip.has('MATH')) {
+        finalRegions = mergeMathRegions(finalRegions, textItems, textMeta, scale);
+    }
+
+    // ── 14.5. Bibliography detection ────────────────────────────────────────
+    // Runs last, on typed regions: a reference block is a PARAGRAPH to every
+    // geometric test, so the only thing left to read is its text.
+    if (!skip.has('REFERENCE')) detectReferences(finalRegions, textMeta);
 
     // columnSplits returned as plain X array (what pageAssembler expects).
     // rawSplits carries the full {x, leftFraction, rightFraction} objects for

@@ -12,6 +12,10 @@ export const RegionType = {
     MATH:          'MATH',
     HEADING:       'HEADING',
     LIST:          'LIST',
+    // A bibliography block. Not geometric: the reference detector promotes a
+    // PARAGRAPH/LIST whose text reads as a run of "Surname, A. B., …" entries,
+    // because a reference list is prose to every geometric test there is.
+    REFERENCE:     'REFERENCE',
     IMAGE:         'IMAGE',
     BOX:           'BOX',
     DIVIDER:       'DIVIDER',

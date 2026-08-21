@@ -52,9 +52,59 @@ export function addBlock(page, block) {
     return block;
 }
 
+/**
+ * Stamp a stable id onto every block that lacks one, in place.
+ *
+ * The id is the join between two renderings of the same document: the
+ * `data-region-id` gxDocToHtml() writes into the markup, and the `id` on the
+ * region gxDocToRegions() derives. Both read block.id, so they agree by
+ * construction rather than by two functions independently computing the same
+ * string and drifting apart.
+ *
+ * Importers do not have to set ids. Any they DO set (docx image blocks carry
+ * one) are preserved, because those ids are already referenced elsewhere.
+ *
+ * Returns the same doc for chaining.
+ */
+export function ensureBlockIds(doc) {
+    const pages = (doc && Array.isArray(doc.pages)) ? doc.pages : [];
+    for (const page of pages) {
+        const pageNum = page.page ?? 1;
+        const blocks = Array.isArray(page.blocks) ? page.blocks : [];
+        const seen = new Set();
+        blocks.forEach((block, i) => {
+            if (!block) return;
+            let id = block.id;
+            // A duplicate is as bad as a missing one: two blocks with the same
+            // id make getRegionHtml resolve both to whichever comes first.
+            if (!id || seen.has(id)) id = `${block.type || 'block'}_${pageNum}_${i}`;
+            block.id = id;
+            seen.add(id);
+        });
+    }
+    return doc;
+}
+
+// The block types the IR can carry. These are the region legends the whole
+// platform is addressed through — every artifact tab, every tag kind and every
+// cross-tool handoff is one of these, so a legend that is not here is a legend
+// that silently becomes a paragraph on the way in and is lost on the way out.
+//
+//   equation  — display math. Carries `latex`, which is the content; the
+//               rendered markup is a view of it and is re-derivable.
+//   reference — a bibliography block. Carries `entries`, because "the wall of
+//               text on page 21" is not something anyone can cite or export.
+//
+// A paragraph additionally carries `role` ('header' | 'body' | 'footer'), which
+// is what makes running heads and page furniture separable from body prose
+// instead of all three arriving as the same untyped paragraph.
 const BLOCK_TYPES = new Set([
     'heading', 'paragraph', 'table', 'list', 'image', 'callout', 'divider',
+    'equation', 'reference',
 ]);
+
+/** Valid values for a text block's `role`. */
+export const TEXT_ROLES = new Set(['header', 'body', 'footer']);
 
 /**
  * Assert the document is a structurally valid gx-doc/1.
@@ -92,6 +142,16 @@ export function validateDoc(doc) {
             (page.blocks || []).forEach((block, bi) => {
                 if (!block || !BLOCK_TYPES.has(block.type)) {
                     errors.push(`pages[${pi}].blocks[${bi}] has unknown type`);
+                    return;
+                }
+                if (block.role != null && !TEXT_ROLES.has(block.role)) {
+                    errors.push(`pages[${pi}].blocks[${bi}] has unknown role "${block.role}"`);
+                }
+                if (block.type === 'equation' && !String(block.latex || block.text || '').trim()) {
+                    errors.push(`pages[${pi}].blocks[${bi}] is an equation with no latex or text`);
+                }
+                if (block.type === 'reference' && !(block.entries || []).length) {
+                    errors.push(`pages[${pi}].blocks[${bi}] is a reference block with no entries`);
                 }
             });
         });

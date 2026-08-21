@@ -54,6 +54,32 @@ function _imageLabels(el) {
  * @returns {object} gxDoc
  */
 export function htmlToGxDoc(htmlString, meta = {}) {
+    return _convert(htmlString, meta).gxDoc;
+}
+
+/**
+ * The same conversion, plus the source markup with every block-producing
+ * element stamped with the id of the block it produced.
+ *
+ * An imported HTML or Markdown file is rendered from its ORIGINAL markup, not
+ * from the IR, so it keeps its own styles and structure. That left it
+ * unaddressable: getRegionHtml() locates content by `data-region-id` inside a
+ * `section.pdf-page-content`, and generic HTML has neither. Every artifact on
+ * an imported document therefore resolved to null and could not be sent
+ * anywhere. Stamping during the walk is the only place the block and the
+ * element that produced it are both in hand.
+ *
+ * Generic markup is also wrapped in the page scope the rest of the pipeline
+ * addresses through, so an import lands in the same coordinate system as an
+ * extraction rather than a parallel one.
+ *
+ * @returns {{ gxDoc: object, html: string }}
+ */
+export function htmlToGxDocAddressable(htmlString, meta = {}) {
+    return _convert(htmlString, { ...meta, stamp: true });
+}
+
+function _convert(htmlString, meta = {}) {
     const doc = new DOMParser().parseFromString(htmlString, 'text/html');
     mergeFlowChains(doc);
 
@@ -63,7 +89,10 @@ export function htmlToGxDoc(htmlString, meta = {}) {
         pageCount: meta.pageCount ?? null,
     });
 
+    const stamp = !!meta.stamp;
     const pages = doc.querySelectorAll('section.pdf-page-content');
+    let wrapped = false;
+
     if (pages.length) {
         pages.forEach((pageEl, pi) => {
             const pageNum = parseInt(pageEl.getAttribute('data-page'), 10) || (pi + 1);
@@ -71,19 +100,28 @@ export function htmlToGxDoc(htmlString, meta = {}) {
             const page = addPage(gxDoc, pageNum);
             page.width = width;
             page.zones = _readZones(pageEl);
-            _emitPage(pageEl, page);
+            _emitPage(pageEl, page, { stamp, pageNum });
         });
     } else {
         // Generic HTML (imported file, Docling emitter, etc.) — single page,
         // single full-width implicit zone, blocks straight off the body.
         const page = addPage(gxDoc, 1);
         page.width = 0;
-        _emitPage(doc.body || doc, page);
+        _emitPage(doc.body || doc, page, { stamp, pageNum: 1 });
+        wrapped = true;
     }
 
     gxDoc.links = _collectLinks(doc);
 
-    return gxDoc;
+    let html = htmlString;
+    if (stamp) {
+        const body = doc.body ? doc.body.innerHTML : htmlString;
+        html = wrapped
+            ? `<article class="pdf-doc">\n<section class="pdf-page-content" data-page="1" data-page-width="0">\n${body}\n</section>\n</article>`
+            : body;
+    }
+
+    return { gxDoc, html };
 }
 
 /**
@@ -128,7 +166,7 @@ function _readZones(pageEl) {
 }
 
 /** Walk a page section (or body) in reading order and emit typed blocks. */
-function _emitPage(container, page) {
+function _emitPage(container, page, ctx = {}) {
     const walk = (parent) => {
         for (const el of parent.children) {
             const cls = el.className || '';
@@ -136,14 +174,65 @@ function _emitPage(container, page) {
                 // A wrapper that IS the leaf (imported markdown's
                 // <p class="pdf-region type-paragraph">, assembler's inline
                 // <style class="pdf-breakpoints">) — emit it directly.
-                if (el.children.length === 0) { _emitLeaf(el, page); continue; }
+                if (el.children.length === 0) { _emitAddressable(el, page, ctx); continue; }
                 walk(el);
                 continue;
             }
-            _emitLeaf(el, page);
+            _emitAddressable(el, page, ctx);
         }
     };
     walk(container);
+}
+
+/**
+ * _emitLeaf, wrapped so the block it appends carries an id that names the
+ * element it came from.
+ *
+ * Done here rather than inside _emitLeaf because that function has a dozen
+ * addBlock call sites; the block count before and after is a single place to
+ * catch all of them, and it stays correct if a new block type is added.
+ */
+function _emitAddressable(el, page, ctx) {
+    const before = page.blocks.length;
+    _emitLeaf(el, page);
+    if (page.blocks.length === before) return;   // chrome, skipped
+
+    const pageNum = ctx.pageNum ?? page.page ?? 1;
+    // The id lives on the `.pdf-region` sentinel, which is a flow wrapper the
+    // walk descends THROUGH — so the leaf that produced the block usually does
+    // not carry it and has to look up. Tables and pictures stamp it on the leaf
+    // as well; the leaf wins when both are present.
+    const existing = el.getAttribute?.('data-region-id')
+        || el.closest?.('.pdf-region[data-region-id]')?.getAttribute('data-region-id')
+        || null;
+    // One `.pdf-region` can hold several leaves (rebuildText emits a <p> per
+    // sentence-aware break), and every one of them would otherwise claim the
+    // wrapper's id. Two blocks with one id between them is the same failure as
+    // no id: getRegionHtml resolves both to whichever comes first.
+    const used = ctx.usedIds || (ctx.usedIds = new Set());
+    const _unique = (id) => {
+        if (!used.has(id)) { used.add(id); return id; }
+        let n = 2;
+        while (used.has(`${id}__${n}`)) n++;
+        used.add(`${id}__${n}`);
+        return `${id}__${n}`;
+    };
+
+    for (let i = before; i < page.blocks.length; i++) {
+        const block = page.blocks[i];
+        if (existing) {
+            // The source already names this region (the assembler stamps every
+            // one). Carrying it through is a plain round-trip fix: the IR used
+            // to drop it, so an export could not be pointed back at the
+            // extraction it came from.
+            block.id = block.id || _unique(existing);
+            continue;
+        }
+        if (!ctx.stamp) continue;   // plain conversion invents nothing
+        const id = block.id || _unique(`${block.type || 'block'}_${pageNum}_${i}`);
+        block.id = id;
+        el.setAttribute?.('data-region-id', id);
+    }
 }
 
 function _emitLeaf(el, page) {
@@ -188,6 +277,51 @@ function _emitLeaf(el, page) {
     if (tag === 'table') {
         const block = _tableToBlock(el, colIdx, ry);
         if (block) addBlock(page, block);
+        return;
+    }
+
+    // Display math. The assembler renders KaTeX markup and keeps the TeX in
+    // `data-latex` — the TeX IS the content. Without this branch the block fell
+    // through to the paragraph case and the IR captured KaTeX's rendered glyph
+    // soup as prose, so a round trip through the IR destroyed every equation in
+    // the document.
+    if (el.hasAttribute?.('data-latex') || cls.includes('pdf-math-block')) {
+        const latex = el.getAttribute('data-latex') || '';
+        const text = _blockText(el);
+        if (latex || text) {
+            addBlock(page, { type: 'equation', latex, text: latex || text, colIdx, ry });
+            return;
+        }
+    }
+
+    // A bibliography block: one <li> per entry.
+    if (cls.includes('pdf-references') || tag === 'ol' && cls.includes('pdf-references')) {
+        const entries = [...el.querySelectorAll('li')].map(li => _blockText(li)).filter(Boolean);
+        if (entries.length) {
+            addBlock(page, {
+                type: 'reference',
+                entries,
+                ...(el.hasAttribute('data-ref-continuation') ? { continuation: true } : {}),
+                colIdx,
+                ry,
+            });
+            return;
+        }
+    }
+
+    // Running heads and page furniture. They arrive as <header>/<footer>, and
+    // without this they were read as ordinary paragraphs — which is why a
+    // running title reappeared in the middle of the body text on export.
+    if (tag === 'header' || tag === 'footer') {
+        addBlock(page, {
+            type: 'paragraph',
+            role: tag === 'header' ? 'header' : 'footer',
+            text: _blockText(el),
+            ...(alignFromClass(cls) ? { align: alignFromClass(cls) } : {}),
+            ..._runs(el),
+            colIdx,
+            ry,
+        });
         return;
     }
 

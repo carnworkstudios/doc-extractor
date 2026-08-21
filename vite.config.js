@@ -88,7 +88,7 @@ export default defineConfig({
         open: '/tools/pdf-processor/editor/',
         fs: {
             // Allow Vite dev server to serve files from the repo root so
-            // /assets/components/gx-pdf-shell.js resolves during local dev.
+            // /assets/components/gx-tool-shell.js resolves during local dev.
             allow: [path.resolve(__dirname, '../..')],
         },
     },
@@ -105,7 +105,7 @@ export default defineConfig({
         rollupOptions: {
             // Only the real app entry points go here. The sub-page stubs
             // (visual-diff/, compare/, editor/) are now thin SEO shells that
-            // load gx-pdf-shell.js from /assets/components/ — a path outside
+            // load gx-tool-shell.js from /assets/components/ — a path outside
             // this submodule. build.sh copies the whole dist/ to the deploy
             // folder alongside the parent's assets/, so the absolute path
             // resolves correctly at runtime without Rollup bundling it.
