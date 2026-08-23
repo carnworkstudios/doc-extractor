@@ -549,7 +549,11 @@ export function mergeFlowChains(doc) {
 // `pdf-figure` is the <figure> a picture gets once _mergeFigureCaptions has
 // paired it with its caption. Leaving it out stopped the walk ON the figure,
 // so the whole thing — image and caption — collapsed into one paragraph.
-export const FLOW_WRAPPER_RE = /\bpdf-(page-row|col|zone|region|figure)\b/;
+// `pdf-box-block` is one classified child of a callout — a heading, list,
+// paragraph or nested table the box-interior pass recovered. It is a wrapper
+// that carries the child's address, never a leaf: stopping on it would emit the
+// whole child as prose, which is the flattening the interior pass removed.
+export const FLOW_WRAPPER_RE = /\bpdf-(page-row|col|zone|region|figure|box-block)\b/;
 
 // A picture leaf. `pdf-image-stack` is the wrapper a picture gets when the
 // classifier recovered its own labels (callouts, axis ticks) and positioned

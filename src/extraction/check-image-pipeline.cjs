@@ -301,8 +301,14 @@ function splitArgs(src, openIdx) {
     const exporter = fs.readFileSync(path.join(SRC, 'ui/exportController.js'), 'utf8');
     ok(/export const IMAGE_BLOCK_RE = [^\n]*placeholder\|stack/.test(exporter),
        'IMAGE_BLOCK_RE matches both the bare placeholder and the labelled image stack');
-    ok(/export const FLOW_WRAPPER_RE = [^\n]*\|figure\)/.test(exporter),
+    ok(/export const FLOW_WRAPPER_RE = [^\n]*\bfigure\b[^\n]*\//.test(exporter),
        'FLOW_WRAPPER_RE descends into a captioned <figure> instead of stopping on it');
+    // Same rule for a callout's classified children: `.pdf-box-block` carries a
+    // child's address, it is not a leaf. Stopping on it would emit a nested
+    // table or bullet list as one run of prose — the flattening the box-interior
+    // pass exists to remove, reintroduced on the way OUT.
+    ok(/export const FLOW_WRAPPER_RE = [^\n]*\bbox-block\b/.test(exporter),
+       'FLOW_WRAPPER_RE descends into a callout child instead of stopping on it');
     ok((exporter.match(/IMAGE_BLOCK_RE\.test\(cls\)/g) || []).length === 2,
        'both semantic exporters (markdown, XML) route pictures through IMAGE_BLOCK_RE');
     ok(!/cls\.includes\('pdf-image-placeholder'\)/.test(exporter),
@@ -372,6 +378,56 @@ function splitArgs(src, openIdx) {
        'em height is the LENGTH of the matrix y basis (|d| is 0 on a 90° run, which fell through to 12pt)');
     ok(/Math\.atan2\(ay - vy, ax - vx\)/.test(cls),
        'baseline direction is measured from the mapped advance vector, not inferred from the flip');
+
+    // ── 6b. A label is placed by its MATRIX, not by three scalars ────────────
+    // vx/vy, rot and vFont are each a reduction of the run's own text matrix,
+    // and each one loses something: a sheared run keeps no shear, a
+    // non-uniformly scaled run keeps one scale. The schema editor's PDF import
+    // already solved this — compose the item transform with the viewport
+    // transform and place the run with the result whole. Ported here.
+    ok(/vm: mulMatrix\(vpT, t\)/.test(cls),
+       'textMeta carries the run\'s viewport-space text matrix, not only scalars read off it');
+    ok(/transform="matrix\(/.test(asm) && /scale\(1,-1\)/.test(asm),
+       'the label overlay places a run by its matrix, un-flipping the glyphs with scale(1,-1) ' +
+       'rather than by negating the coordinates (which moves the baseline, not the glyphs)');
+    ok(/m\[0\] \/ fs, m\[1\] \/ fs, m\[2\] \/ fs, m\[3\] \/ fs/.test(asm),
+       'the basis is normalised out before font-size is set — a text matrix already carries the ' +
+       'em size, and setting font-size beside an un-normalised matrix multiplies the two');
+
+    // Behaviour, not just source. A 90°-rotated label must come out placed by a
+    // matrix at the size the matrix states.
+    const vpm = { width: 612, height: 792, transform: [1, 0, 0, -1, 0, 792] };
+    const labelRegion = {
+        type: 'IMAGE', id: 'img_m0', bbox: { x: 100, y: 100, w: 200, h: 100 },
+        yCenter: 150, textItemIndices: [0], columnIndex: -1,
+    };
+    // A run rotated 90°: its viewport matrix has a zero a/d and a live b/c.
+    const labelMeta = [{
+        idx: 0, str: 'Voltage (V)', fontName: 'Helvetica', fontSize: 8,
+        vx: 120, vy: 180, vWidth: 40, vFont: 8,
+        vm: [0, -8, 8, 0, 120, 180],
+    }];
+    const labelItems = [{ str: 'Voltage (V)', fontName: 'Helvetica', transform: [0, 8, -8, 0, 120, 612] }];
+    const labelled = assemblePage([labelRegion], labelMeta, labelItems, vpm, 612, 1,
+        createFontRegistry(), [], {}, null);
+    const textEl = (labelled.html.match(/<text class="pdf-img-label"[^>]*>/) || [])[0] || '';
+    ok(/transform="matrix\(/.test(textEl),
+       'a run carrying a matrix is emitted with a matrix transform');
+    ok(/font-size="8\.00"/.test(textEl),
+       'the em size is the length of the matrix y basis (8), not a scalar guess');
+    ok(!/transform="rotate\(/.test(textEl),
+       'the matrix carries the rotation — no separate rotate() that could disagree with it');
+
+    // The scalar path must survive for meta built without a matrix, or an
+    // older cached extraction would render every label at the origin.
+    const scalarMeta = [{ ...labelMeta[0] }];
+    delete scalarMeta[0].vm;
+    scalarMeta[0].rot = Math.PI / 2;
+    const scalarPage = assemblePage([labelRegion], scalarMeta, labelItems, vpm, 612, 1,
+        createFontRegistry(), [], {}, null);
+    ok(/<text class="pdf-img-label" x="[\d.]+" y="[\d.]+"/.test(scalarPage.html),
+       'meta with no matrix still places by x/y — the fallback is not dead');
+
     ok(/!rotated && Math\.abs\(t\[2\]\) > 0\.05/.test(cls),
        'shear reads as italic only on an upright run — c is the ROTATION on a rotated one');
 

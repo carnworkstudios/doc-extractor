@@ -214,6 +214,64 @@ export function refreshWindowedPages(containerId = 'pdf-canvas-container') {
     }
 }
 
+/**
+ * Cut a box out of a rendered page and return it as a PNG data URL.
+ *
+ * `box` is in PDF POINTS — the unit `data-page-w`/`data-page-h` carry and the
+ * unit the annotation layer's SVG viewBox uses, so a rectangle picked by the
+ * marquee needs no conversion on the way in. This function owns the one
+ * conversion that matters (points → canvas pixels), because this module owns
+ * the render scale; a caller that computed it from `getBoundingClientRect`
+ * would be reading the CSS zoom transform instead and land in the wrong place.
+ *
+ * Returns null when the page is not currently painted — the windowed renderer
+ * releases off-screen bitmaps (see above), so "no pixels" is a normal state
+ * and a caller must handle it rather than getting a blank crop.
+ *
+ * @param {number} pageNum
+ * @param {{x:number,y:number,w:number,h:number}} box — PDF points
+ * @param {{maxEdge?:number, containerId?:string}} [opts]
+ * @returns {{dataUrl:string, w:number, h:number, pageH:number}|null}
+ */
+export function cropPageBox(pageNum, box, opts = {}) {
+    const containerId = opts.containerId || 'pdf-canvas-container';
+    const wrapper = document.querySelector(
+        `#${containerId} .page-wrapper[data-page="${Number(pageNum)}"]`);
+    const canvas = wrapper?.querySelector('canvas');
+    // A released canvas is 0×0, which would silently produce an empty crop.
+    if (!canvas || !canvas.width || !canvas.height) return null;
+
+    const pageW = parseFloat(wrapper.dataset.pageW) || (canvas.width / SCALE);
+    const pageH = parseFloat(wrapper.dataset.pageH) || (canvas.height / SCALE);
+    if (!(pageW > 0) || !(pageH > 0)) return null;
+
+    // Points → device pixels, read off the bitmap actually in hand rather than
+    // assumed to be SCALE: a repaint at another scale must not misplace a crop.
+    const kx = canvas.width / pageW;
+    const ky = canvas.height / pageH;
+
+    const sx = Math.max(0, Math.round(box.x * kx));
+    const sy = Math.max(0, Math.round(box.y * ky));
+    const sw = Math.min(Math.round(box.w * kx), canvas.width - sx);
+    const sh = Math.min(Math.round(box.h * ky), canvas.height - sy);
+    if (sw < 4 || sh < 4) return null;
+
+    // Cap the long edge: a crop is a reading fragment, not a print master. A
+    // full-width page at devicePixelRatio 2 is otherwise ~8 MB per item.
+    const maxEdge = opts.maxEdge || 1600;
+    const scale = Math.min(1, maxEdge / Math.max(sw, sh));
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, Math.round(sw * scale));
+    out.height = Math.max(1, Math.round(sh * scale));
+    try {
+        out.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, out.width, out.height);
+        return { dataUrl: out.toDataURL('image/png'), w: out.width, h: out.height, pageH };
+    } catch (err) {
+        console.warn('[pdfCanvas] crop failed:', err?.message || err);
+        return null;
+    }
+}
+
 export async function renderPDFToCanvas(bytes, containerId = 'pdf-canvas-container') {
     const $container = $(`#${containerId}`);
     if (!$container.length) return { wrappers: [], numPages: 0 };

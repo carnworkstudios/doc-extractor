@@ -71,7 +71,7 @@ export function gxDocToRegions(gxDoc, opts = {}) {
         const blocks = Array.isArray(page.blocks) ? page.blocks : [];
         const regions = [];
 
-        blocks.forEach((block, i) => {
+        const emit = (block, i, parentId) => {
             if (!block || !block.type) return;
             // An empty paragraph is whitespace in the source document, not an
             // artifact. Emitting it would put blank tags in the panel.
@@ -79,6 +79,7 @@ export function gxDocToRegions(gxDoc, opts = {}) {
 
             regions.push({
                 id: block.id || `${_regionType(block).toLowerCase()}_${pageNum}_${i}`,
+                ...(parentId ? { parentId } : {}),
                 type: _regionType(block),
                 // The importer read this structure off the file. There is no
                 // detector to be uncertain, so the score is not a guess.
@@ -96,7 +97,19 @@ export function gxDocToRegions(gxDoc, opts = {}) {
                 ...(block.latex ? { latex: block.latex } : {}),
                 ...(block.entries?.length ? { entryCount: block.entries.length } : {}),
             });
-        });
+
+            // A callout's contents are artifacts in their own right. A table
+            // nested in a warning panel has to be selectable, sendable and
+            // citable on its own — emitting only the panel would make the box
+            // an opaque wrapper and lose everything the interior pass found.
+            // `parentId` records where it sits without changing the flat shape
+            // the panel consumes.
+            const kids = Array.isArray(block.blocks) ? block.blocks : [];
+            const ownId = block.id || `${_regionType(block).toLowerCase()}_${pageNum}_${i}`;
+            kids.forEach((kid, ki) => emit(kid, `${i}_${ki}`, ownId));
+        };
+
+        blocks.forEach((block, i) => emit(block, i, null));
 
         out.push({ page: pageNum, regions });
     }
@@ -106,6 +119,12 @@ export function gxDocToRegions(gxDoc, opts = {}) {
 
 function _isEmpty(block) {
     switch (block.type) {
+        case 'callout':
+            // A callout is non-empty when it has a banner, its own words, or
+            // any child block — an empty panel is a border around nothing.
+            return !String(block.banner || block.text || '').trim() &&
+                !(block.blocks || []).length &&
+                !(block.runs || []).some(r => String(r?.text || '').trim());
         case 'divider':
             return false;
         case 'image':

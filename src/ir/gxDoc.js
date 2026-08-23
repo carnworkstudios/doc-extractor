@@ -72,15 +72,23 @@ export function ensureBlockIds(doc) {
         const pageNum = page.page ?? 1;
         const blocks = Array.isArray(page.blocks) ? page.blocks : [];
         const seen = new Set();
-        blocks.forEach((block, i) => {
+        // Nested blocks — a callout's classified contents — are stamped by the
+        // same walk. They are addressed exactly like top-level ones, so leaving
+        // them unstamped would give the markup no `data-region-id` while
+        // gxDocToRegions invented a positional one, and the two renderings of
+        // the same block would no longer resolve to each other.
+        const stamp = (block, key) => {
             if (!block) return;
             let id = block.id;
             // A duplicate is as bad as a missing one: two blocks with the same
             // id make getRegionHtml resolve both to whichever comes first.
-            if (!id || seen.has(id)) id = `${block.type || 'block'}_${pageNum}_${i}`;
+            if (!id || seen.has(id)) id = `${block.type || 'block'}_${pageNum}_${key}`;
             block.id = id;
             seen.add(id);
-        });
+            const kids = Array.isArray(block.blocks) ? block.blocks : [];
+            kids.forEach((kid, ki) => stamp(kid, `${key}_${ki}`));
+        };
+        blocks.forEach((block, i) => stamp(block, i));
     }
     return doc;
 }
@@ -152,6 +160,21 @@ export function validateDoc(doc) {
                 }
                 if (block.type === 'reference' && !(block.entries || []).length) {
                     errors.push(`pages[${pi}].blocks[${bi}] is a reference block with no entries`);
+                }
+                // A callout carries its classified contents as nested blocks.
+                // They are validated as blocks — an unknown type inside a box
+                // is exactly as broken as one at the top level, and validating
+                // only the outer list would let it through unseen.
+                if (block.blocks != null) {
+                    if (!Array.isArray(block.blocks)) {
+                        errors.push(`pages[${pi}].blocks[${bi}].blocks must be an array`);
+                    } else {
+                        block.blocks.forEach((kid, ki) => {
+                            if (!kid || !BLOCK_TYPES.has(kid.type)) {
+                                errors.push(`pages[${pi}].blocks[${bi}].blocks[${ki}] has unknown type`);
+                            }
+                        });
+                    }
                 }
             });
         });

@@ -746,7 +746,13 @@ self.onmessage = async (e) => {
                     type: r.type,
                     bbox: r.bbox,
                     algorithm: r.algorithm ?? 'geometric',
-                    confidence: r.confidence ?? 1.0,
+                    // null, not 1.0, when nothing measured one. The classifier
+                    // only assigns a confidence to user-drawn regions, so this
+                    // default was minting a fabricated "100% confident" for
+                    // every detected table — invisible in the UI (which
+                    // re-defaults with `?? 1.0` for display) and load-bearing
+                    // the moment a published artifact states it as fact.
+                    confidence: r.confidence ?? null,
                     columnIndex: r.columnIndex ?? -1,
                     imageId: r.imageId ?? null,
                     flowId: r.flowId ?? null,
@@ -910,7 +916,7 @@ async function _handleReprocess({ page: pageNum, pipeline = {}, carryImages = {}
                 type: r.type,
                 bbox: r.bbox,
                 algorithm: r.algorithm ?? 'geometric',
-                confidence: r.confidence ?? 1.0,
+                confidence: r.confidence ?? null,   // unmeasured stays unmeasured — see above
                 columnIndex: r.columnIndex ?? -1,
                 imageId: r.imageId ?? null,
                 flowId: r.flowId ?? null,
@@ -992,7 +998,7 @@ async function _handleScannedReprocess({ page: pageNum, pipeline = {}, carryImag
                 type: r.type,
                 bbox: r.bbox,
                 algorithm: r.algorithm ?? 'ocr-synth',
-                confidence: r.confidence ?? 1.0,
+                confidence: r.confidence ?? null,   // unmeasured stays unmeasured — see above
                 columnIndex: r.columnIndex ?? -1,
                 imageId: r.imageId ?? null,
                 flowId: r.flowId ?? null,

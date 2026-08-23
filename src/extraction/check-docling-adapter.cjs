@@ -187,6 +187,59 @@ const ASSETS = {
     });
     ok(oneCol.pages[0].maxCols === 1, `margin indentation is not a gutter (got ${oneCol.pages[0].maxCols})`);
 
+    // ── 4d. Published regions — the artifact contract ────────────────────────
+    // HTML alone shows a document; regions are what make it USABLE. The analyze
+    // canvas draws them, the artifact panel builds every tag from them, and a
+    // cross-tool send resolves a tag's (page, regionId) back through
+    // `getRegionHtml`. The Docling path published no regions at all, so an
+    // extraction rendered and offered nothing to send.
+    const p1 = r.pages[0].regions;
+    ok(Array.isArray(p1) && p1.length === 4,
+        `page 1 publishes one region per placed item (got ${p1 && p1.length})`);
+    ok(r.pages[1].regions.length === 1, 'page 2 publishes its table region');
+    ok(p1.every(x => x.id && x.type), 'every region carries an id and a type');
+
+    // Every published region id must resolve inside its own page section —
+    // this is exactly what `getRegionHtml(page, regionId)` does.
+    for (const pg of r.pages) {
+        const secStart = html.indexOf(`data-page="${pg.pageNum}"`);
+        const secEnd = html.indexOf('</section>', secStart);
+        const section = html.slice(secStart, secEnd);
+        for (const reg of pg.regions) {
+            ok(section.includes(`data-region-id="${reg.id}"`),
+                `region ${reg.id} is addressable inside page ${pg.pageNum}`);
+        }
+    }
+
+    // Text blocks were the silent half: they had a `.pdf-region` wrapper but no
+    // id, so every heading and paragraph resolved to null and could not be sent.
+    const heading = p1.find(x => x.type === 'HEADING');
+    ok(!!heading, 'a section_header publishes a HEADING region');
+    ok(p1.some(x => x.type === 'PARAGRAPH'), 'body prose publishes a PARAGRAPH region');
+    ok(p1.some(x => x.type === 'LATTICE_TABLE'), 'a table publishes a LATTICE_TABLE region');
+    ok(p1.some(x => x.type === 'IMAGE'), 'a picture publishes an IMAGE region');
+    ok(!p1.some(x => /Confidential/.test(x.id || '')), 'furniture publishes no region');
+
+    // bbox is worker space (PDF points × 2.0) — the space analyzePanel scales
+    // its canvas into. A heading at t=800..780 on an 841pt page is 41..61pt from
+    // the top, so 82..122 in worker space.
+    ok(heading.bbox && Math.abs(heading.bbox.y - 82) < 2,
+        `bbox y is points × 2.0 from the page top (got ${heading.bbox && heading.bbox.y})`);
+    ok(heading.bbox && Math.abs(heading.bbox.h - 40) < 2,
+        `bbox h is the point height × 2.0 (got ${heading.bbox && heading.bbox.h})`);
+    ok(p1.every(x => x.confidence === undefined),
+        'no region claims a confidence Docling never reported');
+
+    // A region Docling gave no usable bbox for is still an artifact — it just
+    // cannot be drawn. A zeroed box would draw a wrong claim at the origin.
+    const noGeom = doclingToRegionHtml({
+        order: [{ kind: 'texts', index: 0 }],
+        texts: [{ index: 0, label: 'text', text: 'no box here', page_no: 1 }],
+    });
+    const ng = noGeom.pages[0].regions[0];
+    ok(!!ng && !!ng.id, 'an item with no bbox still publishes an addressable region');
+    ok(ng && ng.bbox === undefined, 'an item with no bbox publishes no bbox, not a zeroed one');
+
     // ── 5. Degenerate input must not throw ───────────────────────────────────
     let threw = null;
     try {

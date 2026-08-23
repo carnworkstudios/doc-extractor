@@ -60,6 +60,32 @@ const LABEL_TAGS = {
 // two engines disagree on content that neither considers part of the document.
 const FURNITURE_LABELS = new Set(['page_header', 'page_footer']);
 
+// Docling's semantic label → the RegionType the geometry classifier would have
+// assigned. This is the vocabulary the artifact panel's KIND_DEFS and the
+// analyze panel's region layers are both keyed on, so a label that is not here
+// falls back to PARAGRAPH rather than producing a region nothing can classify.
+//
+// `formula` maps to PARAGRAPH, not MATH: `_textHtml` renders it as a <p> with
+// no `data-latex`, and an equation artifact whose LaTeX cannot be resolved is a
+// tag that promises content it does not have.
+const LABEL_REGION_TYPES = {
+    title:          'HEADING',
+    section_header: 'HEADING',
+    list_item:      'LIST',
+    caption:        'PARAGRAPH',
+    footnote:       'PARAGRAPH',
+    formula:        'PARAGRAPH',
+    paragraph:      'PARAGRAPH',
+    text:           'PARAGRAPH',
+};
+
+// The geometry worker rasterises at scale 2.0 and every `region.bbox` the rest
+// of the tool consumes is in that space — analyzePanel converts its own 1.5-
+// scale analysis canvas with `pg.widthPx * (2.0/1.5)` to meet it (see the SCALE
+// TRAP note in app.js). Docling reports PDF points, so points × 2.0 is what
+// puts a Docling region on the same canvas as a geometry one.
+const WORKER_SCALE = 2.0;
+
 function esc(s) {
     return String(s ?? '')
         .replace(/&/g, '&amp;')
@@ -344,6 +370,38 @@ function _regionLinkAttr(item, links, pageHeight) {
 }
 
 /**
+ * One placed item → the region object the rest of the tool consumes.
+ *
+ * `bbox` is worker space (PDF points × 2.0) so the analyze canvas can draw it
+ * with the same `rScale` it uses for a geometry region. An item Docling gave no
+ * usable bbox for gets NO bbox rather than a zeroed one: the canvas skips a
+ * region without a box, whereas a fake box at the origin draws a wrong claim
+ * over the top-left corner of the page. It is still a real artifact — the panel
+ * lists it and it resolves through its id — it just cannot be drawn.
+ *
+ * `confidence` is absent on purpose. Docling's `extract_assets` reports no
+ * per-region score, and stamping 1.0 would present a neural detector's guess as
+ * a measurement.
+ */
+function _toRegion(it) {
+    return {
+        id: it.id,
+        type: it.regionType,
+        algorithm: 'docling',
+        yCenter: it.ry,
+        columnIndex: -1,
+        ...(it.geom ? {
+            bbox: {
+                x: it.x0 * WORKER_SCALE,
+                y: it.yTop * WORKER_SCALE,
+                w: (it.x1 - it.x0) * WORKER_SCALE,
+                h: (it.yBot - it.yTop) * WORKER_SCALE,
+            },
+        } : {}),
+    };
+}
+
+/**
  * Rebuild Docling's output as region-anchored pipeline HTML.
  *
  * @param {string} docId   namespaces this document's pictures in the blob
@@ -353,6 +411,9 @@ function _regionLinkAttr(item, links, pageHeight) {
  * @returns {{html:string, text:string, tableCount:number, pages:Array,
  *            regionCount:number, images:Object}} — `images` maps blob-store key
  *            to the base64 the backend sent; the caller writes it to the store.
+ *            Each `pages[]` entry carries a `regions` array in the geometry
+ *            worker's shape; the caller must publish it (`pushRegionPage`) or
+ *            the document arrives with no artifacts.
  */
 export function doclingToRegionHtml(assets, docId = null) {
     const order = assets?.order || [];
@@ -428,6 +489,10 @@ export function doclingToRegionHtml(assets, docId = null) {
             bucket.push({
                 ...common,
                 type: 'table',
+                // TableFormer recovers a ruled grid from the page image, so the
+                // structure is a lattice reconstruction, not a whitespace guess.
+                regionType: 'LATTICE_TABLE',
+                id,
                 html: `<div class="pdf-table-wrap pdf-table--docling" data-region-id="${esc(id)}">${inner}</div>`,
                 text: (obj.grid || []).map(r => r.map(c => c.text).join('\t')).join('\n'),
             });
@@ -438,12 +503,29 @@ export function doclingToRegionHtml(assets, docId = null) {
             bucket.push({
                 ...common,
                 type: 'image',
+                regionType: 'IMAGE',
+                id,
                 html: _pictureHtml(obj, id, page, images, docId),
                 text: (obj.captions || [])[0] || '',
             });
             regionCount++;
         } else {
-            bucket.push({ ...common, type: 'text', html: _textHtml(obj), text: obj.text });
+            // A text block needs an id for exactly the same reason a table does:
+            // without one it has no return address, the artifact panel cannot
+            // resolve it, and it can never be sent anywhere. The id is scoped by
+            // REGION TYPE rather than by "text", mirroring the geometry
+            // classifier's `heading_0` / `paragraph_3` so the two engines
+            // produce the same shape of id for the same kind of thing.
+            const regionType = LABEL_REGION_TYPES[obj.label] || 'PARAGRAPH';
+            const id = _regionId(regionType.toLowerCase(), nextOrdinal(page, regionType));
+            bucket.push({
+                ...common,
+                type: 'text',
+                regionType,
+                id,
+                html: _textHtml(obj),
+                text: obj.text,
+            });
             regionCount++;
         }
     }
@@ -473,7 +555,15 @@ export function doclingToRegionHtml(assets, docId = null) {
             const linkAttr = (it.type === 'image' || it.type === 'table')
                 ? _regionLinkAttr(it, pageLinks, pageHeight)
                 : '';
-            return `<div class="pdf-region" data-ry="${it.ry}" data-rx="${it.rx}"${linkAttr}>${it.html}</div>`;
+            // The id goes on the `.pdf-region` sentinel for every item. Tables
+            // and pictures also carry it on their own leaf (and the leaf wins in
+            // `htmlToGxDoc._emitAddressable`); a text block has no leaf that
+            // could hold it, which is why every heading and paragraph Docling
+            // produced used to be unaddressable and therefore un-sendable.
+            // Kept AFTER data-ry/data-rx: the adapter check reads `data-ry` as
+            // the first attribute of the wrapper.
+            return `<div class="pdf-region" data-ry="${it.ry}" data-rx="${it.rx}"`
+                + ` data-region-id="${esc(it.id)}"${linkAttr}>${it.html}</div>`;
         });
 
         const zones = _detectZones(items, width);
@@ -490,8 +580,20 @@ export function doclingToRegionHtml(assets, docId = null) {
         textParts.push(items.map(i => i.text).filter(Boolean).join('\n\n'));
         pages.push({
             pageNum: pageNo,
+            // `page` as well as `pageNum`: the geometry pipeline's per-page
+            // results key on `page`, and `mountExtractedDocument` replays
+            // regions with `p.page`. Carrying both means a Docling document can
+            // be re-mounted (batch focus, slot swap) without losing its regions
+            // to a field-name mismatch.
+            page: pageNo,
             tableCount: items.filter(i => i.type === 'table').length,
             regionCount: items.length,
+            // The regions themselves, in the shape the geometry worker emits.
+            // The analyze canvas draws these, the artifact panel turns each one
+            // into a tag, and a cross-tool send resolves the tag back through
+            // `getRegionHtml(page, id)` — none of which happened on the Docling
+            // path, because it published HTML and never published regions.
+            regions: items.map(_toRegion),
             // The detected layout, so the Analyze tab can report what was found
             // and a re-extract can be tuned against it rather than guessed at.
             zones,

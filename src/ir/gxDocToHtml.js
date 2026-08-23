@@ -188,12 +188,19 @@ function _blockToHtml(block) {
             return `<div class="pdf-paragraph f1${alignClass ? ` ${alignClass}` : ''}"${idAttr}>${_runsHtml(block)}</div>`;
         }
         case 'equation': {
-            // The TeX is the content and rides in the attribute; the text node
-            // is the fallback rendering for anything that cannot typeset. The
-            // IR deliberately does NOT store KaTeX markup — it is a view, and
+            // The TeX rides in the attribute; the body is the page's own words.
+            // The IR deliberately does NOT store KaTeX markup — it is a view, and
             // storing a view is how a round trip loses the equation.
-            const tex = esc(block.latex || block.text || '');
-            return `<p class="pdf-paragraph pdf-math-block f1 ta-c"${idAttr} data-math="" data-latex="${tex}">${tex}</p>`;
+            //
+            // `confirmed` decides which marker goes out. An unconfirmed block
+            // shows its text and says the TeX beside it is a suggestion; only a
+            // block a human approved claims to BE its LaTeX. Defaulting to the
+            // confirmed marker here would launder every guess in the document
+            // into an assertion the moment it passed through the IR.
+            const tex = esc(block.latex || '');
+            const body = esc(block.text || block.latex || '');
+            const marker = block.confirmed ? 'data-math=""' : 'data-math-suggested=""';
+            return `<p class="pdf-paragraph pdf-math-block f1 ta-c"${idAttr} ${marker} data-latex="${tex}">${body}</p>`;
         }
         case 'reference': {
             const items = (block.entries || [])
@@ -211,7 +218,21 @@ function _blockToHtml(block) {
         }
         case 'callout': {
             const kind = block.kind || 'note';
-            return `<aside class="pdf-box pdf-box--${esc(kind)}"${idAttr}>${_runsHtml(block)}</aside>`;
+            const roleIcon = { warning: '⚠', caution: '⚠', note: 'ℹ', tip: '💡' };
+            const banner = block.banner
+                ? `<div class="pdf-box-banner">` +
+                  (roleIcon[kind] ? `<span class="pdf-box-icon">${roleIcon[kind]}</span>` : '') +
+                  `${esc(block.banner)}</div>`
+                : '';
+            // A callout whose contents were classified goes back out as those
+            // blocks, each in the wrapper that carries its address. Falling
+            // through to `_runsHtml` for a structured box would re-flatten
+            // exactly what the interior pass recovered.
+            const kids = Array.isArray(block.blocks) ? block.blocks : [];
+            const body = kids.length
+                ? kids.map(k => `<div class="pdf-box-block"${_idAttr(k)}>${_blockToHtml(k)}</div>`).join('')
+                : _runsHtml(block);
+            return `<aside class="pdf-box pdf-box--${esc(kind)}"${idAttr}>${banner}${body}</aside>`;
         }
         case 'divider':
             return `<hr class="pdf-divider"${idAttr}>`;
@@ -230,10 +251,16 @@ function _blockToHtml(block) {
                 const fit = l.adv > 0
                     ? ` textLength="${l.adv}" lengthAdjust="spacingAndGlyphs"`
                     : '';
-                const rot = typeof l.rot === 'string' && /^rotate\([-\d.\s]+\)$/.test(l.rot)
-                    ? ` transform="${l.rot}"` : '';
+                // Sanitised, not trusted: only the two placement forms the
+                // assembler emits are echoed back into the attribute. `rot` is
+                // the pre-`place` key, still read so older documents round trip.
+                const raw = typeof l.place === 'string' ? l.place
+                    : (typeof l.rot === 'string' ? l.rot : '');
+                const ok = /^rotate\([-\d.\s]+\)$/.test(raw) ||
+                    /^matrix\([-\d.\s]+\)(\s*scale\(1,-1\))?$/.test(raw);
+                const place = ok ? ` transform="${raw}"` : '';
                 return `<text class="pdf-img-label" x="${l.x ?? 0}" y="${l.y ?? 0}" ` +
-                    `font-size="${l.size ?? 10}"${fit}${rot} xml:space="preserve">${esc(l.text || '')}</text>`;
+                    `font-size="${l.size ?? 10}"${fit}${place} xml:space="preserve">${esc(l.text || '')}</text>`;
             }).join('');
             const layer =
                 `<svg class="pdf-image-textlayer" viewBox="0 0 ${box.w} ${box.h}" ` +

@@ -108,7 +108,10 @@ function createSvg(wrapper, readOnly) {
 
 /** Toggle pointer-events + contentEditable based on mode. */
 function syncEnvironment(handle) {
-    const annotating = engine.getMode() === 'annotate';
+    // An armed marquee needs the same live overlay annotating does: the SVG has
+    // to take the pointer, and the page must stop being contenteditable or the
+    // drag turns into a text selection instead of a rectangle.
+    const annotating = engine.getMode() === 'annotate' || !!_marquee;
     handle.container.querySelectorAll('.page-wrapper').forEach(wrapper => {
         const svg = wrapper.querySelector('.annotation-layer');
         if (svg) svg.style.pointerEvents = (!handle.readOnly && annotating) ? 'auto' : 'none';
@@ -132,7 +135,11 @@ function renderLayer({ wrapper, svg }) {
     const anns = engine.annotationsForPage(pageNum);
     const selectedId = engine.getSelectedId();
     const draft = engine.getDraft();
-    const showDraft = draft && draft.page === pageNum && engine.getMode() === 'annotate';
+    // A marquee pick draws its preview through the same renderer while the
+    // tool is NOT in annotate mode — that dashed rect is the whole point of
+    // reusing this path rather than the board drawing a box of its own.
+    const showDraft = draft && draft.page === pageNum
+        && (engine.getMode() === 'annotate' || _marquee);
 
     anns.forEach(ann => renderAnnotation(svg, ann, selectedId === ann.id));
     if (showDraft && draft.kind !== 'text') renderDraft(svg, draft);
@@ -344,7 +351,7 @@ export function wireLayers(handle) {
 }
 
 function onPointerDown(e) {
-    if (engine.getMode() !== 'annotate') return;
+    if (engine.getMode() !== 'annotate' && !_marquee) return;
     if (e.button !== 0 || e.isPrimary === false) return;
     const svg = e.target.closest?.('.annotation-layer');
     if (!svg) return;
@@ -354,8 +361,15 @@ function onPointerDown(e) {
     const wrapper = svg.parentElement;
     const pageNum = parseInt(wrapper.dataset.page, 10) || 1;
     const pt = toDisplay(svg, e.clientX, e.clientY);
-    const tool = engine.getTool();
 
+    // An armed marquee owns the gesture outright: it is a one-shot request for
+    // a rectangle, so no tool routing happens while it is up.
+    if (_marquee) {
+        startDrawGesture(e, svg, pageNum, pt, _marquee);
+        return;
+    }
+
+    const tool = engine.getTool();
     if (tool === 'select') {
         startSelectGesture(e, wrapper, pageNum, pt);
     } else if (tool === 'text') {
@@ -365,18 +379,85 @@ function onPointerDown(e) {
     }
 }
 
-function startDrawGesture(e, svg, pageNum, pt) {
-    engine.beginDrag(pageNum, pt);
+/**
+ * The drag that produces rect-shaped geometry. One implementation, two
+ * endings: it either commits an annotation (normal drawing) or hands the
+ * rectangle to a `pick` caller (the reference board's crop marquee).
+ *
+ * @param {object} [pick] - the armed marquee, when this drag is a pick
+ */
+function startDrawGesture(e, svg, pageNum, pt, pick = null) {
+    engine.beginDrag(pageNum, pt, pick ? { pick: true, kind: pick.kind } : {});
     const move = ev => engine.updateDraft(toDisplay(svg, ev.clientX, ev.clientY));
     const up = () => {
         document.removeEventListener('pointermove', move);
         document.removeEventListener('pointerup', up);
         document.removeEventListener('pointercancel', up);
-        engine.endDrag();
+        const result = engine.endDrag();
+        if (!pick) return;
+        // One-shot: disarm BEFORE the callback, so a handler that re-arms
+        // (crop another region) is not undone by this cleanup.
+        const onPick = pick.onPick;
+        disarmMarquee();
+        const rect = result?.rect;
+        // A click with no drag is a cancel, not a zero-area crop.
+        if (rect && rect.w >= MARQUEE_MIN && rect.h >= MARQUEE_MIN) {
+            onPick({ page: pageNum, rect, wrapper: svg.parentElement });
+        } else {
+            pick.onCancel?.();
+        }
     };
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
     document.addEventListener('pointercancel', up);
+}
+
+// ── Marquee: borrow the rect gesture to HARVEST a rectangle ──────────────────
+// The reference board needs a box on the paper, which is the rect tool's whole
+// job. Rather than a second drag implementation with its own coordinate
+// conversion and its own preview box (the one that never lined up), arming a
+// marquee routes pointerdown into the SAME startDrawGesture, renders through
+// the SAME dashed-rect draft, and reads the rectangle off the draft at the end.
+
+const MARQUEE_MIN = 6;          // display-space pt; below this it was a click
+let _marquee = null;            // { kind, onPick, onCancel } while armed
+
+/**
+ * Arm a one-shot rectangle pick on the mounted page layers.
+ *
+ * @param {object} opts
+ * @param {string} [opts.kind='rect'] — which draft preview to draw. 'rect' is
+ *        the plain dashed box; 'measure' additionally labels the diagonal.
+ * @param {function} opts.onPick — ({page, rect, wrapper}) with rect in display
+ *        space (PDF points, the SVG viewBox unit).
+ * @param {function} [opts.onCancel] — click-without-drag, or Escape.
+ * @returns {function} disarm
+ */
+export function armMarquee(opts = {}) {
+    if (typeof opts.onPick !== 'function') return () => {};
+    disarmMarquee();
+    _marquee = { kind: opts.kind || 'rect', onPick: opts.onPick, onCancel: opts.onCancel };
+    _syncAllMounts();
+    return disarmMarquee;
+}
+
+export function disarmMarquee() {
+    if (!_marquee) return;
+    _marquee = null;
+    engine.cancelDrag();
+    _syncAllMounts();
+}
+
+export function isMarqueeArmed() { return !!_marquee; }
+
+/** Re-run the pointer-events/contentEditable sync on every live mount. */
+function _syncAllMounts() {
+    _mounts.forEach(handle => {
+        if (!handle.disposed) {
+            syncEnvironment(handle);
+            handle.svgs.forEach(renderLayer);
+        }
+    });
 }
 
 function startSelectGesture(e, wrapper, pageNum, pt) {
@@ -498,6 +579,14 @@ function onDblClick(e) {
 }
 
 function onKeyDown(e) {
+    // Escape must reach an armed marquee even outside annotate mode — an armed
+    // crop that cannot be called off leaves the paper unclickable.
+    if (_marquee && e.key === 'Escape') {
+        const onCancel = _marquee.onCancel;
+        disarmMarquee();
+        onCancel?.();
+        return;
+    }
     if (engine.getMode() !== 'annotate') return;
     if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
     if (e.target.isContentEditable) return;

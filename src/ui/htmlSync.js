@@ -185,8 +185,37 @@ export function applyHtmlEverywhere(html, skipEl = null) {
         // Monaco is refreshed when the Editor tab opens (syncMonacoFromState),
         // not here. getValue()+setValue() on a 16 MB model is not something to
         // run behind every edit for a tab that may never be looked at.
+
+        // A null skipEl means a WHOLE document arrived here (extraction,
+        // import, history restore, batch mount) — not a keystroke. That is
+        // the one signal injected surfaces need to re-bind to the new
+        // document; see __GX_PDF_CORE__.onDocumentMounted.
+        if (skipEl === null && targets.length) _dispatchDocumentMounted();
     } finally {
         _syncing = false;
+    }
+}
+
+// ── Document-mounted channel ─────────────────────────────────────────────────
+// The tool owns "a document is now mounted"; injected panels subscribe. Same
+// replay-on-subscribe contract as the other __GX_PDF_CORE__ channels: a panel
+// that boots after extraction still gets the last mount, never silence.
+const _mountedCallbacks = [];
+let _lastMounted = null;
+
+/**
+ * @param {(info: {docId: string|null, ts: number}) => void} cb
+ */
+export function onDocumentMounted(cb) {
+    if (typeof cb !== 'function') return;
+    _mountedCallbacks.push(cb);
+    if (_lastMounted) cb(_lastMounted);   // replay — closes the boot race
+}
+
+function _dispatchDocumentMounted() {
+    _lastMounted = { docId: state.pdf1.docId || null, ts: Date.now() };
+    for (const cb of _mountedCallbacks) {
+        try { cb(_lastMounted); } catch (err) { console.warn('[htmlSync] onDocumentMounted listener failed:', err); }
     }
 }
 

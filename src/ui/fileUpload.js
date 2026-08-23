@@ -471,6 +471,35 @@ function publishImportedRegions(gxDoc, algorithm) {
         pageCount: gxDoc.pages?.length ?? null,
     });
 }
+/**
+ * Publish the regions the Docling adapter resolved.
+ *
+ * The backend path used to publish HTML and nothing else. That is enough to
+ * SHOW a document and not enough to do anything with one: the analyze canvas
+ * draws regions, the artifact panel builds its tags from regions, and a
+ * cross-tool send resolves a tag's (page, regionId) back through
+ * `getRegionHtml`. With no regions published, a Docling extraction rendered
+ * perfectly, drew no overlays, and offered zero artifacts to send — the tables
+ * were on screen and unreachable.
+ *
+ * Deliberately NOT preceded by a reset: the pre-flight analysis for this
+ * document has already been dispatched by the time the backend answers, and
+ * `_dispatchReset` clears that cache too, which would blank the analyze canvas
+ * the regions are meant to be drawn on. Re-pushing a page id replaces it.
+ *
+ * @param {Array<{pageNum:number, regions:Array}>} pages — adapter `pages`.
+ */
+function publishDoclingRegions(pages) {
+    for (const p of pages || []) {
+        if (!p?.regions?.length) continue;
+        // No pageScale: that is the geometry engine's tolerance record, used to
+        // draw the re-extract ghost. Docling has no such thing, and passing a
+        // fabricated one would put a ghost box on the canvas describing
+        // tolerances nothing ran.
+        pushRegionPage(p.pageNum, p.regions, null, null);
+    }
+}
+
 const setAnalyzeWorker  = (w)             => { window.__GX_PDF_GEO_WORKER__ = w; _core()?._dispatchWorkerReady(w); };
 const onReprocessResult = (n, h, r, s, v) => _core()?._dispatchReprocessResult(n, h, r, s, v);
 const onReprocessError  = (n, e)       => _core()?._dispatchReprocessError(n, e);
@@ -750,6 +779,17 @@ async function extractViaScannedGeometry(bytes, onProgress, docId = null) {
 
     const VIEWPORT_SCALE = 2.0;   // classifyPage viewport scale
     const RENDER_SCALE = 2.0;     // page render scale for detection + OCR
+    // pdfAnalyzer renders at 1.5 and analyzePanel converts to worker space with
+    // a hardcoded `pg.widthPx * (2.0/1.5)` (the SCALE TRAP note in app.js). The
+    // synthetic analysis page below therefore has to be stated in 1.5 space too:
+    // handing the panel 2.0-space dimensions makes it compute a worker viewport
+    // 33% too wide and draw every region overlay in the wrong place. Every other
+    // layer is scale-invariant (they share `maxW / pg.widthPx`), which is why
+    // this was invisible until regions started being published.
+    const ANALYSIS_SCALE = 1.5;
+    const A = ANALYSIS_SCALE / VIEWPORT_SCALE;   // 2.0-space → 1.5-space
+    const _aSeg = s => ({ ...s, x1: s.x1 * A, y1: s.y1 * A, x2: s.x2 * A, y2: s.y2 * A });
+    const _aRect = r => ({ ...r, x: r.x * A, y: r.y * A, w: r.w * A, h: r.h * A });
     const fontRegistry = createFontRegistry();
     const htmlParts = [];
     const textParts = [];
@@ -841,7 +881,27 @@ async function extractViaScannedGeometry(bytes, onProgress, docId = null) {
         totalTables += result.tableCount || 0;
         htmlParts.push(result.html);
         textParts.push((result.text || '').trim());
-        pageResults.push({ page: i, ocr: true, scanned: true, tables: result.tableCount || 0 });
+        // The regions this page resolved to, in the same shape geometryWorker
+        // posts on its 'page' message. This path had the same hole as the
+        // Docling one: it published HTML and no regions, so a locally-OCR'd
+        // document drew no overlays on the analyze canvas and offered no
+        // artifacts to send. `assemblePage` stamps `data-region-id` from these
+        // same objects, so the ids published here are the ids in the markup.
+        const pageRegions = classified.map((r, ri) => ({
+            id: r.id || `p${i}-r${ri}`,
+            type: r.type,
+            bbox: r.bbox,
+            algorithm: r.algorithm ?? 'ocr-geometry',
+            confidence: r.confidence ?? 1.0,
+            columnIndex: r.columnIndex ?? -1,
+            imageId: r.imageId ?? null,
+        }));
+        pageResults.push({
+            page: i, ocr: true, scanned: true,
+            tables: result.tableCount || 0,
+            regions: pageRegions,
+        });
+        pushRegionPage(i, pageRegions, null, null);
 
         // Cache this page's synthetic inputs in the geometry worker so a later
         // re-extract (analyzePanel sliders / column splits) re-runs classify on
@@ -855,12 +915,17 @@ async function extractViaScannedGeometry(bytes, onProgress, docId = null) {
 
         // Build the analysis page object so analyzePanel renders this scanned
         // page exactly like a technical one (canvas, region layers, re-extract).
+        // Stated in ANALYSIS space (1.5), which is the space pdfAnalyzer emits
+        // and the only one the panel's region conversion is correct for.
+        // `textItems` are exempt: their `transform` is PDF points and is mapped
+        // by the viewport, so re-scaling them would double-apply the conversion.
+        const aViewport = makeSyntheticViewport(pageWidthPt, pageHeightPt, ANALYSIS_SCALE);
         analysisPages.push({
             scanned: true,
             ocrLayer: true,
             pageNum: i,
-            widthPx: viewport.width,
-            heightPx: viewport.height,
+            widthPx: aViewport.width,
+            heightPx: aViewport.height,
             widthPt: pageWidthPt,
             heightPt: pageHeightPt,
             widthIn: (pageWidthPt / 72).toFixed(2),
@@ -872,13 +937,13 @@ async function extractViaScannedGeometry(bytes, onProgress, docId = null) {
             totalSegCount: synth.hSegs.length + synth.vSegs.length,
             imageCount: synth.imageRegions.length,
             closedRectCount: 0,
-            hSegs: synth.hSegs,
-            vSegs: synth.vSegs,
+            hSegs: synth.hSegs.map(_aSeg),
+            vSegs: synth.vSegs.map(_aSeg),
             diagSegs: [],
             closedRects: [],
-            imageRegions: synth.imageRegions,
+            imageRegions: synth.imageRegions.map(_aRect),
             textItems: synth.textItems,
-            viewport,
+            viewport: aViewport,
         });
 
         page.cleanup();
@@ -1549,6 +1614,10 @@ async function handleFile(file, pdfIndex) {
                 // and every surface, so the accumulated document stays the
                 // single source of truth rather than being patched in place.
                 applyHtmlEverywhere(streamedHtml, null);
+                // Regions for the pages in THIS chunk, so the analyze canvas and
+                // the artifact panel fill in as the document streams rather than
+                // only at the end.
+                publishDoclingRegions(part.pages);
                 refreshZoneToolbar();
                 showStatus(
                     `Pages ${chunk.page_start}–${chunk.page_end}`
@@ -1605,6 +1674,10 @@ async function handleFile(file, pdfIndex) {
                         pages: rebuilt.pages,
                         source: 'docling-ocr',
                     };
+                    // The full document's regions. Re-publishing a page already
+                    // pushed by a stream chunk replaces it with the same
+                    // content, so the two paths do not fight.
+                    if (pdfIndex === 1) publishDoclingRegions(rebuilt.pages);
                 } else {
                     // The adapter placed nothing. Keeping Docling's raw HTML
                     // costs the return address but is still a readable

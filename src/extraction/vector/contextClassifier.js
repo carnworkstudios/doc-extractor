@@ -40,6 +40,18 @@ function toViewport(vpTransform, pdfX, pdfY) {
     ];
 }
 
+/** Compose two 2D affine matrices in PDF's [a b c d e f] order: apply b, then a. */
+function mulMatrix(a, b) {
+    return [
+        a[0] * b[0] + a[2] * b[1],
+        a[1] * b[0] + a[3] * b[1],
+        a[0] * b[2] + a[2] * b[3],
+        a[1] * b[2] + a[3] * b[3],
+        a[0] * b[4] + a[2] * b[5] + a[4],
+        a[1] * b[4] + a[3] * b[5] + a[5],
+    ];
+}
+
 function insideBBox(px, py, bbox, pad = 0) {
     return px >= bbox.x - pad && px <= bbox.x + bbox.w + pad &&
         py >= bbox.y - pad && py <= bbox.y + bbox.h + pad;
@@ -333,6 +345,16 @@ function _assignColumnIndex(regions, columnSplits, viewport) {
  * overwritten: two regions sharing an id is the same failure as having none.
  */
 function _ensureRegionIds(regions) {
+    // Children are regions too. A box's contents are addressable — you can
+    // send a table nested in a callout to TAFNE, jump to it, or cite it — and
+    // an id is what makes that possible, so both passes below walk the whole
+    // tree flat, even though what is RETURNED stays the top-level list.
+    const all = [];
+    for (const r of regions) {
+        if (!r) continue;
+        all.push(r);
+        for (const c of (r.children || [])) if (c) all.push(c);
+    }
     const seen = new Set();
     // Pass 1: keep every id that arrives, but make sure no two regions carry the
     // same one. A picture region that is exactly one raster XObject takes that
@@ -343,7 +365,7 @@ function _ensureRegionIds(regions) {
     // back-annotation, `getRegionHtml`, and the picture crop keyed by region id
     // — silently resolves all of them to whichever one came first, and the
     // repeats render the first placement's crop instead of their own.
-    for (const r of regions) {
+    for (const r of all) {
         if (!r || r.id == null) continue;
         let id = String(r.id);
         if (seen.has(id)) {
@@ -355,7 +377,7 @@ function _ensureRegionIds(regions) {
         seen.add(id);
     }
     const counters = Object.create(null);
-    for (const r of regions) {
+    for (const r of all) {
         if (!r || r.id != null) continue;
         const base = String(r.type || 'region').toLowerCase();
         let n = counters[base] || 0;
@@ -403,6 +425,13 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         return {
             idx,
             vx, vy,
+            // The item's own text matrix composed with the viewport transform.
+            // Everything above it — vx/vy, rot, vFont — is a SCALAR read off
+            // this matrix, and each reduction loses something: a sheared run
+            // keeps no shear, a non-uniformly scaled run keeps one scale.
+            // Placing a label back on the page needs the matrix whole, so the
+            // SVG overlay in pageAssembler uses this and not the scalars.
+            vm: mulMatrix(vpT, t),
             vWidth: widthPt * scaleX,
             vFont: fontSizePt * scaleY,
             fontSize: fontSizePt,
@@ -808,6 +837,22 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
                 proximityPx: scale.proximityPx,
             });
         }
+    }
+
+    // ── 8. Box interiors ─────────────────────────────────────────────────────
+    // A container's contents are a document fragment, not a string. Runs after
+    // the table detectors so a grid nested in a panel has already reclaimed its
+    // own text; whatever is left gets the same heading/list/paragraph pass the
+    // page body gets, and the results become the box's CHILDREN.
+    //
+    // Read off `regions`, not off `boxRegions`: the lattice detector emits BOX
+    // regions too, for a bordered rectangle whose interior ruling turned out
+    // not to be a grid. Those are containers by exactly the same argument, and
+    // scoping this to the box detector's own output would leave every one of
+    // them flat.
+    const allBoxes = regions.filter(r => r && r.type === RegionType.BOX);
+    if (allBoxes.length) {
+        _classifyBoxInteriors(allBoxes, regions, textMeta, scale, scaleY, skip);
     }
 
     // ── 10. Page-level column detection ──────────────────────────────────────
@@ -1219,6 +1264,120 @@ function _refineFullWidthByLine(remainingMeta, fullWidthIndices, columnSplits, s
             if (!keep[i]) fullWidthIndices.delete(items[i].idx);
         }
     }
+}
+
+/**
+ * Give every BOX region a structured interior.
+ *
+ * The bug this exists to fix: a box claimed all the text inside it in one flat
+ * `textItemIndices`, and every later pass skips claimed items — so the headings,
+ * bullets and paragraph breaks inside a callout were never classified at all.
+ * The renderer had nothing but a bag of runs to work with and emitted the panel
+ * as one undifferentiated block, however the source had set it.
+ *
+ * The rule is: extract what is in the box exactly as if the box were not there,
+ * THEN wrap the box around the result. The border decides where the container
+ * is, never what the contents are.
+ *
+ * Two kinds of child are collected:
+ *
+ *   - Tables the lattice/stream detectors already built inside this bbox. They
+ *     were pushed as page-level siblings, which renders a nested table BESIDE
+ *     the panel that contains it; adopting them puts them back inside.
+ *   - Everything else, through the same `_classifyBucket` the page body uses.
+ *
+ * The banner label ("! WARNING") is lifted out first. It is a header, not a
+ * line of the body, and leaving it in would make it the box's first heading.
+ */
+function _classifyBoxInteriors(boxRegions, regions, textMeta, scale, scaleY, skip) {
+    const bodyFontSizePt = scale.S / scaleY;
+    const pad = scale.proximityPx ?? 4;
+
+    for (const box of boxRegions) {
+        if (!box.bbox) continue;
+        const children = [];
+
+        for (let i = regions.length - 1; i >= 0; i--) {
+            const r = regions[i];
+            if (r === box || !r.bbox) continue;
+            if (r.type !== RegionType.LATTICE_TABLE && r.type !== RegionType.STREAM_TABLE) continue;
+            if (!_bboxWithin(r.bbox, box.bbox, pad)) continue;
+            children.push(r);
+            regions.splice(i, 1);
+        }
+
+        _liftBoxBanner(box, textMeta);
+
+        const items = (box.textItemIndices || [])
+            .map(i => textMeta[i])
+            .filter(tm => tm && tm.str.trim());
+        if (items.length) {
+            // columnIndex -1: a box is its own layout context, and its children
+            // must never be handed to the page's column assignment — a
+            // two-column page would otherwise scatter one panel's lines across
+            // both of its columns.
+            const lines = _groupByYBand(items, scale.yBandTolPx);
+            _classifyBucket(children, lines, bodyFontSizePt, scale, -1, skip);
+        }
+
+        if (!children.length) continue;
+        children.sort((a, b) => (a.bbox?.y ?? 0) - (b.bbox?.y ?? 0) ||
+                                (a.bbox?.x ?? 0) - (b.bbox?.x ?? 0));
+        box.children = children;
+    }
+}
+
+/** True when `inner` sits inside `outer`, allowing `pad` of slop on each side. */
+function _bboxWithin(inner, outer, pad) {
+    return inner.x >= outer.x - pad &&
+        inner.y >= outer.y - pad &&
+        inner.x + inner.w <= outer.x + outer.w + pad &&
+        inner.y + inner.h <= outer.y + outer.h + pad;
+}
+
+/**
+ * Split an in-box banner label off the body text and record it on the region.
+ *
+ * When the styled "! WARNING" bar shares one bordered rectangle with the body
+ * (the right-column admonition layout), the label lives in the box's topmost
+ * items at a much larger font. Left in the flow it renders as oversized inline
+ * text — and now that the interior is classified, it would also be promoted to
+ * a heading, which is worse: a header would become part of the content.
+ *
+ * A region that already carries `bannerText` came from the banner/body merge in
+ * boxDetector and has nothing to lift.
+ *
+ * The size threshold is the box's OWN median font, never the page's: on a
+ * figure-heavy page the mode font IS the callout labels, and comparing against
+ * it rejects every banner on the page.
+ */
+function _liftBoxBanner(box, textMeta) {
+    if (box.bannerText) return;
+    if (!box.boxRole || box.boxRole === 'generic') return;
+    const idxs = box.textItemIndices || [];
+    if (!idxs.length) return;
+
+    const meta = idxs.map(i => textMeta[i]).filter(Boolean);
+    if (!meta.length) return;
+    const fonts = meta.map(m => m.vFont || 0).filter(Boolean).sort((a, b) => a - b);
+    const medFont = fonts[Math.floor(fonts.length / 2)] || 0;
+    if (!medFont) return;
+    const topY = Math.min(...meta.map(m => m.vy));
+
+    const bannerIdx = new Set();
+    const labelParts = [];
+    for (const m of meta) {
+        if (m.vy > topY + medFont * 0.8) continue;
+        if ((m.vFont || 0) < medFont * 1.5) continue;
+        bannerIdx.add(m.idx);
+        if (/[A-Za-z]/.test(m.str)) labelParts.push(m.str.trim());
+    }
+    const label = labelParts.join(' ').toUpperCase();
+    if (!bannerIdx.size) return;
+    if (!/\b(WARNING|CAUTION|DANGER|NOTICE|NOTE|IMPORTANT)\b/.test(label)) return;
+
+    box.bannerText = label;
+    box.textItemIndices = idxs.filter(i => !bannerIdx.has(i));
 }
 
 function _classifyBucket(regions, lines, bodyFontSizePt, scale, columnIndex, skip = new Set()) {

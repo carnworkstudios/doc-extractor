@@ -1688,6 +1688,21 @@ body.format-painter-active .editable-text-layer {
   line-height: 1;
 }
 
+/* ── Box contents ─────────────────────────────────────────────────────────
+   One classified child of a callout: a heading, list, paragraph or nested
+   table the interior pass recovered. The wrapper exists to carry the child's
+   address (`data-region-id`), so it must add no box of its own — any padding
+   or background here would draw a second frame inside the panel. It is also
+   the element the banner rules above select as a direct child, which is why
+   the margins live on this wrapper rather than on the child. */
+.pdf-box-block > :first-child { margin-top: 0; }
+.pdf-box-block > :last-child { margin-bottom: 0; }
+.pdf-box-block + .pdf-box-block { margin-top: .55em; }
+
+/* A table inside a panel is usually the panel's whole point, and the callout
+   already supplies the padding — let it use the full width it has. */
+.pdf-box-block .pdf-table-wrap { margin: 0; overflow-x: auto; }
+
 /* ── Undo / Redo button disabled state ─────────────────────────────────── */
 #btn-undo[disabled],
 #btn-redo[disabled] {
@@ -2010,6 +2025,24 @@ mark.diff-inline-add {
   color: #2e7d32;
 }
 
+/* Reference board pane. The board UI itself is injected policy; the shell
+   ships only the container, the header label and the toggle state. */
+.vd-label--notes {
+  background: rgba(255, 179, 0, 0.14);
+  color: #8a5a00;
+}
+
+#pane-notes {
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#notes-board {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .vd-hint {
   font-size: 11px;
   color: var(--text-muted);
@@ -2192,7 +2225,8 @@ mark.diff-inline-add {
   padding: 12px 16px;
 }
 
-.pdf-mirror-toggle[aria-expanded="true"] {
+.pdf-mirror-toggle[aria-expanded="true"],
+.notes-mirror-toggle[aria-expanded="true"] {
   background: var(--accent-dim);
   border-color: var(--accent);
   color: var(--accent-dark);

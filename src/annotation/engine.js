@@ -275,13 +275,27 @@ function _cancelDraft() {
     _draft = null;
 }
 
-/** Start a draw/select gesture. pt in display space. */
-export function beginDrag(pageNum, pt) {
-    if (_mode !== 'annotate') return;
+/**
+ * Start a draw/select gesture. pt in display space.
+ *
+ * `opts.pick` runs the SAME gesture for a caller that wants the geometry and
+ * not an annotation — the reference board's crop marquee. Same draft, same
+ * live preview, same rectFromPoints normalisation; only the ending differs
+ * (endDrag hands the draft back instead of committing it). It also bypasses
+ * the annotate-mode gate, because a crop is not an edit to the document and
+ * must not require the user to arm annotation first.
+ *
+ * @param {number} pageNum
+ * @param {{x:number,y:number}} pt
+ * @param {{pick?:boolean, kind?:string}} [opts]
+ */
+export function beginDrag(pageNum, pt, opts = {}) {
+    if (!opts.pick && _mode !== 'annotate') return;
     _cancelDraft();
     _selectedId = null;
-    _draft = { page: pageNum, start: { ...pt }, kind: _tool };
-    if (_tool === 'ink') _draft.points = [pt];
+    const kind = opts.kind || _tool;
+    _draft = { page: pageNum, start: { ...pt }, kind, pick: !!opts.pick };
+    if (kind === 'ink') _draft.points = [pt];
     _notify({ type: 'draft' });
 }
 
@@ -308,19 +322,30 @@ export function cancelDrag() {
     _notify({ type: 'draft' });
 }
 
-/** End the gesture: commit the draft as an annotation, or drop too-small ones. */
+/**
+ * End the gesture: commit the draft as an annotation, or drop too-small ones.
+ *
+ * A `pick` draft is handed BACK instead of committed — the caller asked for a
+ * rectangle, not a mark on the page. Returns the draft (pick) or the committed
+ * annotation, so either caller can read the result without re-deriving it.
+ */
 export function endDrag() {
     const d = _draft;
-    if (!d) return;
+    if (!d) return null;
     _cancelDraft();
     _notify({ type: 'draft' });
 
+    // A pick leaves nothing behind: no annotation, no selection, and no tool
+    // revert — the tool was never switched, so there is nothing to revert to.
+    if (d.pick) return d;
+
     const ann = _commitDraft(d);
-    if (!ann) return;
+    if (!ann) return null;
     addAnnotation(ann);
     _selectedId = ann.id;
     _notify({ type: 'select' });
     _maybeRevertTool();
+    return ann;
 }
 
 function _commitDraft(d) {

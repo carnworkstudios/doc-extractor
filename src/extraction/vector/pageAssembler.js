@@ -26,7 +26,10 @@ import { PageScale } from './pageScale.js';
 import { layoutTreeBuilder, compareBoxes } from './layoutTreeBuilder.js';
 import { resolveLayout } from '@canwork/boxwood';
 import { createPdfMeasure } from './pdfMeasure.js';
-import katex from 'katex';
+// KaTeX is deliberately NOT imported here. The assembler reconstructs LaTeX but
+// never renders it: a render is an assertion that the reconstruction is right,
+// and only a human confirming it in TAFNE can make that assertion. Rendering
+// lives in app.js, behind core.applyRegionLatex.
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -486,6 +489,14 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
                 r.type === RegionType.TABLE || r.type === RegionType.IMAGE ||
                 r.type === RegionType.BOX) {
                 for (const idx of (r.textItemIndices || [])) structurallyClaimed.add(idx);
+                // A box's children hold text the box itself no longer lists —
+                // a nested table takes its cells out of the parent's index list.
+                // Missing them here would feed a grid's columns back into text
+                // column detection as phantom columns, which is the exact thing
+                // this set exists to prevent.
+                for (const c of (r.children || [])) {
+                    for (const idx of (c.textItemIndices || [])) structurallyClaimed.add(idx);
+                }
             }
         }
         for (const zone of autoZones) {
@@ -1051,26 +1062,59 @@ function _imageTextLayer(region, textMeta, imgPixels = null) {
     const sx = vbW / bbox.w;
     const sy = vbH / bbox.h;
 
+    // Viewport → crop space. Composed onto each run's own matrix below rather
+    // than applied to a scalar x/y, so a run that is rotated AND sheared AND
+    // non-uniformly scaled lands as one transform instead of three separate
+    // approximations that each fix one axis and break another.
+    const toCrop = [sx, 0, 0, sy, -bbox.x * sx, -bbox.y * sy];
+
     const texts = [];
     for (const tm of items) {
-        const x = (tm.vx - bbox.x) * sx;
-        const y = (tm.vy - bbox.y) * sy;   // baseline, straight through
+        // The matrix path is the schema editor's: it carries the run's full
+        // orientation, and the em size is the LENGTH of its y basis vector.
+        // Scalars stay as the fallback for meta built without a matrix.
+        const m = tm.vm ? _mulMatrix(toCrop, tm.vm) : null;
+        const x = m ? m[4] : (tm.vx - bbox.x) * sx;
+        const y = m ? m[5] : (tm.vy - bbox.y) * sy;   // baseline, straight through
         if (!isFinite(x) || !isFinite(y)) continue;
-        const fs = (tm.vFont || 10) * sy;
+        const fs = m ? (Math.hypot(m[2], m[3]) || 1) : (tm.vFont || 10) * sy;
+        if (!(fs > 0.4)) continue;                    // sub-visible, not a label
         // A single glyph has no inter-character spacing to redistribute, and a
         // zero/absent advance means pdf.js never measured one.
         const adv = (tm.vWidth || 0) * sx;
         const fit = (adv > 0 && tm.str.length > 1)
             ? ` textLength="${adv.toFixed(2)}" lengthAdjust="spacingAndGlyphs"`
             : '';
-        // A rotated run (a chart's y-axis label) rotates about its own baseline
-        // origin, so x/y stay the anchor and only the direction changes.
-        const rot = (tm.rot && Math.abs(tm.rot) > 0.0087)
-            ? ` transform="rotate(${(tm.rot * 180 / Math.PI).toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)})"`
-            : '';
+
+        let place;
+        if (m) {
+            // The matrix ALREADY carries the em size — a text matrix maps a
+            // 1-unit em box into place — so font-size beside an un-normalised
+            // matrix multiplies the two. Divide the basis out and let font-size
+            // carry the scale alone.
+            //
+            // `scale(1,-1)` un-flips the glyphs. The viewport transform negates
+            // y, so the composed matrix maps text-space up to screen-space
+            // down: without the flip the baseline is right and the letters are
+            // upside down, which is the classic form of this bug. Negating the
+            // coordinates instead would move the baseline, not the glyphs.
+            //
+            // x/y stay explicit zeros: the translate lives in the matrix, and
+            // the IR round trip reads x/y off this element. Dropping the
+            // attributes would make them parse as NaN.
+            const n = [m[0] / fs, m[1] / fs, m[2] / fs, m[3] / fs];
+            place = ` x="0" y="0" transform="matrix(${_num2(n[0])} ${_num2(n[1])} ` +
+                    `${_num2(n[2])} ${_num2(n[3])} ${_num2(x)} ${_num2(y)}) scale(1,-1)"`;
+        } else {
+            const rot = (tm.rot && Math.abs(tm.rot) > 0.0087)
+                ? ` transform="rotate(${(tm.rot * 180 / Math.PI).toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)})"`
+                : '';
+            place = ` x="${x.toFixed(2)}" y="${y.toFixed(2)}"${rot}`;
+        }
+
         texts.push(
-            `<text class="pdf-img-label" x="${x.toFixed(2)}" y="${y.toFixed(2)}" ` +
-            `font-size="${fs.toFixed(2)}"${fit}${rot} xml:space="preserve">${esc(tm.str)}</text>`
+            `<text class="pdf-img-label"${place} ` +
+            `font-size="${fs.toFixed(2)}"${fit} xml:space="preserve">${esc(tm.str)}</text>`
         );
     }
     if (!texts.length) return { html: '', text: '' };
@@ -1082,6 +1126,23 @@ function _imageTextLayer(region, textMeta, imgPixels = null) {
               `fill:currentColor;font-family:inherit;">${texts.join('')}</svg>`,
         text: items.map(tm => tm.str).join(' ').replace(/\s+/g, ' ').trim(),
     };
+}
+
+/** Compose two 2D affine matrices in PDF's [a b c d e f] order: apply b, then a. */
+function _mulMatrix(a, b) {
+    return [
+        a[0] * b[0] + a[2] * b[1],
+        a[1] * b[0] + a[3] * b[1],
+        a[0] * b[2] + a[2] * b[3],
+        a[1] * b[2] + a[3] * b[3],
+        a[0] * b[4] + a[2] * b[5] + a[4],
+        a[1] * b[4] + a[3] * b[5] + a[5],
+    ];
+}
+
+/** Two decimals, trailing zeros dropped — matrix terms need no more. */
+function _num2(v) {
+    return String(Math.round(v * 100) / 100);
 }
 
 /** Trim a float to a short, exact-enough string without forcing an integer. */
@@ -1273,27 +1334,28 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             const scopedMeta  = region.textItemIndices.map(i => textMeta[i]);
 
             // Display math: a math-dense line with structure (fractions,
-            // series limits, radicals, scripts) assembles to LaTeX and is
-            // rendered worker-side through the vendored KaTeX build — no CDN,
-            // offline. Plain text and prose paragraphs fall through to
-            // rebuildText unchanged.
+            // series limits, radicals, scripts) assembles to LaTeX.
+            //
+            // WHAT IS NOT DONE HERE, DELIBERATELY: the LaTeX is not rendered as
+            // the visible content. Reconstruction has to infer structure from
+            // glyph positions because the operators that carry the meaning are
+            // vector-drawn and absent from the text layer, so a summation's
+            // limits routinely come back as a fraction. That output is valid
+            // TeX, typesets cleanly, and is wrong — and rendering it REPLACES
+            // the glyphs that were the only evidence it was wrong.
+            //
+            // So the reconstruction ships as a suggestion in `data-latex` while
+            // the page keeps showing what the page actually said. It becomes
+            // the rendering only once a human confirms it, via
+            // core.applyRegionLatex, which is what `data-math` now marks.
             let mathLatex = null;
-            let mathHtml = null;
             try {
                 if (renderOpts.skipMath) mathLatex = null;
                 else mathLatex = buildDisplayMath(scopedItems, { force: forceMath });
-                if (mathLatex) {
-                    mathHtml = katex.renderToString(mathLatex, {
-                        displayMode: true,
-                        output: 'html',
-                        throwOnError: false,
-                        strict: false,
-                    });
-                }
             } catch { /* any failure degrades to the plain-text path */ }
 
             const paraHtml = rebuildText(scopedItems, pageWidthPt, { format: 'html', ..._pageScaleOpts });
-            if (!paraHtml.trim() && !mathHtml) break;
+            if (!paraHtml.trim() && !mathLatex) break;
 
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
             const fontClass  = _registerFont(fontRegistry, family, sizePt, bold, italic);
@@ -1314,16 +1376,28 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                 }
             }
 
-            if (mathHtml) {
-                // A real math block: the raw TeX rides along in data-latex
-                // (escaped for the attribute) so downstream tooling can re-
-                // render or export it without re-deriving geometry. KaTeX's
-                // output relies on inline style attributes — the sanitizer
-                // allows them for extracted content (see ADD_ATTR ['style']).
+            if (mathLatex) {
+                // A real math block. The raw TeX rides along in data-latex
+                // (escaped for the attribute) so TAFNE can open it and the
+                // exporter can carry it, but `data-math-suggested` says plainly
+                // that nobody has checked it yet. The body is the rebuilt text:
+                // the glyphs the page actually contains, laid out by the same
+                // CSS a paragraph gets, so an error in the reconstruction stays
+                // visible instead of being painted over by a clean render.
                 const texAttr = String(mathLatex).replace(/"/g, '&quot;');
+                // rebuildText emits one <p> per line. Those cannot be nested
+                // inside this one: the parser auto-closes the outer <p> at the
+                // first inner one and the glyphs end up as SIBLINGS of an empty
+                // math block, which is how this shipped empty the first time.
+                // Flattened to inline runs so the sub/superscripts that make an
+                // equation readable survive, with the line breaks kept.
+                const mathBody = _inlineParagraphs(paraHtml) || esc(mathLatex);
                 html = `<p class="${fontClass} ${alignClass} pdf-paragraph pdf-math-block"` +
-                       `${firstFlowAttrs} data-math="" data-latex="${texAttr}">${mathHtml}</p>`;
-                text = mathLatex;
+                       `${firstFlowAttrs} data-math-suggested="" data-latex="${texAttr}">` +
+                       `${mathBody}</p>`;
+                // `text` is what this block MEANS in plain text, and the page's
+                // own glyphs are a better answer than a guess at their TeX.
+                text = scopedItems.map(i => i.str).join('').trim() || mathLatex;
                 // Tell the analyze overlay what this actually became, so the
                 // Regions legend can show — and switch off — the equations.
                 region.type = RegionType.MATH;
@@ -1399,7 +1473,35 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                 }
             }
 
-            const innerHtml = rebuildText(scopedItems, pageWidthPt, { format: 'html', ..._pageScaleOpts });
+            // The contents were classified as a document fragment of their own
+            // (contextClassifier's box-interior pass), so render those children
+            // through this same function and wrap the box around the result.
+            // Rendering the box's items as one flat text rebuild — the old path,
+            // kept below for a box with no children — is what flattened a
+            // callout's headings, bullets and nested tables into a single block.
+            let innerHtml = '';
+            let innerText = '';
+            const kids = region.children || [];
+            if (kids.length) {
+                const parts = [];
+                for (const child of kids) {
+                    const kid = _renderRegion(child, textMeta, textItems, viewport, pageWidthPt,
+                        fontRegistry, extractedImages, _pageScaleOpts, containers, linkByIndex, renderOpts);
+                    tables += kid.tables;
+                    if (!kid.html) continue;
+                    const kidId = child.id != null
+                        ? ` data-region-id="${_escAttr(String(child.id))}"` +
+                          ` data-region-type="${_escAttr(String(child.type || ''))}"`
+                        : '';
+                    parts.push(`<div class="pdf-box-block"${kidId}>${kid.html}</div>`);
+                    if (kid.text) innerText += (innerText ? '\n' : '') + kid.text;
+                }
+                innerHtml = parts.join('');
+            }
+            if (!innerHtml) {
+                innerHtml = rebuildText(scopedItems, pageWidthPt, { format: 'html', ..._pageScaleOpts });
+                innerText = rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
+            }
             if (!innerHtml.trim() && !bannerText) break;
 
             const { family, sizePt, bold, italic } = _getRegionFont(scopedMeta);
@@ -1431,8 +1533,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             }
 
             html = `<aside class="pdf-box${roleClass} ${fontClass} ${alignClass}"${bgStyle}>${bannerHtml}${innerHtml}</aside>`;
-            text = (bannerText ? bannerText + '\n' : '') +
-                rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
+            text = (bannerText ? bannerText + '\n' : '') + innerText;
             break;
         }
 
@@ -1538,6 +1639,27 @@ function _splitReferenceItems(items) {
     }
     if (cursor < items.length) groups.push(items.slice(cursor));
     return groups.filter(g => g.length);
+}
+
+/**
+ * Collapse a run of block <p> elements into inline content joined by <br>.
+ *
+ * Only used where the result has to live INSIDE a <p> (display math). The inner
+ * markup — <em>, <sub>, <sup> — is what makes an equation legible as text, so it
+ * is kept; only the block wrappers go. Empty paragraphs are dropped rather than
+ * becoming stray breaks.
+ */
+function _inlineParagraphs(html) {
+    const src = String(html || '');
+    if (!/<p[\s>]/i.test(src)) return src.trim();
+    const parts = [];
+    const re = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
+    let m;
+    while ((m = re.exec(src))) {
+        const inner = m[1].trim();
+        if (inner) parts.push(inner);
+    }
+    return parts.join('<br>');
 }
 
 function _escAttr(s) {

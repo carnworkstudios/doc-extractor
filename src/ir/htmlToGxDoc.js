@@ -39,7 +39,10 @@ function _imageLabels(el) {
             // re-renders the run in the viewer's font at the viewer's metrics,
             // which is the drift textLength exists to remove.
             ...(t.getAttribute('textLength') ? { adv: parseFloat(t.getAttribute('textLength')) } : {}),
-            ...(t.getAttribute('transform') ? { rot: t.getAttribute('transform') } : {}),
+            // The placement transform, whole. It is a bare `rotate(…)` on the
+            // scalar path and a `matrix(…) scale(1,-1)` on the matrix path —
+            // the key is `place` because it is no longer only a rotation.
+            ...(t.getAttribute('transform') ? { place: t.getAttribute('transform') } : {}),
         });
     }
     const vb = (layer.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
@@ -194,7 +197,7 @@ function _emitPage(container, page, ctx = {}) {
  */
 function _emitAddressable(el, page, ctx) {
     const before = page.blocks.length;
-    _emitLeaf(el, page);
+    _emitLeaf(el, page, ctx);
     if (page.blocks.length === before) return;   // chrome, skipped
 
     const pageNum = ctx.pageNum ?? page.page ?? 1;
@@ -235,7 +238,7 @@ function _emitAddressable(el, page, ctx) {
     }
 }
 
-function _emitLeaf(el, page) {
+function _emitLeaf(el, page, ctx = {}) {
     const tag = el.tagName.toLowerCase();
     const cls = el.className || '';
     const colIdx = _colIdx(el);
@@ -245,6 +248,10 @@ function _emitLeaf(el, page) {
     // document chrome, never content — same skip as the exporters' page-label.
     if (tag === 'style' || tag === 'script') return;
     if (cls.includes('page-label')) return;
+    // A callout's banner is carried on the callout block as `banner`, so
+    // emitting it again from inside the box would duplicate the header as the
+    // panel's first paragraph.
+    if (cls.includes('pdf-box-banner')) return;
 
     if (/^h[1-6]$/.test(tag)) {
         addBlock(page, {
@@ -280,16 +287,26 @@ function _emitLeaf(el, page) {
         return;
     }
 
-    // Display math. The assembler renders KaTeX markup and keeps the TeX in
-    // `data-latex` — the TeX IS the content. Without this branch the block fell
-    // through to the paragraph case and the IR captured KaTeX's rendered glyph
-    // soup as prose, so a round trip through the IR destroyed every equation in
-    // the document.
+    // Display math. The TeX lives in `data-latex`; whether it has been CONFIRMED
+    // lives in which marker the element carries. `data-math` is a rendering a
+    // human approved, `data-math-suggested` is the extractor's reconstruction
+    // and is unchecked.
+    //
+    // Both halves have to survive the round trip. Keeping only the TeX would
+    // silently promote every guess to a fact on the way back out; keeping only
+    // the text would throw away work someone already did in TAFNE.
     if (el.hasAttribute?.('data-latex') || cls.includes('pdf-math-block')) {
         const latex = el.getAttribute('data-latex') || '';
-        const text = _blockText(el);
+        const confirmed = el.hasAttribute('data-math') || el.getAttribute('data-gx-annotated') === 'true';
+        // On a confirmed block the visible text is KaTeX's glyph soup, so the
+        // page's own words were stashed at annotation time. Prefer them.
+        const text = (confirmed && el.getAttribute('data-math-source')) || _blockText(el);
         if (latex || text) {
-            addBlock(page, { type: 'equation', latex, text: latex || text, colIdx, ry });
+            addBlock(page, {
+                type: 'equation', latex, text: text || latex,
+                ...(confirmed ? { confirmed: true } : {}),
+                colIdx, ry,
+            });
             return;
         }
     }
@@ -331,11 +348,21 @@ function _emitLeaf(el, page) {
             : cls.includes('note') ? 'note'
             : cls.includes('tip') ? 'tip'
             : 'note';
+        // A callout's contents are blocks, not a string. Walk them into a
+        // nested block list with the same emitter the page uses, so a heading,
+        // a bullet list or a table inside a panel survives the round trip as
+        // what it is. `text` stays alongside for consumers that only want the
+        // words — it is a rendering of the children, never the source of truth.
+        const banner = el.querySelector?.('.pdf-box-banner')?.textContent?.trim() || '';
+        const inner = { blocks: [] };
+        _emitPage(el, inner, ctx);
+
         addBlock(page, {
             type: 'callout',
             kind,
+            ...(banner ? { banner } : {}),
             text: _blockText(el),
-            ..._runs(el),
+            ...(inner.blocks.length ? { blocks: inner.blocks } : _runs(el)),
             colIdx,
             ry,
         });

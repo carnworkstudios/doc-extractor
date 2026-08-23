@@ -12,7 +12,7 @@ import { initExportSystem } from './ui/exportController.js';
 import { initToolbar } from './ui/pageNav.js';
 import { initTableEditing } from './ui/tableEditorInit.js';
 import { initMonacoEditor } from './editor/monacoSetup.js';
-import { initHTMLSync, patchPageHtml } from './ui/htmlSync.js';
+import { initHTMLSync, patchPageHtml, onDocumentMounted } from './ui/htmlSync.js';
 import { initZoneToolbar } from './ui/zoneToolbar.js';
 import { initSelectionMode } from './ui/selectionMode.js';
 import { initViewCode } from './ui/viewCode.js';
@@ -28,6 +28,8 @@ import { initWorkspaceLayout, toggleMirror } from './ui/workspaceLayout.js';
 import { initScrollSync, refreshScrollSync, invalidatePageAnchors, registerPageSurface, scrollToPage, _debugPositions } from './ui/scrollSync.js';
 import { initBatchViewController } from './ui/batchViewController.js';
 import { analyzePDF } from './extraction/vector/pdfAnalyzer.js';
+import { cropPageBox } from './ui/pdfCanvas.js';
+import { armMarquee, disarmMarquee, isMarqueeArmed } from './annotation/layer.js';
 import { showToast } from './ui/toast.js';
 import { state } from './state.js';
 import { getImageBlob, clearImages } from './utils/imageStore.js';
@@ -89,6 +91,72 @@ window.__GX_PDF_CORE__ = {
     // scroll-sync check and worth having when a pane disagrees on screen.
     debugScrollSync:     () => _debugPositions(),
     invalidatePageAnchors: (page) => invalidatePageAnchors(page),
+
+    // ── Reference-sheet verbs (thin, no policy) ─────────────────────────────
+    // The injected notes board (assets/pdf-processor/ui/notesPanel.js) owns
+    // capture gestures, the item model and persistence; these two exist only
+    // so it can find out when a document arrives and where its pane lives.
+    // Replay-on-subscribe is handled inside htmlSync, matching the other on*
+    // channels here.
+    onDocumentMounted:   (cb) => onDocumentMounted(cb),
+    notesSurface:        () => document.getElementById('pane-notes'),
+    // What is mounted right now, as an address the board can store. Thin
+    // read-out of state — the panel decides what to do with it.
+    getDocInfo:          () => ({
+        docId: state.pdf1?.docId || null,
+        name: state.pdf1?.file?.name || null,
+    }),
+
+    /**
+     * Cut a crop off the paper: arm the annotation layer's RECT MARQUEE, and
+     * when the user finishes the drag, rasterise the picked box through the
+     * page canvas.
+     *
+     * The board used to run its own drag — its own coordinate maths, its own
+     * dashed box, its own clamping — against a surface whose CSS zoom it did
+     * not account for, which is why the marquee never landed where the pointer
+     * did. This routes it through the rectangle gesture the tool already has:
+     * same conversion, same normalisation, same preview the rect and measure
+     * tools draw. The board asks for a crop; it does not implement one.
+     *
+     * Resolves with the crop and its address, or null when the drag was called
+     * off (Escape, or a click with no drag).
+     *
+     * @returns {Promise<{dataUrl,page,rect,pageH,label}|null>}
+     */
+    cropPageRegion() {
+        return new Promise(resolve => {
+            let settled = false;
+            const done = v => { if (!settled) { settled = true; resolve(v); } };
+            armMarquee({
+                kind: 'rect',
+                onCancel: () => done(null),
+                onPick: ({ page, rect }) => {
+                    // `rect` is PDF points — the SVG viewBox unit — which is
+                    // exactly what cropPageBox wants. No scale hop in between,
+                    // and therefore no place for one to be wrong.
+                    const cut = cropPageBox(page, rect);
+                    if (!cut) {
+                        showToast('That page is not painted right now — scroll it into view and crop again.', 'info');
+                        done(null);
+                        return;
+                    }
+                    done({
+                        dataUrl: cut.dataUrl,
+                        page,
+                        rect: {
+                            x: Math.round(rect.x), y: Math.round(rect.y),
+                            w: Math.round(rect.w), h: Math.round(rect.h),
+                        },
+                        pageH: cut.pageH,
+                        label: `${state.pdf1?.file?.name || 'document'} p${page}`,
+                    });
+                },
+            });
+        });
+    },
+    cancelPageRegionCrop: () => disarmMarquee(),
+    isCroppingPageRegion: () => isMarqueeArmed(),
 
     /**
      * Real vector geometry for a region, in the region's OWN coordinate space.
@@ -286,6 +354,13 @@ window.__GX_PDF_CORE__ = {
      * A TeX string that will not typeset is REFUSED rather than written, because
      * a region whose stored LaTeX cannot render is worse than the wrong
      * equation: it is an equation that disappears on the next re-render.
+     *
+     * THIS IS THE ONLY PLACE A RECONSTRUCTION BECOMES A RENDERING. The extractor
+     * emits `data-math-suggested` and leaves the page's own glyphs on screen,
+     * because its LaTeX is inferred from glyph positions and is wrong often
+     * enough that a clean typeset would just hide the errors. A human opening
+     * the equation in TAFNE and sending it back is the confirmation, and that
+     * is what promotes `data-math-suggested` to `data-math`.
      */
     applyRegionLatex(page, regionId, latex) {
         try {
@@ -307,8 +382,18 @@ window.__GX_PDF_CORE__ = {
             const mathEl = region.matches('[data-latex]') ? region : region.querySelector('[data-latex]');
             if (!mathEl) return false;
 
+            // The glyphs the extractor found are kept on the first annotation
+            // only, so a later correction cannot overwrite the original with a
+            // previous render. This is the evidence the render replaced, and
+            // without it there is no way back to what the page actually said.
+            if (!mathEl.hasAttribute('data-math-source')) {
+                mathEl.setAttribute('data-math-source', mathEl.textContent || '');
+            }
             mathEl.setAttribute('data-latex', tex);
             mathEl.setAttribute('data-gx-annotated', 'true');
+            // Confirmed: this region is now a rendering of its LaTeX, and says so.
+            mathEl.removeAttribute('data-math-suggested');
+            mathEl.setAttribute('data-math', '');
             mathEl.innerHTML = rendered;
 
             const pageEl = doc.querySelector(`section.pdf-page-content[data-page="${page}"]`);
@@ -504,6 +589,12 @@ $(() => {
             return;
         }
         toggleMirror(state.activeView, 'doc');
+        syncToolbarToView(state.activeView);
+    });
+    // The reference board needs no document at all — a scratchboard outlives
+    // any one file, so unlike the mirrors there is nothing to gate on.
+    $(document).on('click', '.notes-mirror-toggle', () => {
+        toggleMirror(state.activeView, 'notes');
         syncToolbarToView(state.activeView);
     });
     initBatchViewController();

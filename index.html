@@ -196,6 +196,7 @@
     <link rel="stylesheet" href="/assets/css/ginexys-modals-tokens.css" />
     <link rel="stylesheet" href="/assets/css/ginexys-modals.css" />
     <script src="/assets/js/ginexys-modals.js" defer></script>
+    <script src="/assets/js/ginexys-billing.js" defer></script>
     <script src="/assets/js/ginexys-auth.js" defer></script>
     <script src="/assets/js/ginexys-settings.js" defer></script>
     <script src="/assets/js/ginexys-gate.js" defer></script>
@@ -827,6 +828,18 @@
               icon="material-symbols:picture-as-pdf-outline"
             ></iconify-icon>
           </button>
+          <!-- Reference-board toggle: independent of the Original toggle,
+             same visibility model. -->
+          <button
+            class="tool-btn notes-mirror-toggle"
+            id="doc-notes-mirror-toggle"
+            title="Show the reference board alongside the doc"
+            aria-expanded="false"
+          >
+            <iconify-icon
+              icon="material-symbols:sticky-note-2-outline"
+            ></iconify-icon>
+          </button>
         </div>
         <span class="ribbon-group-label">Styles</span>
       </div>
@@ -874,6 +887,27 @@
         </div>
         <span class="ribbon-group-label">Zoom</span>
       </div>
+
+      <!-- Notes board toggle: pdf. The board is shell-injected policy; this
+         is public shell like the analyze canvas — an empty pane until the
+         host fills it. -->
+      <div class="toolbar-sep" data-toolbar-ctx="pdf"></div>
+      <div class="ribbon-group" id="notes-toggle-group" data-toolbar-ctx="pdf">
+        <div class="ribbon-group-buttons">
+          <button
+            class="tool-btn notes-mirror-toggle"
+            id="pdf-notes-mirror-toggle"
+            title="Show the reference board alongside the PDF"
+            aria-expanded="false"
+          >
+            <iconify-icon
+              icon="material-symbols:sticky-note-2-outline"
+            ></iconify-icon>
+          </button>
+        </div>
+        <span class="ribbon-group-label">Notes</span>
+      </div>
+
       <div class="toolbar-sep" data-toolbar-ctx="pdf html"></div>
 
       <!-- Annotate: pdf only -->
@@ -1386,6 +1420,20 @@
                 Open a PDF to see the extracted HTML or Add Blank Page to Edit.
               </p>
             </div>
+          </div>
+
+          <!-- Shown when the reference board shares the workspace -->
+          <div class="vd-divider" id="notes-divider" hidden></div>
+
+          <!-- NOTES PANE — the cross-tool Reference Sheet. Public shell only:
+             an empty board container until the shell injects the panel, the
+             same way the analyze canvas ships without its policy. -->
+          <div id="pane-notes" class="work-pane" hidden>
+            <div class="vd-pane-header" id="notes-header-bar">
+              <span class="vd-label vd-label--notes">References</span>
+              <span class="vd-hint">Cross-tool scratchboard</span>
+            </div>
+            <div id="notes-board"></div>
           </div>
         </div>
         <!-- /#pane-stack -->
@@ -2548,8 +2596,13 @@
         if (window.GxGate) {
           GxGate.init({
             toolKey: "pdf_export_count",
-            repo: "carnworkstudios/doc-extractor",
             triggerIds: ["btn-export-main"],
+            tip: {
+              text: "Tables, references, and equations were tagged in this export — send them straight to TAFNE instead of re-uploading.",
+              cta: "Send to TAFNE →",
+              featureSlug: "cross-tool-send",
+              subtitle: "Send extracted tables to TAFNE or vector regions to Schema Editor — with lineage intact. Cross-tool flow is a Pro feature.",
+            },
           });
         }
       });

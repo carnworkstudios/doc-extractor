@@ -3,9 +3,9 @@
  * Owns which workspace panes are on screen.
  *
  * THE MODEL: every pane (#pane-pdf, #pane-doc, #pane-analyze, #pane-editor,
- * #pane-diff) is a permanent sibling inside #app-workspace. A tab chooses
- * which panes are VISIBLE. It does not choose where anything lives, and
- * nothing is ever moved between parents.
+ * #pane-diff, #pane-notes) is a permanent sibling inside #app-workspace. A
+ * tab chooses which panes are VISIBLE. It does not choose where anything
+ * lives, and nothing is ever moved between parents.
  *
  * That is the whole point. The previous two designs both tried to put the
  * rendered PDF in two places:
@@ -35,10 +35,18 @@ const LAYOUT_SEL = '#workspace-split';
 const DIVIDER_SEL = '#pane-divider';
 const STACK_SEL = '#pane-stack';
 const STACK_DIVIDER_SEL = '#stack-divider';
+const NOTES_DIVIDER_SEL = '#notes-divider';
 const PANE_SEL = '#pane-pdf, #pane-doc, #pane-analyze';
+/**
+ * Sizing superset: everything a divider may resize, including #pane-notes.
+ * Deliberately NOT the active-tracking selector — clicking into the board to
+ * type must not re-route the format toolbar or relabel which document pane
+ * owns it, so focus semantics keep the original three-pane set.
+ */
+const PANE_SIZING_SEL = `${PANE_SEL}, #pane-notes`;
 
 /** Every pane a view can ask for, in DOM order. */
-const PANES = ['pdf', 'doc', 'analyze', 'editor', 'diff'];
+const PANES = ['pdf', 'doc', 'analyze', 'editor', 'diff', 'notes'];
 
 /** The pane each view shows on its own. */
 const BASE_PANE = {
@@ -58,7 +66,8 @@ const BASE_PANE = {
  * could not express that.
  */
 const MIRRORABLE = {
-    html: ['pdf'],
+    pdf: ['notes'],
+    html: ['pdf', 'notes'],
     analyze: ['pdf', 'doc'],
 };
 
@@ -85,6 +94,14 @@ export function initWorkspaceLayout() {
         DIVIDER_SEL, PANE_SEL, 160,
     );
     initPaneDivider(LAYOUT_SEL, STACK_DIVIDER_SEL, `${STACK_SEL}, #pane-analyze`, 160);
+    // #notes-divider separates the board from whatever document pane it shares
+    // the row with. Same dynamic container as #pane-divider: outside the
+    // T-split the stack is display:contents and the real flex parent is
+    // #workspace-split; inside it, #pane-stack.
+    initPaneDivider(
+        () => ($(LAYOUT_SEL).hasClass('t-split') ? STACK_SEL : LAYOUT_SEL),
+        NOTES_DIVIDER_SEL, PANE_SIZING_SEL, 160,
+    );
     initPaneActiveTracking(PANE_SEL, (paneEl) => {
         const pane = paneEl.id === 'pane-pdf' ? 'pdf' : 'doc';
         if (_focusedPane === pane) return;
@@ -124,8 +141,9 @@ export function setView(viewName) {
 /**
  * Toggle ONE extra pane for a view.
  * @param {string} viewName
- * @param {'pdf'|'doc'} [pane] — defaults to the view's first mirrorable pane,
- *   which keeps the Doc tab's single "Show original PDF" button working.
+ * @param {'pdf'|'doc'|'notes'} [pane] — defaults to the view's first
+ *   mirrorable pane, which keeps the Doc tab's single "Show original PDF"
+ *   button working.
  */
 export function toggleMirror(viewName, pane) {
     const allowed = MIRRORABLE[viewName];
@@ -162,12 +180,17 @@ export function applyLayout() {
     PANES.forEach(p => $(`#pane-${p}`).attr('hidden', !visible.has(p)));
     $(LAYOUT_SEL).toggleClass('t-split', tSplit);
 
-    // #pane-divider sits between the two document panes; #stack-divider sits
-    // between that group and the canvas. Outside the T only the first exists,
-    // separating whichever two panes are up.
-    const split = visible.size > 1;
+    // Divider visibility is computed from the NON-notes visible count, so
+    // every pre-existing layout (Doc+PDF, the Analyze T) is bit-for-bit what
+    // it was before the board existed. #notes-divider has its own rule:
+    // visible exactly when the board shares the screen with a document pane,
+    // which is always, because the board is never a view's base pane.
+    const docPanesUp = [...visible].filter(p => p !== 'notes');
+    const notesUp = visible.has('notes');
+    const split = docPanesUp.length > 1;
     $(DIVIDER_SEL).attr('hidden', !split);
     $(STACK_DIVIDER_SEL).attr('hidden', !tSplit);
+    $(NOTES_DIVIDER_SEL).attr('hidden', !notesUp);
 
     // Headers stay up in every layout, not just the split. They carry the
     // open document's name and its close control (the .gx-file-chip), which
@@ -177,8 +200,8 @@ export function applyLayout() {
     // The divider writes inline flex percentages onto the panes it sizes.
     // Those must not outlive the split, or the surviving pane stays pinned
     // to its dragged width with a dead strip beside it.
-    if (split) restorePaneSizes(LAYOUT_SEL, PANE_SEL);
-    else clearPaneSizes(LAYOUT_SEL, PANE_SEL);
+    if (split || notesUp) restorePaneSizes(LAYOUT_SEL, PANE_SIZING_SEL);
+    else clearPaneSizes(LAYOUT_SEL, PANE_SIZING_SEL);
 
     // A reference view is not an editing surface. Analyze routes no toolbar
     // to the PDF, so leaving it editable there would let edits land somewhere
@@ -187,6 +210,7 @@ export function applyLayout() {
 
     $('.pdf-mirror-toggle').attr('aria-expanded', String(isMirrorOn(_view, 'pdf')));
     $('.doc-mirror-toggle').attr('aria-expanded', String(isMirrorOn(_view, 'doc')));
+    $('.notes-mirror-toggle').attr('aria-expanded', String(isMirrorOn(_view, 'notes')));
 
     // Showing/hiding a pane changes the PDF pane's width, so the fitted zoom
     // is stale the moment the layout changes. Re-fit on the next frame —
