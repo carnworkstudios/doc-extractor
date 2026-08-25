@@ -5,8 +5,8 @@
 import $ from 'jquery';
 import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
-import katex from 'katex';
-import { initViewTabs, syncToolbarToView } from './ui/viewController.js';
+import { renderMath } from './utils/mathRender.js';
+import { initViewTabs, syncToolbarToView, switchView } from './ui/viewController.js';
 import { initFileInputs } from './ui/fileUpload.js';
 import { initExportSystem } from './ui/exportController.js';
 import { initToolbar } from './ui/pageNav.js';
@@ -367,12 +367,11 @@ window.__GX_PDF_CORE__ = {
             const tex = String(latex == null ? '' : latex);
             if (!tex.trim()) return false;
 
-            let rendered;
-            try {
-                rendered = katex.renderToString(tex, {
-                    displayMode: true, output: 'html', throwOnError: true, strict: false,
-                });
-            } catch (_) { return false; }
+            // One renderer for every surface — see utils/mathRender.js. A
+            // confirmation that typeset differently from the extraction would
+            // make approving an equation change how it looks.
+            const rendered = renderMath(tex);
+            if (!rendered) return false;
 
             const doc = new DOMParser().parseFromString(state.pdf1.extractedHTML || '', 'text/html');
             const scope = doc.querySelector(`section.pdf-page-content[data-page="${page}"]`);
@@ -591,12 +590,6 @@ $(() => {
         toggleMirror(state.activeView, 'doc');
         syncToolbarToView(state.activeView);
     });
-    // The reference board needs no document at all — a scratchboard outlives
-    // any one file, so unlike the mirrors there is nothing to gate on.
-    $(document).on('click', '.notes-mirror-toggle', () => {
-        toggleMirror(state.activeView, 'notes');
-        syncToolbarToView(state.activeView);
-    });
     initBatchViewController();
 
     // Optional/best-effort add-ons. These are isolated because everything in
@@ -607,8 +600,31 @@ $(() => {
     try { _tryInjectAnalyzePanel(); } catch (err) { console.warn('[boot] analyze panel:', err); }
     try { _initMcpPill(); } catch (err) { console.warn('[boot] mcp pill:', err); }
 
-    // Sync toolbar to the default active tab (PDF) on first load
-    syncToolbarToView('pdf');
+    // Deep-link view routing (?view= query parameter)
+    const queryView = new URLSearchParams(location.search).get('view');
+    if (queryView) {
+        const viewMap = {
+            'visual-diff': 'visual-diff',
+            'compare': 'diff',
+            'diff': 'diff',
+            'editor': 'editor',
+            'analyze': 'analyze',
+            'doc': 'html',
+            'html': 'html',
+            'pdf': 'pdf'
+        };
+        const targetView = viewMap[queryView] || queryView;
+        if (targetView === 'visual-diff') {
+            switchView('html');
+            toggleMirror('html', 'pdf');
+        } else if (['analyze', 'pdf', 'html', 'editor', 'diff'].includes(targetView)) {
+            switchView(targetView);
+        } else {
+            syncToolbarToView(state.activeView || 'pdf');
+        }
+    } else {
+        syncToolbarToView(state.activeView || 'pdf');
+    }
 
     // From our new diffChecker controller logic
     import('./ui/diffViewController.js').then(m => m.initDiffTabsAndLayout());

@@ -1832,6 +1832,25 @@ async function handleFile(file, pdfIndex) {
             is_scanned: !!isScannedDoc,
             slot: pdfIndex,
         });
+        if (window.GxTrack) {
+            window.GxTrack.documentProcessed({
+                tool: 'pdf-processor',
+                format: 'pdf',
+                source: data.source,
+                page_count: data.pages?.length ?? 1,
+                table_count: data.tableCount ?? 0,
+                is_scanned: !!isScannedDoc,
+            });
+            window.GxTrack.artifactGenerated({
+                tool: 'pdf-processor',
+                artifact_type: 'structured_ir',
+                schema: 'gx-doc/1',
+                page_count: data.pages?.length ?? 1,
+                table_count: data.tableCount ?? 0,
+                block_count: (data.gxDoc?.pages || []).reduce((acc, p) => acc + (p.blocks?.length || 0), 0),
+                has_provenance: true,
+            });
+        }
         showToast(`PDF loaded via ${source}${tableSuffix}${warnSuffix}`, 'success');
         hideStatus();
 
@@ -2098,7 +2117,12 @@ export async function downloadExtractedHTML() {
     // render. A standalone export has no app to load them, so inline the
     // generated self-contained KaTeX CSS (fonts as base64 data URIs) whenever
     // the document actually contains math.
-    const katexCss = /class="[^"]*katex/.test(html) || /data-math=""/.test(html)
+    // Matched on any math marker, not just the confirmed one: the extractor now
+    // typesets its reconstruction too, so a document can be full of KaTeX markup
+    // without a single `data-math=""` in it. Gating on the confirmed marker
+    // alone shipped those exports with no stylesheet, which renders an equation
+    // as a vertical stack of unstyled glyphs.
+    const katexCss = /class="[^"]*katex/.test(html) || /data-math(-suggested)?=""/.test(html)
         ? `<style>\n${katexExportCss}\n</style>`
         : '';
 

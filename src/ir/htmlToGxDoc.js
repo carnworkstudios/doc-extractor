@@ -298,9 +298,14 @@ function _emitLeaf(el, page, ctx = {}) {
     if (el.hasAttribute?.('data-latex') || cls.includes('pdf-math-block')) {
         const latex = el.getAttribute('data-latex') || '';
         const confirmed = el.hasAttribute('data-math') || el.getAttribute('data-gx-annotated') === 'true';
-        // On a confirmed block the visible text is KaTeX's glyph soup, so the
-        // page's own words were stashed at annotation time. Prefer them.
-        const text = (confirmed && el.getAttribute('data-math-source')) || _blockText(el);
+        // Whenever the block is a RENDERING, its visible text is KaTeX's glyph
+        // soup — a reading of the typeset output, not of the document. The page's
+        // own words were stashed in `data-math-source` at the moment the render
+        // replaced them, so prefer that attribute wherever it exists. Gating this
+        // on `confirmed` was right only while suggested blocks still showed their
+        // raw glyphs; now that they render too, it would put KaTeX's soup into
+        // the IR as the equation's text.
+        const text = el.getAttribute('data-math-source') || _blockText(el);
         if (latex || text) {
             addBlock(page, {
                 type: 'equation', latex, text: text || latex,

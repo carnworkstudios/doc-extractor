@@ -29,6 +29,10 @@ export async function switchView(viewName) {
     deactivateSelectionMode();
     if (!VIEWS.includes(viewName)) return;
 
+    if (viewName === 'diff') {
+        $('#diff-tab-btn').prop('disabled', false);
+    }
+
     state.activeView = viewName;
     setView(viewName);
 
@@ -52,6 +56,18 @@ export async function switchView(viewName) {
 
     syncToolbarToView(viewName);
     renderNavPanel();
+
+    try {
+        if (window.parent !== window) {
+            const publicSlug = viewName === 'html' ? 'doc' : (viewName === 'diff' ? 'compare' : viewName);
+            window.parent.postMessage({
+                type: 'cws:view-change',
+                source: 'pdf_processor',
+                appId: 'pdf_processor',
+                view: publicSlug
+            }, '*');
+        }
+    } catch (_) {}
 }
 
 /**

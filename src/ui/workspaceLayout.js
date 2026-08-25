@@ -37,16 +37,10 @@ const STACK_SEL = '#pane-stack';
 const STACK_DIVIDER_SEL = '#stack-divider';
 const NOTES_DIVIDER_SEL = '#notes-divider';
 const PANE_SEL = '#pane-pdf, #pane-doc, #pane-analyze';
-/**
- * Sizing superset: everything a divider may resize, including #pane-notes.
- * Deliberately NOT the active-tracking selector — clicking into the board to
- * type must not re-route the format toolbar or relabel which document pane
- * owns it, so focus semantics keep the original three-pane set.
- */
-const PANE_SIZING_SEL = `${PANE_SEL}, #pane-notes`;
+const PANE_SIZING_SEL = PANE_SEL + ', #pane-notes';
 
 /** Every pane a view can ask for, in DOM order. */
-const PANES = ['pdf', 'doc', 'analyze', 'editor', 'diff', 'notes'];
+const PANES = ['pdf', 'doc', 'analyze', 'editor', 'diff'];
 
 /** The pane each view shows on its own. */
 const BASE_PANE = {
@@ -66,8 +60,8 @@ const BASE_PANE = {
  * could not express that.
  */
 const MIRRORABLE = {
-    pdf: ['notes'],
-    html: ['pdf', 'notes'],
+    pdf: [],
+    html: ['pdf'],
     analyze: ['pdf', 'doc'],
 };
 
@@ -94,14 +88,6 @@ export function initWorkspaceLayout() {
         DIVIDER_SEL, PANE_SEL, 160,
     );
     initPaneDivider(LAYOUT_SEL, STACK_DIVIDER_SEL, `${STACK_SEL}, #pane-analyze`, 160);
-    // #notes-divider separates the board from whatever document pane it shares
-    // the row with. Same dynamic container as #pane-divider: outside the
-    // T-split the stack is display:contents and the real flex parent is
-    // #workspace-split; inside it, #pane-stack.
-    initPaneDivider(
-        () => ($(LAYOUT_SEL).hasClass('t-split') ? STACK_SEL : LAYOUT_SEL),
-        NOTES_DIVIDER_SEL, PANE_SIZING_SEL, 160,
-    );
     initPaneActiveTracking(PANE_SEL, (paneEl) => {
         const pane = paneEl.id === 'pane-pdf' ? 'pdf' : 'doc';
         if (_focusedPane === pane) return;
@@ -184,13 +170,10 @@ export function applyLayout() {
     // every pre-existing layout (Doc+PDF, the Analyze T) is bit-for-bit what
     // it was before the board existed. #notes-divider has its own rule:
     // visible exactly when the board shares the screen with a document pane,
-    // which is always, because the board is never a view's base pane.
-    const docPanesUp = [...visible].filter(p => p !== 'notes');
-    const notesUp = visible.has('notes');
-    const split = docPanesUp.length > 1;
+    const split = visible.size > 1;
     $(DIVIDER_SEL).attr('hidden', !split);
     $(STACK_DIVIDER_SEL).attr('hidden', !tSplit);
-    $(NOTES_DIVIDER_SEL).attr('hidden', !notesUp);
+    $(NOTES_DIVIDER_SEL).attr('hidden', true);
 
     // Headers stay up in every layout, not just the split. They carry the
     // open document's name and its close control (the .gx-file-chip), which
@@ -200,7 +183,7 @@ export function applyLayout() {
     // The divider writes inline flex percentages onto the panes it sizes.
     // Those must not outlive the split, or the surviving pane stays pinned
     // to its dragged width with a dead strip beside it.
-    if (split || notesUp) restorePaneSizes(LAYOUT_SEL, PANE_SIZING_SEL);
+    if (split) restorePaneSizes(LAYOUT_SEL, PANE_SIZING_SEL);
     else clearPaneSizes(LAYOUT_SEL, PANE_SIZING_SEL);
 
     // A reference view is not an editing surface. Analyze routes no toolbar
@@ -210,7 +193,6 @@ export function applyLayout() {
 
     $('.pdf-mirror-toggle').attr('aria-expanded', String(isMirrorOn(_view, 'pdf')));
     $('.doc-mirror-toggle').attr('aria-expanded', String(isMirrorOn(_view, 'doc')));
-    $('.notes-mirror-toggle').attr('aria-expanded', String(isMirrorOn(_view, 'notes')));
 
     // Showing/hiding a pane changes the PDF pane's width, so the fitted zoom
     // is stale the moment the layout changes. Re-fit on the next frame —

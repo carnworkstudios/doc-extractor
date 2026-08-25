@@ -181,12 +181,36 @@ function makeRegion(items, type) {
         viewport, 612, 1, createFontRegistry());
     okTrue(/pdf-math-block/.test(eqPage.html),
        'a fraction line assembles as a .pdf-math-block paragraph');
-    okTrue(/data-math=""/.test(eqPage.html) && /data-latex="[^"]*\\frac\{1\}\{2\}[^"]*"/.test(eqPage.html),
-       'the math block carries data-math and an escaped data-latex attribute');
+    okTrue(/data-latex="[^"]*\\frac\{1\}\{2\}[^"]*"/.test(eqPage.html),
+       'the math block carries the reconstructed TeX in an escaped data-latex attribute');
     okTrue(/<span class="katex/.test(eqPage.html),
        'the math block body is rendered KaTeX HTML, not flattened text');
-    okTrue(!/1\/2/.test(eqPage.html.replace(/data-latex="[^"]*"/, '')),
-       'no flattened "1/2" text survives outside the data-latex attribute');
+    // The extractor RENDERS but does not CONFIRM. `data-math` is an assertion
+    // that a human approved this rendering, and only core.applyRegionLatex may
+    // make it; the extractor's own reconstruction says it is unchecked.
+    okTrue(/data-math-suggested=""/.test(eqPage.html) && !/data-math=""/.test(eqPage.html),
+       'an extracted equation is marked suggested, never confirmed');
+    // The evidence the render replaced. Without it there is no way back to what
+    // the page actually said, and the IR would read KaTeX's glyph soup as the
+    // equation's text.
+    okTrue(/data-math-source="[^"]*1[^"]*2[^"]*"/.test(eqPage.html),
+       'the page\'s own glyphs are kept in data-math-source');
+    okTrue(!/1\/2/.test(eqPage.html.replace(/data-(latex|math-source)="[^"]*"/g, '')),
+       'no flattened "1/2" text survives outside the data attributes');
+
+    // TeX that will not typeset must fall back to the glyphs and SAY so. An
+    // equation that vanishes because its reconstruction was malformed is the
+    // one outcome worse than an ugly one.
+    const { renderMath, mathMarker } = await import('../utils/mathRender.js');
+    okTrue(renderMath('\\frac{1}{2}') !== null, 'valid TeX typesets');
+    okTrue(renderMath('\\frac{1}{') === null, 'malformed TeX returns null rather than red error markup');
+    okTrue(renderMath('') === null && renderMath(null) === null, 'empty TeX is not an equation');
+    okTrue(mathMarker({ confirmed: true }) === 'data-math=""',
+       'a confirmed block carries data-math');
+    okTrue(mathMarker({ typeset: true }) === 'data-math-suggested=""',
+       'a rendered but unchecked block carries data-math-suggested');
+    okTrue(mathMarker({}) === 'data-math-unrendered=""',
+       'a block whose TeX would not typeset says so, rather than looking merely unchecked');
 
     // ── Assembly: prose paragraphs are untouched ──────────────────────────
     const proseItems = run('The quick brown fox jumps over the lazy dog.', 40, 100, 10);

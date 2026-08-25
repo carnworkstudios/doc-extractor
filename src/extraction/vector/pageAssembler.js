@@ -26,10 +26,15 @@ import { PageScale } from './pageScale.js';
 import { layoutTreeBuilder, compareBoxes } from './layoutTreeBuilder.js';
 import { resolveLayout } from '@canwork/boxwood';
 import { createPdfMeasure } from './pdfMeasure.js';
-// KaTeX is deliberately NOT imported here. The assembler reconstructs LaTeX but
-// never renders it: a render is an assertion that the reconstruction is right,
-// and only a human confirming it in TAFNE can make that assertion. Rendering
-// lives in app.js, behind core.applyRegionLatex.
+// Display math is typeset HERE, at assembly time, because this is the one
+// function BOTH extraction paths go through — the geometry worker and the
+// synthetic/scanned path in fileUpload. Rendering downstream of it means one of
+// the two silently emits unrendered equations.
+//
+// A render is not an assertion that the reconstruction is correct: the block
+// carries `data-math-suggested` until a human confirms it in TAFNE, and keeps
+// the page's own glyphs in `data-math-source`. See the MATH branch below.
+import { renderMath, mathMarker } from '../../utils/mathRender.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1377,13 +1382,25 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             }
 
             if (mathLatex) {
-                // A real math block. The raw TeX rides along in data-latex
-                // (escaped for the attribute) so TAFNE can open it and the
-                // exporter can carry it, but `data-math-suggested` says plainly
-                // that nobody has checked it yet. The body is the rebuilt text:
-                // the glyphs the page actually contains, laid out by the same
-                // CSS a paragraph gets, so an error in the reconstruction stays
-                // visible instead of being painted over by a clean render.
+                // A real math block. Three things go out together, and each one
+                // answers a different question:
+                //
+                //   data-latex        the TeX — the CONTENT, what TAFNE opens
+                //                     and what every exporter carries.
+                //   the body          the typeset equation, so an equation
+                //                     reads as an equation on the page.
+                //   data-math-source  the glyphs the page actually contained —
+                //                     the EVIDENCE the render replaced.
+                //
+                // An earlier pass left the glyphs on screen unrendered, on the
+                // grounds that typesetting a reconstruction asserts it is
+                // right. The concern is real but the remedy was worse: it made
+                // every equation in every document display as broken inline
+                // text. Rendering with the source kept beside it answers it
+                // properly — `data-math-suggested` still says nobody has
+                // checked this, the styling marks it, and the original glyphs
+                // are one attribute away, so a wrong reconstruction is visible
+                // and recoverable rather than invisible and lossy.
                 const texAttr = String(mathLatex).replace(/"/g, '&quot;');
                 // rebuildText emits one <p> per line. Those cannot be nested
                 // inside this one: the parser auto-closes the outer <p> at the
@@ -1391,13 +1408,24 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                 // math block, which is how this shipped empty the first time.
                 // Flattened to inline runs so the sub/superscripts that make an
                 // equation readable survive, with the line breaks kept.
-                const mathBody = _inlineParagraphs(paraHtml) || esc(mathLatex);
+                const glyphBody = _inlineParagraphs(paraHtml) || esc(mathLatex);
+                const glyphText = scopedItems.map(i => i.str).join('').trim();
+
+                // TeX that will not typeset is NOT rendered — the block falls
+                // back to the glyphs. An equation that silently disappears
+                // because its reconstruction was malformed is the one failure
+                // worse than an ugly one.
+                const typeset = renderMath(mathLatex);
+                const marker = ' ' + mathMarker({ typeset: !!typeset });
+                const srcAttr = typeset
+                    ? ` data-math-source="${_escAttr(glyphText)}"`
+                    : '';
                 html = `<p class="${fontClass} ${alignClass} pdf-paragraph pdf-math-block"` +
-                       `${firstFlowAttrs} data-math-suggested="" data-latex="${texAttr}">` +
-                       `${mathBody}</p>`;
+                       `${firstFlowAttrs}${marker} data-latex="${texAttr}"${srcAttr}>` +
+                       `${typeset || glyphBody}</p>`;
                 // `text` is what this block MEANS in plain text, and the page's
                 // own glyphs are a better answer than a guess at their TeX.
-                text = scopedItems.map(i => i.str).join('').trim() || mathLatex;
+                text = glyphText || mathLatex;
                 // Tell the analyze overlay what this actually became, so the
                 // Regions legend can show — and switch off — the equations.
                 region.type = RegionType.MATH;

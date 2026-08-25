@@ -16,8 +16,11 @@
  *     </section>
  *   </article>
  *
- * Pure string output — no DOM, no global state.
+ * Pure string output — no DOM, no global state. (KaTeX's `renderToString` is
+ * the one dependency, and it is a pure string function too.)
  */
+
+import { renderMath, mathMarker } from '../utils/mathRender.js';
 
 // Static layout CSS the assembler injects per-document (generateDocumentStyles
 // minus the per-page font classes). Emitted so gx-doc output renders correctly
@@ -198,9 +201,16 @@ function _blockToHtml(block) {
             // confirmed marker here would launder every guess in the document
             // into an assertion the moment it passed through the IR.
             const tex = esc(block.latex || '');
-            const body = esc(block.text || block.latex || '');
-            const marker = block.confirmed ? 'data-math=""' : 'data-math-suggested=""';
-            return `<p class="pdf-paragraph pdf-math-block f1 ta-c"${idAttr} ${marker} data-latex="${tex}">${body}</p>`;
+            const glyphs = String(block.text || block.latex || '');
+            // Typeset on the way out, the same as the extractor does, so an
+            // equation renders as an equation whichever path built the page.
+            // The glyphs ride along in `data-math-source` so the next parse
+            // reads the document's own words back rather than KaTeX's output.
+            const typeset = renderMath(block.latex || block.text);
+            const marker = mathMarker({ confirmed: !!block.confirmed, typeset: !!typeset });
+            const src = typeset ? ` data-math-source="${esc(glyphs)}"` : '';
+            const body = typeset || esc(glyphs);
+            return `<p class="pdf-paragraph pdf-math-block f1 ta-c"${idAttr} ${marker} data-latex="${tex}"${src}>${body}</p>`;
         }
         case 'reference': {
             const items = (block.entries || [])

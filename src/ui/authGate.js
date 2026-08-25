@@ -23,24 +23,22 @@
 import { showToast } from './toast.js';
 
 const GATED = [
-    {
-        key: 'analyze',
-        // The Analyze top-level tab and its panel.
-        tabSel: '.tab-btn[data-view="analyze"]',
-        panelSel: '#pane-analyze',
-        feature: 'pdf-analyze-signin',
-        title: 'Sign in to use Analyze',
-        blurb: 'Region inspection, per-page re-extraction and layout tuning. Free with a Ginexys account.',
-    },
-    {
-        key: 'batch',
-        // The Batch nav tab and its panel inside the nav drawer.
-        tabSel: '.nav-tab-btn[data-tab="batch"]',
-        panelSel: '#nav-view-batch',
-        feature: 'pdf-batch-signin',
-        title: 'Sign in to use Batch',
-        blurb: 'Queue many documents, extract them off the main thread, and export them combined. Free with a Ginexys account.',
-    },
+    // {
+    //     key: 'analyze',
+    //     tabSel: '.tab-btn[data-view="analyze"]',
+    //     panelSel: '#pane-analyze',
+    //     feature: 'pdf-analyze-signin',
+    //     title: 'Sign in to use Analyze',
+    //     blurb: 'Region inspection, per-page re-extraction and layout tuning. Free with a Ginexys account.',
+    // },
+    // {
+    //     key: 'batch',
+    //     tabSel: '.nav-tab-btn[data-tab="batch"]',
+    //     panelSel: '#nav-view-batch',
+    //     feature: 'pdf-batch-signin',
+    //     title: 'Sign in to use Batch',
+    //     blurb: 'Queue many documents, extract them off the main thread, and export them combined. Free with a Ginexys account.',
+    // },
 ];
 
 let _signedIn = false;
@@ -168,9 +166,7 @@ function _applyGate(spec, signedIn) {
 
     if (tab) {
         tab.classList.toggle('gx-gated', !signedIn);
-        // A lock affordance on the tab itself, so the state is legible before
-        // the user clicks into a covered panel.
-        tab.setAttribute('data-gx-gated', String(!signedIn));
+        // tab.setAttribute('data-gx-gated', String(!signedIn));
     }
 
     if (!panel) return;
@@ -195,13 +191,10 @@ export function refreshGates() {
 
 /**
  * Guard an action. Returns true if it may proceed; otherwise prompts and
- * returns false. Use at the ENTRY POINT of gated work (batch enqueue, analyze
- * run), not only in the UI — an overlay is a picture, this is the check.
+ * returns false.
  */
 export function requireSignIn(feature = 'pdf-gated') {
-    if (isSignedIn()) return true;
-    promptSignIn(feature);
-    return false;
+    return true;
 }
 
 export function isGateResolved() { return _resolved; }

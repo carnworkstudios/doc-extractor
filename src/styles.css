@@ -92,7 +92,8 @@ body {
   gap: 6px;
   padding: 5px 12px;
   border-radius: 5px;
-  border: 1px solid rgb(105 101 101 / 43%);;
+  border: 1px solid rgb(105 101 101 / 43%);
+  ;
   background: rgba(255, 255, 255, 0.07);
   color: inherit;
   cursor: pointer;
@@ -728,15 +729,6 @@ body {
 
 .gx-signin-gate-btn:hover {
   filter: brightness(1.08);
-}
-
-/* Lock affordance on the tab itself, so the state reads before the click. */
-.tab-btn[data-gx-gated="true"]::after,
-.nav-tab-btn[data-gx-gated="true"]::after {
-  content: "🔒";
-  margin-left: 4px;
-  font-size: 9px;
-  opacity: 0.75;
 }
 
 #btn-pdf-text-edit.active {
@@ -1688,6 +1680,53 @@ body.format-painter-active .editable-text-layer {
   line-height: 1;
 }
 
+/* ── Display math ─────────────────────────────────────────────────────────
+   Three states, and the reader has to be able to tell them apart without
+   being told which is which — the same rule the Ginex rail runs on.
+
+     data-math             a human confirmed this rendering. Unmarked: it is
+                           simply the equation.
+     data-math-suggested   the extractor reconstructed the TeX from glyph
+                           positions and typeset it. It reads as an equation
+                           because it IS one, but nobody has checked it, so it
+                           carries a quiet rule in the margin rather than a
+                           badge that would shout on a page of equations.
+     data-math-unrendered  the TeX would not typeset; the body is the page's
+                           own glyphs. Marked more firmly — this one is known
+                           to be wrong, not merely unchecked. */
+/* `p.` and not `.` — the assembler puts an alignment class (`ta-l`, `ta-j`) on
+   this same element from the region's inferred alignment, and a bare class
+   selector ties with it on specificity, leaving the winner to stylesheet order.
+   Display math is centred whatever the surrounding prose does. */
+p.pdf-math-block {
+  margin: 0.9em 0;
+  text-align: center;
+  overflow-x: auto;
+}
+
+.pdf-math-block[data-math-suggested] {
+  border-left: 2px solid var(--text-muted, #94a3b8);
+  padding-left: 10px;
+  /* The rule is the whole signal. Opacity would make an unchecked equation
+     harder to READ, which is the opposite of what an unchecked thing needs. */
+}
+
+p.pdf-math-block[data-math-unrendered] {
+  border-left: 2px solid #d97706;
+  padding-left: 10px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  text-align: left;
+}
+
+.pdf-math-block[data-math-unrendered]::after {
+  content: "could not typeset — showing the page's own glyphs";
+  display: block;
+  margin-top: 4px;
+  font-family: inherit;
+  font-size: 0.72em;
+  color: #d97706;
+}
+
 /* ── Box contents ─────────────────────────────────────────────────────────
    One classified child of a callout: a heading, list, paragraph or nested
    table the interior pass recovered. The wrapper exists to carry the child's
@@ -1695,13 +1734,24 @@ body.format-painter-active .editable-text-layer {
    or background here would draw a second frame inside the panel. It is also
    the element the banner rules above select as a direct child, which is why
    the margins live on this wrapper rather than on the child. */
-.pdf-box-block > :first-child { margin-top: 0; }
-.pdf-box-block > :last-child { margin-bottom: 0; }
-.pdf-box-block + .pdf-box-block { margin-top: .55em; }
+.pdf-box-block> :first-child {
+  margin-top: 0;
+}
+
+.pdf-box-block> :last-child {
+  margin-bottom: 0;
+}
+
+.pdf-box-block+.pdf-box-block {
+  margin-top: .55em;
+}
 
 /* A table inside a panel is usually the panel's whole point, and the callout
    already supplies the padding — let it use the full width it has. */
-.pdf-box-block .pdf-table-wrap { margin: 0; overflow-x: auto; }
+.pdf-box-block .pdf-table-wrap {
+  margin: 0;
+  overflow-x: auto;
+}
 
 /* ── Undo / Redo button disabled state ─────────────────────────────────── */
 #btn-undo[disabled],
@@ -2377,13 +2427,13 @@ mark.diff-inline-add {
 @media (max-width: 768px) {
   .app-header {
     height: auto;
-    flex-wrap: wrap;
+    /* flex-wrap: wrap; */
     padding: 6px 10px;
     gap: 6px;
   }
 
   .header-center {
-    flex: 1 1 100%;
+    /* flex: 1 1 100%; */
     order: 3;
     flex-wrap: wrap;
   }
@@ -3420,6 +3470,25 @@ mark.diff-inline-add {
   z-index: 2;
 }
 
+.nav-tab-strip .gx-mcp-pill-wrap {
+  margin-top: auto;
+}
+
+.nav-tab-strip .gx-mcp-pill {
+  width: 30px;
+  min-height: 36px;
+  padding: 4px 2px;
+  border-radius: 6px;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+}
+
+.nav-tab-strip .gx-mcp-pill span {
+  line-height: 1;
+}
+
 .nav-tab-btn {
   width: 30px;
   height: 30px;
@@ -3962,15 +4031,15 @@ mark.diff-inline-add {
   padding: 4px;
 }
 
-/* ── Switch (checkbox rendered as a track + knob) ───────────────────────── */
-/* The <input> stays a real checkbox — it keeps keyboard focus, the checked
-   state, and the disabled state that the Pro gate relies on. It is only
-   visually replaced by .gx-switch, which is a sibling so it can read
-   :checked / :disabled off it. */
-.gx-switch-label {
-  display: inline-flex;
+/* ── Smart OCR checkbox ─────────────────────────────────────────────────── */
+.gx-checkbox-label {
+  display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  padding: 2px 5px;
+  border-radius: 5px;
   gap: 6px;
+  background: #e5e7eb;
   position: relative;
   font-size: 13px;
   font-weight: 500;
@@ -3979,64 +4048,18 @@ mark.diff-inline-add {
   user-select: none;
 }
 
-.gx-switch-label input[type="checkbox"] {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-  margin: 0;
-  pointer-events: none;
-}
-
-.gx-switch {
-  position: relative;
-  flex: 0 0 auto;
-  width: 28px;
-  height: 16px;
-  border-radius: 999px;
-  background: rgba(140, 138, 138, 0.649);
-  transition: background 0.16s ease;
-}
-
-.gx-switch::after {
-  content: "";
-  position: absolute;
-  /* top: 2px; */
-  left: 2px;
+.gx-checkbox-label input[type="checkbox"] {
   width: 15px;
   height: 15px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-  transition: transform 0.16s ease;
+  margin: 0;
+  accent-color: var(--accent, #4facfe);
 }
 
-.gx-switch-label input:checked~.gx-switch {
-  background: var(--accent, #4facfe);
-}
-
-.gx-switch-label input:checked~.gx-switch::after {
-  transform: translateX(12px);
-}
-
-/* Keyboard focus has to stay visible even though the input is invisible. */
-.gx-switch-label input:focus-visible~.gx-switch {
-  outline: 2px solid var(--accent, #4facfe);
-  outline-offset: 2px;
-}
-
-/* Locked (free tier): the whole control reads as unavailable. The Pro
-   interceptor overlay still sits on top and handles the click. */
-.gx-switch-label input:disabled~.gx-switch {
-  opacity: 0.5;
-}
-
-.gx-switch-label.gx-pro-locked,
-.gx-switch-label.gx-pro-locked .gx-switch {
+.gx-checkbox-label.gx-pro-locked {
   cursor: default;
 }
 
-.gx-switch-text {
+.gx-checkbox-text {
   white-space: nowrap;
 }
 
