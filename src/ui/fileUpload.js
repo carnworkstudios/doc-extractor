@@ -457,19 +457,31 @@ const resetAnalysisData = ()              => _core()?._dispatchReset();
  */
 function publishImportedRegions(gxDoc, algorithm) {
     if (!gxDoc) return;
-    // Ids first: gxDocToRegions and the rendered markup both address blocks by
-    // block.id, and they have to be looking at the same strings.
-    ensureBlockIds(gxDoc);
-    // A previous document's regions are not this document's.
-    resetAnalysisData();
-    for (const { page, regions } of gxDocToRegions(gxDoc, { algorithm })) {
-        pushRegionPage(page, regions, null, null);
+    // Every call site fires this synchronously, unawaited, immediately before
+    // switchView('html') — tagging/cross-tool-send is a side effect of
+    // showing the document, not a precondition for it. An exception here
+    // (an unusual block shape from a hand-authored HTML/MD file, say) used to
+    // propagate out and abort the caller before it reached switchView, which
+    // left the pane hidden and the document invisible until the user
+    // manually clicked a tab and re-triggered it. Never let this step take
+    // the document view down with it.
+    try {
+        // Ids first: gxDocToRegions and the rendered markup both address blocks by
+        // block.id, and they have to be looking at the same strings.
+        ensureBlockIds(gxDoc);
+        // A previous document's regions are not this document's.
+        resetAnalysisData();
+        for (const { page, regions } of gxDocToRegions(gxDoc, { algorithm })) {
+            pushRegionPage(page, regions, null, null);
+        }
+        _core()?._dispatchAnalysisReady({
+            metadata: { title: gxDoc.meta?.title || null },
+            source: algorithm,
+            pageCount: gxDoc.pages?.length ?? null,
+        });
+    } catch (err) {
+        console.error('[fileUpload] publishImportedRegions failed — document will still render, but tags/cross-tool send may be unavailable:', err);
     }
-    _core()?._dispatchAnalysisReady({
-        metadata: { title: gxDoc.meta?.title || null },
-        source: algorithm,
-        pageCount: gxDoc.pages?.length ?? null,
-    });
 }
 /**
  * Publish the regions the Docling adapter resolved.

@@ -20,6 +20,7 @@ import { initPDFEditMode } from './ui/pdfEditMode.js';
 import { initPDFTextEdit } from './ui/pdfTextEdit.js';
 import { initAuthGate } from './ui/authGate.js';
 import { initHistoryController } from './ui/historyController.js';
+import { initClipboardController } from './ui/clipboardController.js';
 import { initAnnotationToolbar } from './ui/annotationToolbar.js';
 import { initNavPanel } from './ui/navPanel.js';
 import { initPdfContextMenu } from './ui/pdfContextMenu.js';
@@ -564,6 +565,7 @@ $(() => {
     initPDFTextEdit();
     initAuthGate();
     initHistoryController();
+    initClipboardController();
     initAnnotationToolbar();
     initNavPanel();
     initPdfContextMenu();
