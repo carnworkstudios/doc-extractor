@@ -235,6 +235,7 @@ export function buildStructuredPayload() {
                 source: pdf.file?.name || null,
                 // Only a measured document confidence is stamped on the lineage.
                 ...(confidence !== null ? { score: confidence } : {}),
+                ...(meta?.verification ? { verification: meta.verification } : {}),
             },
         )
         : [];
@@ -265,6 +266,12 @@ export function buildStructuredPayload() {
         confidence,
         flags: docFlags,
         provenance,
+        // Confidence describes an extractor estimate. Verification describes
+        // whether claims remain grounded in source evidence; never conflate the
+        // two. OCR supplies gx-verification/1, vector documents may still be
+        // null until their checker is migrated to the same contract.
+        verification: meta?.verification ?? null,
+        lineage: meta?.lineage ?? null,
         tableSemantics,
     };
 }

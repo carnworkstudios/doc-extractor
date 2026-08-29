@@ -203,6 +203,11 @@ export function rebindTableEditing() {
 }
 
 function _rebind() {
+    if (!_fab?.isConnected || !_popover?.isConnected) {
+        if (!_fab?.isConnected) _createFab();
+        if (!_popover?.isConnected) _createPopover();
+    }
+    if (!_fab || !_popover) return;
     const tables = document.querySelectorAll('#html-preview table');
     tables.forEach(t => {
         if (t._fabWired) return;

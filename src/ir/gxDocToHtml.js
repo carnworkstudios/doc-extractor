@@ -248,9 +248,10 @@ function _blockToHtml(block) {
             return `<hr class="pdf-divider"${idAttr}>`;
         case 'image': {
             const id = esc(block.id || 'img');
+            const imageId = esc(block.imageId || block.id || 'img');
             const alt = esc(block.alt || '');
             const placeholder =
-                `<div class="pdf-image-placeholder"${idAttr}><img class="extracted-pdf-image" data-img-id="${id}" alt="${alt}"></div>`;
+                `<div class="pdf-image-placeholder"${idAttr}><img class="extracted-pdf-image" data-img-id="${imageId}" alt="${alt}"></div>`;
             // A figure that carried its own labels goes back out as the same
             // SVG overlay it came in as. Emitting the bare placeholder would
             // silently drop every callout and axis tick on a round trip.

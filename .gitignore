@@ -11,8 +11,12 @@ test-out
 digital-literature-template.html
 .DS_Store
 *.log
-test_*
-test-*
+# Anchored to the repo root on purpose: an unanchored `test-*` also matches
+# test/test-helpers.mjs, test/test-fixtures/, src/**/test-utils.js and would
+# silently drop real suite files from a clone. The committed suite lives in
+# test/*.test.mjs and must ship.
+/test_*
+/test-out/
 *.pdf
 *.docx
 *.doc

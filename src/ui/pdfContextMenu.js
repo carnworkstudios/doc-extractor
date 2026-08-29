@@ -33,6 +33,9 @@ function _createPopoverDOM() {
             <button class="pdf-ctx-btn" id="pdf-ctx-highlight" title="Highlight text">
                 <iconify-icon icon="material-symbols:format-ink-highlighter"></iconify-icon> Highlight
             </button>
+            <button class="pdf-ctx-btn pdf-ctx-define" id="pdf-ctx-define" title="Define or explain this selection">
+                <iconify-icon icon="material-symbols:dictionary-outline"></iconify-icon> Define
+            </button>
             <button class="pdf-ctx-btn" id="pdf-ctx-text" title="Edit this text in place">
                 <iconify-icon icon="material-symbols:text-fields"></iconify-icon> Text
             </button>
@@ -55,6 +58,11 @@ function _createPopoverDOM() {
         _highlightSelection();
     });
 
+    $popover.find('#pdf-ctx-define').on('click', (e) => {
+        e.stopPropagation();
+        _suggestDefinition();
+    });
+
     $popover.find('#pdf-ctx-text').on('click', (e) => {
         e.stopPropagation();
         _editSelectionText();
@@ -64,6 +72,24 @@ function _createPopoverDOM() {
         e.stopPropagation();
         _clearSelectionMarks();
     });
+}
+
+function _suggestDefinition() {
+    if (!currentSelection?.text) return;
+    window.parent.postMessage({
+        __ginexys: true,
+        type: 'gx:define-selection',
+        appId: 'pdf_processor',
+        subject: currentSelection.text.slice(0, 500),
+        source: {
+            kind: 'document',
+            surface: 'pdf',
+            docId: state.pdf1?.docId || null,
+            page: currentSelection.page || getCurrentPage() || null,
+            quote: currentSelection.text.slice(0, 1200),
+        },
+    }, '*');
+    hidePdfContextMenu();
 }
 
 let _selCheckTimer = null;

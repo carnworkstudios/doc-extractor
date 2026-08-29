@@ -22,6 +22,7 @@ import { buildAnnotatedPdf } from '../annotation/exportPdf.js';
 import { syncTextEditsToGxDoc } from './pdfTextEdit.js';
 import { requireSignIn, refreshGates } from './authGate.js';
 import { PDFDocument } from 'pdf-lib';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
 export let batchQueue = null;
 export let workerPool = null;
@@ -76,7 +77,7 @@ export function initBatchViewController() {
             new URL('../workers/geometryWorker.js', import.meta.url),
             { type: 'module' },
         ),
-        pdfWorkerSrc: window.__VSC_PDF_WORKER_SRC__,
+        pdfWorkerSrc: pdfWorkerUrl,
     });
 
     batchQueue = new BatchQueueManager({

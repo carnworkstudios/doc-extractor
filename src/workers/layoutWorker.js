@@ -32,10 +32,25 @@ const MODEL_SIZE = 640;
 const CONF_THRESHOLD = 0.25;
 const IOU_THRESHOLD = 0.45;
 
-// DocLayNet 11-class labels (hantian/yolo-doclaynet index order)
+// DocLayNet 11-class labels, in the model's OWN class-index order.
+//
+// Read straight from the ONNX metadata rather than assumed:
+//
+//   {0:'Caption', 1:'Footnote', 2:'Formula', 3:'List-item', 4:'Page-footer',
+//    5:'Page-header', 6:'Picture', 7:'Section-header', 8:'Table', 9:'Text',
+//    10:'Title'}
+//
+// The previous array was a different permutation and got 10 of 11 classes
+// wrong. It was not obviously broken because the GEOMETRY was always right —
+// only the names were shuffled, so every paragraph came back as `page-footer`
+// (real class 9, Text) and every table as `page-header` (real class 8, Table).
+// That is why `TABLE_LABELS` in rasterSynth.js never fired on a scanned page.
+//
+// Names are kept in this repo's existing vocabulary ('section-heading', not
+// the model's 'Section-header') because rasterSynth.js keys off these strings.
 const CLASS_LABELS = [
-    'text', 'picture', 'caption', 'section-heading', 'footnote',
-    'formula', 'table', 'list-item', 'page-header', 'page-footer', 'title'
+    'caption', 'footnote', 'formula', 'list-item', 'page-footer',
+    'page-header', 'picture', 'section-heading', 'table', 'text', 'title'
 ];
 
 let session = null;
@@ -53,7 +68,7 @@ self.onmessage = async (e) => {
 
             case 'detect':
                 if (!session) throw new Error('Model not initialized. Send "init" first.');
-                const regions = await detect(data.imageBitmap);
+                const regions = await detect(data.imageBitmap, data.letterbox === true);
                 self.postMessage({ type: 'result', regions, requestId });
                 break;
 
@@ -132,11 +147,39 @@ async function loadModelFromCacheOrNetwork() {
 
 // ── INFERENCE ──────────────────────────────────────────────────────────────
 
-async function detect(imageBitmap) {
-    // Resize to 640x640 and extract pixel data
+async function detect(imageBitmap, letterbox = false) {
+    // Resize to 640x640 and extract pixel data.
+    //
+    // Two modes, because the original squashes:
+    //
+    //   legacy (default)  — stretch to fill 640x640. Non-uniform on any page
+    //     that is not square, and a two-page spread (aspect 1.63) is distorted
+    //     hard enough that DocLayNet stops recognising its own classes: an
+    //     Exploring-Chemistry spread yielded ten `page-footer` regions and
+    //     missed the table entirely.
+    //   letterbox — preserve aspect, pad the remainder. This is what YOLOv8 is
+    //     trained and evaluated with. Boxes are unpadded and unscaled below, so
+    //     the caller receives SOURCE-image coordinates, not model coordinates.
+    //
+    // Legacy stays the default because `fileUpload.js` already scales the
+    // 640-space boxes itself; flipping the contract underneath it would move
+    // every region on the page.
+    const srcW = imageBitmap.width, srcH = imageBitmap.height;
+    const lbScale = Math.min(MODEL_SIZE / srcW, MODEL_SIZE / srcH);
+    const lbW = Math.round(srcW * lbScale), lbH = Math.round(srcH * lbScale);
+    const padX = Math.floor((MODEL_SIZE - lbW) / 2), padY = Math.floor((MODEL_SIZE - lbH) / 2);
+
     const canvas = new OffscreenCanvas(MODEL_SIZE, MODEL_SIZE);
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(imageBitmap, 0, 0, MODEL_SIZE, MODEL_SIZE);
+    if (letterbox) {
+        // Grey pad, the YOLO convention — a white pad reads as page and can
+        // grow regions into the margin.
+        ctx.fillStyle = '#727272';
+        ctx.fillRect(0, 0, MODEL_SIZE, MODEL_SIZE);
+        ctx.drawImage(imageBitmap, 0, 0, srcW, srcH, padX, padY, lbW, lbH);
+    } else {
+        ctx.drawImage(imageBitmap, 0, 0, MODEL_SIZE, MODEL_SIZE);
+    }
 
     // Close it the moment it has been drawn.
     //
@@ -173,17 +216,22 @@ async function detect(imageBitmap) {
     // Apply NMS
     const nmsDetections = nms(rawDetections, IOU_THRESHOLD);
 
-    // Map detections to labeled regions (in model 640x640 space)
+    // Map detections to labeled regions. Legacy mode returns 640x640 model
+    // space; letterbox mode undoes the pad and scale so boxes come back in
+    // SOURCE-image pixels.
     return nmsDetections.map((det, i) => ({
         id: `det_${i}`,
         label: CLASS_LABELS[det.classId] || 'unknown',
         confidence: det.confidence,
-        bbox: {
-            x: det.x,
-            y: det.y,
-            w: det.w,
-            h: det.h,
-        },
+        space: letterbox ? 'source' : 'model',
+        bbox: letterbox
+            ? {
+                x: (det.x - padX) / lbScale,
+                y: (det.y - padY) / lbScale,
+                w: det.w / lbScale,
+                h: det.h / lbScale,
+            }
+            : { x: det.x, y: det.y, w: det.w, h: det.h },
     }));
 }
 

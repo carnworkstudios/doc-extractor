@@ -29,7 +29,7 @@
 
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
-import { extractSubpaths } from '../extraction/vector/ctmAdapter.js';
+import { extractSubpaths, linkTextPaintOps, vectorPathsForRegion } from '../extraction/vector/ctmAdapter.js';
 import { reconcile } from '../extraction/vector/pathReconciler.js';
 import { makeSyntheticViewport } from '../extraction/vector/rasterSynth.js';
 import { classifyPage } from '../extraction/vector/contextClassifier.js';
@@ -177,7 +177,7 @@ async function _cropFromDecodedImage(page, id, minWidth) {
  * @param {number} pageNum — 1-based page, half of the store key. Region ids are
  *   page-local, so a key without it would collide across pages.
  */
-async function _extractPageImages(page, regions, srcScale = 2.0, pageNum = page?.pageNumber) {
+async function _extractPageImages(page, regions, srcScale = 2.0, pageNum = page?.pageNumber, textMeta = []) {
     const extractedImages = {};
     // { storeKey: Blob } — written once at the end, in one transaction.
     const blobs = {};
@@ -237,10 +237,7 @@ async function _extractPageImages(page, regions, srcScale = 2.0, pageNum = page?
         const cw = Math.round(imgViewport.width);
         const ch = Math.round(imgViewport.height);
         const pageCanvas = new OffscreenCanvas(cw, ch);
-        await page.render({
-            canvasContext: pageCanvas.getContext('2d'),
-            viewport: imgViewport,
-        }).promise;
+        await page.render({ canvasContext: pageCanvas.getContext('2d'), viewport: imgViewport }).promise;
 
         const crops = viaRender.map(pic => ({ id: pic.id, bbox: pic.bbox }));
 
@@ -253,7 +250,29 @@ async function _extractPageImages(page, regions, srcScale = 2.0, pageNum = page?
             if (sw < 4 || sh < 4) continue;
             try {
                 const crop = new OffscreenCanvas(sw, sh);
-                crop.getContext('2d').drawImage(pageCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+                const cropCtx = crop.getContext('2d');
+                cropCtx.drawImage(pageCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+                // Same cover strategy as pdfTextEdit: preserve every non-text
+                // pixel, white out only PDF.js's painted glyph boxes, then let
+                // the semantic SVG layer above become the visible/editable text.
+                const pic = viaRender.find(r => r.id === id);
+                if (pic?.vectorFigure && pic.textItemIndices?.length) {
+                    cropCtx.save();
+                    cropCtx.fillStyle = '#ffffff';
+                    for (const idx of pic.textItemIndices) {
+                        const tm = textMeta[idx];
+                        if (!tm?.str?.trim()) continue;
+                        const fs = tm.vFont || 10;
+                        const pad = fs * upRatio * 0.28;
+                        cropCtx.fillRect(
+                            (tm.vx - bbox.x) * upRatio - pad,
+                            (tm.vy - fs - bbox.y) * upRatio - pad,
+                            Math.max((tm.vWidth || 0) * upRatio, fs * upRatio * 0.5) + pad * 2,
+                            fs * upRatio + pad * 2,
+                        );
+                    }
+                    cropCtx.restore();
+                }
                 const blob = await crop.convertToBlob({ type: 'image/png' });
                 _keep(id, {
                     blob,
@@ -582,9 +601,10 @@ self.onmessage = async (e) => {
     if (e.data.type !== 'process') return;
     const { bytes, pdfWorkerSrc } = e.data;
 
-    if (pdfWorkerSrc) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
-    }
+    // Always prefer the URL emitted with this build. Host-injected worker URLs
+    // can resolve through an SPA fallback as text/html, which module workers
+    // correctly reject under strict MIME checking.
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc || pdfWorkerUrl;
 
     // A full extraction replaces this document's pictures wholesale — a retry,
     // a re-add, or the same slot loaded again. Dropping the old crops first
@@ -666,7 +686,8 @@ self.onmessage = async (e) => {
             ]);
 
             // ── Phase 1: Page inventory (ctmAdapter) ─────────────────────────
-            const { subpaths, imageMeta, filledRects: rawFilledRects } = extractSubpaths(opList, viewport, OPS);
+            const { subpaths, imageMeta, filledRects: rawFilledRects, textPaintOps, displayList } = extractSubpaths(opList, viewport, OPS);
+            textContent.items = linkTextPaintOps(textContent.items, textPaintOps);
             const { segments, filledRects } = reconcile(subpaths, rawFilledRects, viewport);
 
             // ── Phase 1.7: Font style map from commonObjs ────────────────────
@@ -695,14 +716,23 @@ self.onmessage = async (e) => {
                 viewport,
                 pageWidthPt,
                 imageMeta,
-                { filledRects, fontStyleMap, structTree: rawStructTree, OPS, _opList: opList, docScale, chromeSigs: _cachedChromeSigs }
+                { filledRects, fontStyleMap, structTree: rawStructTree, OPS, _opList: opList,
+                  textPaintOps, displayList, docScale, chromeSigs: _cachedChromeSigs }
             );
+
+            // Vector figures stay vector: attach the same operator-native paths
+            // the classifier used, scoped into the detected figure box.
+            for (const region of regions) {
+                if (region.vectorFigure && region.bbox) {
+                    region.vectorPaths = vectorPathsForRegion(subpaths, viewport, region.bbox, textMeta);
+                }
+            }
 
             // ── Phase 2.5: Image + vector-figure extraction via 4× render ────
             // Runs AFTER classification so vector line-art figures (diagrams the
             // classifier detected from path segments) get cropped too, not just
             // raster XObjects.
-            const extractedImages = await _extractPageImages(page, regions, 2.0, p);
+            const extractedImages = await _extractPageImages(page, regions, 2.0, p, textMeta);
 
             // ── Phase 2.7: Link annotations → normalized, item-associated ────
             // External urls are sanitized; internal dests resolve to a target
@@ -832,7 +862,8 @@ async function _handleReprocess({ page: pageNum, pipeline = {}, carryImages = {}
             page.getAnnotations({ intent: 'display' }).catch(() => []),
         ]);
 
-        const { subpaths, imageMeta, filledRects: rawFilledRects } = extractSubpaths(opList, viewport, OPS);
+        const { subpaths, imageMeta, filledRects: rawFilledRects, textPaintOps, displayList } = extractSubpaths(opList, viewport, OPS);
+        textContent.items = linkTextPaintOps(textContent.items, textPaintOps);
         const { segments, filledRects } = reconcile(subpaths, rawFilledRects, viewport);
 
         // Font style map — per-font try/catch, same as the process path
@@ -863,11 +894,19 @@ async function _handleReprocess({ page: pageNum, pipeline = {}, carryImages = {}
                 structTree: rawStructTree,
                 OPS,
                 _opList: opList,
+                textPaintOps,
+                displayList,
                 pipeline: { skip: skipSet, scaleOverrides, customRegions, manualSplits },
                 docScale: _cachedDocScale,
                 chromeSigs: _cachedChromeSigs,
             },
         );
+
+        for (const region of regions) {
+            if (region.vectorFigure && region.bbox) {
+                region.vectorPaths = vectorPathsForRegion(subpaths, viewport, region.bbox, textMeta);
+            }
+        }
 
         // Image + vector-figure crops (after classification, same as process
         // path) — but only for pictures whose box actually changed. Everything
@@ -876,7 +915,7 @@ async function _handleReprocess({ page: pageNum, pipeline = {}, carryImages = {}
         // renders nothing at all.
         const { carried, missing } = _splitCarriedCrops(regions, carryImages);
         const extractedImages = missing.length
-            ? { ...carried, ...(await _extractPageImages(page, missing, 2.0, pageNum)) }
+            ? { ...carried, ...(await _extractPageImages(page, missing, 2.0, pageNum, textMeta)) }
             : carried;
 
         const fontRegistry = _cachedFontRegistry ?? createFontRegistry();
@@ -1017,4 +1056,3 @@ async function _handleScannedReprocess({ page: pageNum, pipeline = {}, carryImag
             error: `Scanned reprocess page ${pageNum}: ${err.message || err}` });
     }
 }
-

@@ -10,7 +10,7 @@
         "prebuild": "node ../../scripts/gen-katex-export-css.mjs",
         "build": "vite build",
         "preview": "vite preview",
-        "test": "node test/authGate.test.mjs"
+        "test": "node test/authGate.test.mjs && node test/scannedDocument.test.mjs && node test/workerBrokerStreaming.test.mjs && node test/tableCellContainers.test.mjs"
     },
     "dependencies": {
         "@canwork/boxwood": "^1.1.0",

@@ -67,6 +67,9 @@ function _createPopoverDOM() {
                 <button class="pdf-ctx-btn" id="doc-ctx-highlight" title="Highlight text">
                     <iconify-icon icon="material-symbols:format-ink-highlighter"></iconify-icon>
                 </button>
+                <button class="pdf-ctx-btn pdf-ctx-define" id="doc-ctx-define" title="Define or explain this selection">
+                    <iconify-icon icon="material-symbols:dictionary-outline"></iconify-icon>
+                </button>
                 <button class="pdf-ctx-btn del" id="doc-ctx-clear" title="Clear link / highlight">
                     <iconify-icon icon="material-symbols:delete-outline"></iconify-icon>
                 </button>
@@ -146,6 +149,11 @@ function _createPopoverDOM() {
   $popover.find("#doc-ctx-highlight").on("click", (e) => {
     e.stopPropagation();
     _highlightSelection();
+  });
+
+  $popover.find("#doc-ctx-define").on("click", (e) => {
+    e.stopPropagation();
+    _suggestDefinition();
   });
 
   $popover.find("#doc-ctx-clear").on("click", (e) => {
@@ -247,6 +255,31 @@ function _createPopoverDOM() {
     hidePopover();
     if (ctxTargetZone) toggleFlexCenter(ctxTargetZone);
   });
+}
+
+function _suggestDefinition() {
+  if (!currentRange) return;
+  const text = String(currentRange.toString() || "").trim();
+  if (!text) return;
+  const start = currentRange.startContainer?.nodeType === Node.ELEMENT_NODE
+    ? currentRange.startContainer : currentRange.startContainer?.parentElement;
+  const pageEl = start?.closest?.("section.pdf-page-content[data-page], .page-wrapper[data-page-number]");
+  const regionEl = start?.closest?.("[data-region-id]");
+  window.parent.postMessage({
+    __ginexys: true,
+    type: "gx:define-selection",
+    appId: "pdf_processor",
+    subject: text.slice(0, 500),
+    source: {
+      kind: "document",
+      surface: currentSurfaceKind === "pdf" ? "pdf-mirror" : "document",
+      docId: state.pdf1?.docId || null,
+      page: Number(pageEl?.dataset?.page || pageEl?.dataset?.pageNumber) || null,
+      regionId: regionEl?.dataset?.regionId || null,
+      quote: text.slice(0, 1200),
+    },
+  }, "*");
+  hidePopover();
 }
 
 /** Manual DOM mutations (appendChild) don't fire a native 'input' event, so

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // contextClassifier.js — orchestrator
 //
 // Builds the shared spatial context (PageGraph), then calls each classifier
@@ -350,10 +352,15 @@ function _ensureRegionIds(regions) {
     // an id is what makes that possible, so both passes below walk the whole
     // tree flat, even though what is RETURNED stays the top-level list.
     const all = [];
-    for (const r of regions) {
+    const queue = [...regions];
+    while (queue.length) {
+        const r = queue.shift();
         if (!r) continue;
         all.push(r);
-        for (const c of (r.children || [])) if (c) all.push(c);
+        queue.push(...(r.children || []));
+        for (const children of Object.values(r.cellChildren || {})) {
+            queue.push(...(children || []));
+        }
     }
     const seen = new Set();
     // Pass 1: keep every id that arrives, but make sure no two regions carry the
@@ -437,6 +444,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
             fontSize: fontSizePt,
             fontName: fn,
             str: item.str || '',
+            ...(item.paintOpId ? { paintOpId: item.paintOpId, paintOperatorIndex: item.paintOperatorIndex } : {}),
             underlined: false,
             ...(rotated ? { rot } : {}),
             bold:   fStyle?.bold   ?? false,
@@ -839,7 +847,19 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         }
     }
 
-    // ── 8. Box interiors ─────────────────────────────────────────────────────
+    // ── 8. Table interiors ───────────────────────────────────────────────────
+    // A grid owns placement, not meaning. Classify every cell as a small
+    // document fragment and adopt structural regions (currently boxes) that
+    // the earlier container pass found inside it. The assembler can then send
+    // headings, paragraphs, lists, boxes and nested tables through the same
+    // renderer used at page level instead of flattening a cell to inline text.
+    const allTables = regions.filter(r => r &&
+        (r.type === RegionType.LATTICE_TABLE || r.type === RegionType.STREAM_TABLE));
+    if (allTables.length) {
+        _classifyTableInteriors(allTables, regions, textMeta, scale, scaleY, skip);
+    }
+
+    // ── 8.5. Box interiors ───────────────────────────────────────────────────
     // A container's contents are a document fragment, not a string. Runs after
     // the table detectors so a grid nested in a panel has already reclaimed its
     // own text; whatever is left gets the same heading/list/paragraph pass the
@@ -851,6 +871,13 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     // scoping this to the box detector's own output would leave every one of
     // them flat.
     const allBoxes = regions.filter(r => r && r.type === RegionType.BOX);
+    for (const table of allTables) {
+        for (const children of Object.values(table.cellChildren || {})) {
+            for (const child of children) {
+                if (child?.type === RegionType.BOX) allBoxes.push(child);
+            }
+        }
+    }
     if (allBoxes.length) {
         _classifyBoxInteriors(allBoxes, regions, textMeta, scale, scaleY, skip);
     }
@@ -1324,6 +1351,80 @@ function _classifyBoxInteriors(boxRegions, regions, textMeta, scale, scaleY, ski
         children.sort((a, b) => (a.bbox?.y ?? 0) - (b.bbox?.y ?? 0) ||
                                 (a.bbox?.x ?? 0) - (b.bbox?.x ?? 0));
         box.children = children;
+    }
+}
+
+/**
+ * Treat each table cell as its own layout context.
+ *
+ * `embeddedRegions` are structures detected before the table (most commonly a
+ * prose BOX that is actually a richly formatted cell). They are removed from
+ * the page-level region list and placed in the cell that contains their centre.
+ * Remaining text is classified with the normal heading/list/paragraph bucket.
+ */
+function _classifyTableInteriors(tableRegions, regions, textMeta, scale, scaleY, skip) {
+    const bodyFontSizePt = scale.S / scaleY;
+
+    for (const table of tableRegions) {
+        const rows = table.lattice?.rows;
+        const cols = table.lattice?.cols;
+        if (!rows || rows.length < 2 || !cols || cols.length < 2) continue;
+
+        const byCell = new Map();
+        const embeddedText = new Set();
+        const cellAt = (x, y) => {
+            let ri = -1, ci = -1;
+            for (let r = 0; r + 1 < rows.length; r++) {
+                if (y >= rows[r] && y <= rows[r + 1]) { ri = r; break; }
+            }
+            for (let c = 0; c + 1 < cols.length; c++) {
+                if (x >= cols[c] && x <= cols[c + 1]) { ci = c; break; }
+            }
+            return ri >= 0 && ci >= 0 ? `${ri}:${ci}` : null;
+        };
+        const push = (key, child) => {
+            if (!key) return;
+            if (!byCell.has(key)) byCell.set(key, []);
+            byCell.get(key).push(child);
+        };
+
+        for (const child of (table.embeddedRegions || [])) {
+            if (!child?.bbox) continue;
+            const key = cellAt(child.bbox.x + child.bbox.w / 2,
+                child.bbox.y + child.bbox.h / 2);
+            if (!key) continue;
+            push(key, child);
+            for (const idx of (child.textItemIndices || [])) embeddedText.add(idx);
+            const at = regions.indexOf(child);
+            if (at >= 0) regions.splice(at, 1);
+        }
+
+        const textByCell = new Map();
+        for (const idx of (table.textItemIndices || [])) {
+            if (embeddedText.has(idx)) continue;
+            const tm = textMeta[idx];
+            if (!tm?.str?.trim()) continue;
+            const key = cellAt(tm.vx, tm.vy);
+            if (!key) continue;
+            if (!textByCell.has(key)) textByCell.set(key, []);
+            textByCell.get(key).push(tm);
+        }
+
+        for (const [key, items] of textByCell) {
+            const children = byCell.get(key) || [];
+            const lines = _groupByYBand(items, scale.yBandTolPx);
+            _classifyBucket(children, lines, bodyFontSizePt, scale, -1, skip);
+            byCell.set(key, children);
+        }
+
+        if (byCell.size) {
+            table.cellChildren = Object.fromEntries([...byCell].map(([key, children]) => {
+                children.sort((a, b) => (a.bbox?.y ?? 0) - (b.bbox?.y ?? 0) ||
+                                        (a.bbox?.x ?? 0) - (b.bbox?.x ?? 0));
+                return [key, children];
+            }));
+        }
+        delete table.embeddedRegions;
     }
 }
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // latticeDetector.js
 // Detects bordered table regions using LatticeReconstructor.
 // Runs AFTER boxDetector: container rectangles (notices, warnings, callout
@@ -42,6 +44,21 @@ function overlapFrac(a, b) {
     return (iw * ih) / (a.w * a.h || 1);
 }
 
+function fitsSingleCell(regionBBox, lattice, pad = 0) {
+    if (!regionBBox || !lattice?.rows || !lattice?.cols) return false;
+    for (let r = 0; r + 1 < lattice.rows.length; r++) {
+        for (let c = 0; c + 1 < lattice.cols.length; c++) {
+            const cell = {
+                x: lattice.cols[c], y: lattice.rows[r],
+                w: lattice.cols[c + 1] - lattice.cols[c],
+                h: lattice.rows[r + 1] - lattice.rows[r],
+            };
+            if (bboxContains(cell, regionBBox, pad)) return true;
+        }
+    }
+    return false;
+}
+
 export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts = {}, boxRegions = [], imageRegions = []) {
     const reconstructor = new LatticeReconstructor(tableSegs, {
         eps: 5, scale, textMeta, pageHeight: viewport.height,
@@ -73,8 +90,13 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
         //     clean H/V rectangles, which trace a convincing lattice while the
         //     picture pass only catches the diagonals as separate blobs. A real
         //     table does not have figures inside it.
-        if (imageRegions.some(ir => ir.bbox && overlapFrac(bbox, ir.bbox) > 0.5)) continue;
+        const cellImages = imageRegions.filter(ir => ir.bbox &&
+            bboxContains(bbox, ir.bbox, scale.proximityPx ?? 4) &&
+            fitsSingleCell(ir.bbox, lattice, scale.proximityPx ?? 4));
+        const cellImageSet = new Set(cellImages);
+        if (imageRegions.some(ir => !cellImageSet.has(ir) && ir.bbox && overlapFrac(bbox, ir.bbox) > 0.5)) continue;
         if (imageRegions.some(ir => {
+            if (cellImageSet.has(ir)) return false;
             if (!ir.bbox) return false;
             const irArea = ir.bbox.w * ir.bbox.h;
             if (!irArea || irArea < bbox.w * bbox.h * 0.05) return false;
@@ -84,14 +106,17 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
         const enclosing = findEnclosingBox(bbox, boxRegions, scale);
         if (enclosing?.relation === 'same') continue;
 
-        // A grid drawn across two already-claimed boxes — two admonitions side
-        // by side in a two-column spread reconstruct into one rectangle
-        // enclosing both. The boxes are the real regions; the wrapper is an
-        // artifact of reading their borders as one lattice.
+        // Boxes wholly inside a convincing grid may be CELL CONTENT, not rival
+        // containers. Keep their claims available to occupancy validation and
+        // let the table-interior pass adopt them into the appropriate cell.
+        // The old blanket veto here discarded real prose-heavy tables because
+        // an individual description cell is itself a perfectly closed prose
+        // rectangle and the box detector necessarily runs first.
         const pad = scale.proximityPx ?? 4;
-        if (boxRegions.some(b => b.bbox &&
+        const containedBoxes = boxRegions.filter(b => b.bbox &&
             bboxContains(bbox, b.bbox, pad) &&
-            b.bbox.w * b.bbox.h < bbox.w * bbox.h * 0.9)) continue;
+            b.bbox.w * b.bbox.h < bbox.w * bbox.h * 0.9);
+        const containedClaims = new Set(containedBoxes.flatMap(b => b.textItemIndices || []));
         const parentBox = enclosing?.relation === 'nested' ? enclosing.box : null;
         const parentClaimed = parentBox ? new Set(parentBox.textItemIndices) : null;
 
@@ -101,7 +126,8 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
             const out = [];
             for (const tm of textMeta) {
                 if (!tm.str.trim()) continue;
-                if (assignedTextIndices.has(tm.idx) && !parentClaimed?.has(tm.idx)) continue;
+                if (assignedTextIndices.has(tm.idx) &&
+                    !parentClaimed?.has(tm.idx) && !containedClaims.has(tm.idx)) continue;
                 if (insideBBox(tm.vx, tm.vy, bbox, scale.tablePadPx)) out.push(tm.idx);
             }
             return out;
@@ -137,6 +163,13 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
         // are bordered content boxes; sparse grids without text are dropped.
         const occ = _cellOccupancy(lattice, tableTextIndices, textMeta);
         if (occ < 0.5) {
+            // A page-width sparse pseudo-grid is usually a borderless table
+            // whose zebra fills and short total/header rules happened to make
+            // intersections. Do not turn it into a BOX and claim all of its
+            // text: leaving it unclaimed lets the stream/alignment pass recover
+            // the semantic rows and columns. Real prose callouts are narrower
+            // and still take the bordered-container fallback below.
+            if (bbox.w > viewport.width * 0.80) continue;
             if (tableTextIndices.length > 0) {
                 claim(tableTextIndices);
                 regions.push(buildBoxRegion(bbox, tableTextIndices, textMeta, filledRects));
@@ -154,6 +187,7 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
             columnIndex: -1,
             proximityPx: scale.proximityPx,
             parentRegionType: parentBox ? RegionType.BOX : null,
+            embeddedRegions: [...containedBoxes, ...cellImages],
         });
     }
 

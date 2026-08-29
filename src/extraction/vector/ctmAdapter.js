@@ -1,7 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // ctmAdapter.js
 // Converts a PDF.js operator list into SubpathRecords for the pathReconciler.
 //
-// Output: { subpaths: SubpathRecord[], imageMeta: ImageMeta[], filledRects: FilledRect[] }
+// Output also carries operator-native text paints so paths, images and text
+// retain one PDF.js display-list provenance chain.
 
 function mulMatrix(a, b) {
     return [
@@ -34,10 +37,35 @@ export function extractSubpaths(opList, viewport, OPS) {
     const colorStateStack = [{ fill: fillColor.slice(), stroke: strokeColor.slice() }];
 
     let currentSubpath = { segs: [], curves: [] };
+    const pendingPaintSubpaths = new Set();
 
     const subpaths = [];
     const imageMeta = [];
     const filledRects = [];
+    const textPaintOps = [];
+    const displayList = [];
+    let fontName = null, fontSize = 0, textRenderingMode = 0;
+    let charSpacing = 0, wordSpacing = 0, horizontalScale = 100, textRise = 0;
+    let textMatrix = identity.slice();
+    const textStateStack = [];
+
+    const glyphText = glyphs => (glyphs || []).map(g =>
+        typeof g === 'string' ? g : (g?.unicode || (g?.isSpace ? ' ' : ''))
+    ).join('');
+    const recordText = (operatorIndex, glyphs) => {
+        const record = {
+            id: `textpaint_${textPaintOps.length}`,
+            kind: 'TEXT_PAINT', operatorIndex,
+            text: glyphText(glyphs), glyphs,
+            ctm: ctm.slice(), textMatrix: textMatrix.slice(),
+            viewportMatrix: mulMatrix(vpTransform, mulMatrix(ctm, textMatrix)),
+            fontName, fontSize, textRenderingMode,
+            charSpacing, wordSpacing, horizontalScale, textRise,
+            fillColor: fillColor.slice(), strokeColor: strokeColor.slice(),
+        };
+        textPaintOps.push(record);
+        displayList.push(record);
+    };
 
     const openSubpath = (constructPathId) => {
         if (currentSubpath.segs.length > 0 || currentSubpath.curves.length > 0) {
@@ -55,6 +83,7 @@ export function extractSubpaths(opList, viewport, OPS) {
             ctm: ctm.slice(), // Capture CTM for the reconciler
             id: subpathIdCounter++
         };
+        pendingPaintSubpaths.add(currentSubpath);
     };
 
     // Open the first initial subpath
@@ -167,6 +196,7 @@ export function extractSubpaths(opList, viewport, OPS) {
             case OPS.save:
                 ctmStack.push(ctm.slice());
                 colorStateStack.push({ fill: fillColor.slice(), stroke: strokeColor.slice() });
+                textStateStack.push({ fontName, fontSize, textRenderingMode, charSpacing, wordSpacing, horizontalScale, textRise, textMatrix: textMatrix.slice() });
                 break;
             case OPS.restore:
                 ctm = ctmStack.length > 1 ? ctmStack.pop() : identity.slice();
@@ -174,9 +204,32 @@ export function extractSubpaths(opList, viewport, OPS) {
                     const cs = colorStateStack.pop();
                     fillColor = cs.fill; strokeColor = cs.stroke;
                 }
+                if (textStateStack.length) {
+                    const ts = textStateStack.pop();
+                    ({ fontName, fontSize, textRenderingMode, charSpacing, wordSpacing, horizontalScale, textRise } = ts);
+                    textMatrix = ts.textMatrix;
+                }
                 break;
             case OPS.transform:
                 ctm = mulMatrix(ctm, args);
+                break;
+            case OPS.beginText: textMatrix = identity.slice(); break;
+            case OPS.setFont: fontName = args[0]; fontSize = args[1]; break;
+            case OPS.setCharSpacing: charSpacing = args[0]; break;
+            case OPS.setWordSpacing: wordSpacing = args[0]; break;
+            case OPS.setHScale: horizontalScale = args[0]; break;
+            case OPS.setTextRise: textRise = args[0]; break;
+            case OPS.setTextRenderingMode: textRenderingMode = args[0]; break;
+            case OPS.setTextMatrix: textMatrix = args.slice(0, 6); break;
+            case OPS.moveText:
+            case OPS.setLeadingMoveText:
+                textMatrix = mulMatrix(textMatrix, [1, 0, 0, 1, args[0], args[1]]);
+                break;
+            case OPS.showText:
+            case OPS.showSpacedText:
+            case OPS.nextLineShowText:
+            case OPS.nextLineSetSpacingShowText:
+                recordText(i, [...args].reverse().find(Array.isArray) || args);
                 break;
             case OPS.setLineWidth:
                 strokeWidth = args[0];
@@ -219,13 +272,21 @@ export function extractSubpaths(opList, viewport, OPS) {
             case OPS.eoFillStroke:
             case OPS.closeFillStroke:
             case OPS.closeEOFillStroke:
-                currentSubpath.filled = true;
+                for (const path of pendingPaintSubpaths) path.filled = true;
                 if (pendingRect) { filledRects.push({ ...pendingRect }); }
+                displayList.push({ kind: 'PATH_PAINT', operatorIndex: i, paintOperator: fn,
+                    subpathId: currentSubpath.id, ctm: ctm.slice(), fillColor: fillColor.slice(),
+                    strokeColor: strokeColor.slice(), strokeWidth });
                 pendingRect = null;
+                pendingPaintSubpaths.clear();
                 break;
             case OPS.stroke:
             case OPS.closeStrokePath:
+                displayList.push({ kind: 'PATH_PAINT', operatorIndex: i, paintOperator: fn,
+                    subpathId: currentSubpath.id, ctm: ctm.slice(), fillColor: null,
+                    strokeColor: strokeColor.slice(), strokeWidth });
                 pendingRect = null;
+                pendingPaintSubpaths.clear();
                 break;
             case OPS.moveTo: {
                 openSubpath(null);
@@ -278,6 +339,7 @@ export function extractSubpaths(opList, viewport, OPS) {
                     inline: false,
                     axisAligned,
                 });
+                displayList.push({ kind: 'IMAGE_PAINT', operatorIndex: i, imageId: imgId, ctm: ctm.slice() });
                 break;
             }
             case OPS.paintImageMaskXObject: {
@@ -321,5 +383,74 @@ export function extractSubpaths(opList, viewport, OPS) {
         subpaths.push(currentSubpath);
     }
 
-    return { subpaths, imageMeta, filledRects };
+    return { subpaths, imageMeta, filledRects, textPaintOps, displayList };
+}
+
+export function linkTextPaintOps(textItems, textPaintOps) {
+    let cursor = 0;
+    return (textItems || []).map(item => {
+        const wanted = (item.str || '').replace(/\s+/g, ' ').trim();
+        let match = null;
+        for (let i = cursor; i < (textPaintOps || []).length; i++) {
+            const got = (textPaintOps[i].text || '').replace(/\s+/g, ' ').trim();
+            if (!wanted || !got || got === wanted || got.includes(wanted) || wanted.includes(got)) {
+                match = textPaintOps[i]; cursor = i + 1; break;
+            }
+        }
+        return match ? { ...item, paintOpId: match.id, paintOperatorIndex: match.operatorIndex } : item;
+    });
+}
+
+/** Project operator-native paths into one detected figure's viewport box. */
+export function vectorPathsForRegion(subpaths, viewport, bbox, textMeta = []) {
+    if (!bbox) return [];
+    const vp = viewport.transform;
+    const project = (sp, p) => {
+        const q = applyMatrix(sp.ctm, p[0], p[1]);
+        return applyMatrix(vp, q[0], q[1]);
+    };
+    const bounds = pts => {
+        const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+        return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+    };
+    const out = [];
+    for (const sp of subpaths || []) {
+        const commands = [];
+        const points = [];
+        for (const s of sp.segs || []) {
+            const a = project(sp, [s.ax, s.ay]), b = project(sp, [s.bx, s.by]);
+            points.push(a, b);
+            commands.push(['M', a[0] - bbox.x, a[1] - bbox.y], ['L', b[0] - bbox.x, b[1] - bbox.y]);
+        }
+        for (const c of sp.curves || []) {
+            const p0 = project(sp, c.p0), p1 = project(sp, c.p1);
+            const p2 = project(sp, c.p2), p3 = project(sp, c.p3);
+            points.push(p0, p1, p2, p3);
+            commands.push(['M', p0[0] - bbox.x, p0[1] - bbox.y],
+                ['C', p1[0] - bbox.x, p1[1] - bbox.y, p2[0] - bbox.x, p2[1] - bbox.y, p3[0] - bbox.x, p3[1] - bbox.y]);
+        }
+        if (!points.length) continue;
+        const pb = bounds(points);
+        // Do not admit a page rule merely because it crosses the figure box.
+        if (pb.x0 < bbox.x - 4 || pb.y0 < bbox.y - 4 ||
+            pb.x1 > bbox.x + bbox.w + 4 || pb.y1 > bbox.y + bbox.h + 4) continue;
+        // Type3/custom glyphs may be emitted as path outlines as well as text.
+        // The linked semantic run owns that small area, so retaining both would
+        // draw duplicate labels.
+        const isGlyphOutline = textMeta.some(tm => {
+            if (!tm.str?.trim()) return false;
+            const tx0 = tm.vx - 2, tx1 = tm.vx + (tm.vWidth || 0) + 2;
+            const vf = tm.vFont || 10;
+            const ty0 = tm.vy - vf * 1.5 - 2, ty1 = tm.vy + vf * 0.7 + 2;
+            return pb.x0 >= tx0 && pb.x1 <= tx1 && pb.y0 >= ty0 && pb.y1 <= ty1;
+        });
+        if (isGlyphOutline) continue;
+        if (sp.closed) commands.push(['Z']);
+        out.push({
+            commands, filled: !!sp.filled, closed: !!sp.closed,
+            fillColor: sp.fillColor, strokeColor: sp.strokeColor,
+            strokeWidth: sp.strokeWidth || 1,
+        });
+    }
+    return out;
 }

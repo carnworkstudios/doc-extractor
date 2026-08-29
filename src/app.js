@@ -35,6 +35,24 @@ import { showToast } from './ui/toast.js';
 import { state } from './state.js';
 import { getImageBlob, clearImages } from './utils/imageStore.js';
 
+// The OS host normally installs this before the tool module loads. Standalone,
+// cached, and embedded routes must not crash when that host script is absent or
+// late: preserve the same pointer-first/keyboard-click contract locally.
+if (!window.GxPointer?.onPress) {
+    window.GxPointer = window.GxPointer || {};
+    window.GxPointer.onPress = (el, fn) => {
+        if (!el || typeof fn !== 'function') return () => {};
+        const pointer = e => { if (e.button === 0 && e.isPrimary !== false) fn(e); };
+        const click = e => { if (e.detail === 0) fn(e); };
+        el.addEventListener('pointerdown', pointer);
+        el.addEventListener('click', click);
+        return () => {
+            el.removeEventListener('pointerdown', pointer);
+            el.removeEventListener('click', click);
+        };
+    };
+}
+
 // DOMPurify available globally for fileUpload / monacoSetup
 window.DOMPurify = DOMPurify;
 

@@ -19,13 +19,21 @@ import { showToast } from './toast.js';
 import { cwsBroker } from '@os/worker-broker.js';
 import { checkDoclingAgreement } from '../extraction/doclingCheck.js';
 import { doclingToRegionHtml } from '../extraction/doclingAdapter.js';
+import {
+    createScannedDocument,
+    buildScannedPage,
+    scannedDocumentToGxDoc,
+    scannedPageToRegions,
+} from '../extraction/scannedDocument.js';
 import { buildStructuredPayload } from './structuredExtract.js';
 import { initMcpVerbs } from './mcpVerbs.js';
 import { classifyPage } from '../extraction/vector/contextClassifier.js';
 import { assemblePage, createFontRegistry } from '../extraction/vector/pageAssembler.js';
 import { katexExportCss } from '../extraction/vector/katexExport.css.js';
 import { synthesizeFromWords, makeSyntheticViewport } from '../extraction/vector/rasterSynth.js';
-import { ensureTesseract, recognizePage } from './tesseractOcr.js';
+import { ensureOcr, recognizePage, getOcrReport } from './ocr/index.js';
+import { createLineage, hashCanonical } from './ocr/provenance.js';
+import { verifyScannedPage } from '../extraction/ocrVerifier.js';
 import { htmlToGxDoc, htmlToGxDocAddressable } from '../ir/htmlToGxDoc.js';
 import { gxDocToHtml } from '../ir/gxDocToHtml.js';
 import { docxToGxDoc } from '../ir/docxToGxDoc.js';
@@ -61,8 +69,6 @@ let _analysisPromise = null;
 // caller can send bytes and immediately ask for the structured extraction, so
 // the reply has to wait for the pipeline instead of answering "no document".
 let _slot1Load = null;
-
-
 export function integrationBackendUrl() {
     if (window.CwsContracts && window.CwsContracts.resolveBackend) {
         return window.CwsContracts.resolveBackend().url;
@@ -91,6 +97,46 @@ export function integrationAuthHeaders() {
         if (token) headers['Authorization'] = 'Bearer ' + token;
     } catch (_) { /* cross-origin parent — send unauthenticated */ }
     return headers;
+}
+
+// Surface the active OCR engine once per extraction. Uses the same toast
+// channel as the Docling verifier, and follows the same rule: a clean run is a
+// result too, so an engine whose word boxes are ESTIMATED says so even when
+// nothing went wrong.
+function _reportOcrEngine() {
+    const r = getOcrReport();
+    if (!r.engine) {
+        showToast(`OCR unavailable: ${r.reason || 'no engine could start'}`, 'error');
+        return;
+    }
+    if (r.degraded) {
+        showToast(
+            `OCR fell back to ${r.engine} — ${r.requested} could not start. ${r.reason || ''}`.trim(),
+            'warning',
+        );
+        return;
+    }
+    if (r.wordBoxes === 'estimated') {
+        showToast(
+            `OCR: ${r.engine}. Word positions are estimated from line boxes, not measured.`,
+            'info',
+        );
+    }
+}
+
+const _VERIFY_RANK = { verified: 0, disputed: 1, missing: 2, unsupported: 3 };
+function _aggregateVerificationStatus(pages) {
+    const statuses = (pages || []).map(page => page.verification?.status).filter(Boolean);
+    if (!statuses.length) return null;
+    return statuses.reduce((worst, status) =>
+        (_VERIFY_RANK[status] ?? -1) > (_VERIFY_RANK[worst] ?? -1) ? status : worst,
+    'verified');
+}
+function _meanVerificationScore(pages) {
+    const scores = (pages || []).map(page => page.verification?.score).filter(Number.isFinite);
+    return scores.length
+        ? Math.round((scores.reduce((sum, score) => sum + score, 0) / scores.length) * 1000) / 1000
+        : null;
 }
 
 // Cross-check the Docling result against the deterministic analyzer and
@@ -666,6 +712,62 @@ function layoutDetect(imageBitmap) {
     });
 }
 
+/**
+ * Layout regions in FRACTIONAL page coords [0,1], top-left origin.
+ *
+ * Wraps `layoutDetect` with two things the raw worker call does not do:
+ *
+ *   1. Spread splitting. DocLayNet is trained on single pages, and a two-page
+ *      spread stretched into 640x640 stops being recognisable to it — an
+ *      Exploring-Chemistry spread came back as nine `page-footer` regions with
+ *      the table missed entirely. Cutting the surface into page-shaped strips
+ *      and detecting each fixed it: on a scanned revenue spread it is the
+ *      difference between zero tables and both.
+ *   2. Coordinate mapping. Boxes arrive in the strip's own 640-space, so they
+ *      are mapped back through the strip index rather than the page width.
+ *
+ * @param {OffscreenCanvas} pageCanvas
+ * @returns {Promise<Array<{label,confidence,bbox:{x,y,w,h}}>>}
+ */
+async function detectLayoutRegions(pageCanvas) {
+    // Aspect well past portrait/letter means two pages side by side. 1.35 sits
+    // above every single-page ratio (A4 landscape is 1.41 but a landscape SCAN
+    // of one page is rare in this corpus) and below a spread's ~1.6.
+    const strips = pageCanvas.width > pageCanvas.height * 1.35 ? 2 : 1;
+    const stripW = Math.floor(pageCanvas.width / strips);
+    const out = [];
+
+    for (let i = 0; i < strips; i++) {
+        let bitmap;
+        if (strips === 1) {
+            bitmap = await createImageBitmap(pageCanvas);
+        } else {
+            const sc = new OffscreenCanvas(stripW, pageCanvas.height);
+            sc.getContext('2d').drawImage(
+                pageCanvas, i * stripW, 0, stripW, pageCanvas.height,
+                0, 0, stripW, pageCanvas.height);
+            bitmap = await createImageBitmap(sc);
+        }
+        const regions = await layoutDetect(bitmap);   // 640-space, per strip
+        for (const r of regions) {
+            // 640-space -> fraction OF THE STRIP -> fraction of the page.
+            const fx = r.bbox.x / LAYOUT_MODEL_SIZE;
+            const fw = r.bbox.w / LAYOUT_MODEL_SIZE;
+            out.push({
+                label: r.label,
+                confidence: r.confidence,
+                bbox: {
+                    x: Math.max(0, (i + fx) / strips),
+                    y: Math.max(0, r.bbox.y / LAYOUT_MODEL_SIZE),
+                    w: Math.min(1, fw / strips),
+                    h: Math.min(1, r.bbox.h / LAYOUT_MODEL_SIZE),
+                },
+            });
+        }
+    }
+    return out.filter(r => r.bbox.w > 0.005 && r.bbox.h > 0.005);
+}
+
 function _disposeLayoutWorker() {
     if (_layoutWorker) {
         _layoutWorker.postMessage({ type: 'dispose' });
@@ -765,25 +867,30 @@ async function _cropRegionsFromCanvas(pageCanvas, regions, viewport, renderScale
 }
 
 /**
- * Extract a SCANNED PDF by rejoining the vector geometry pipeline:
- *   render page → layoutWorker (regions) → per-region TrOCR → rasterSynth
- *   (synthetic PDF.js text items + table borders) → classifyPage + assemblePage.
- * This is the CTM-synthesis path: scanned docs produce the same record shapes
- * and downstream output (tables, headings, columns) as vector PDFs, instead of
- * the naive full-page single-line OCR dump.
+ * Extract a scanned PDF into the raster-native semantic IR, then project that
+ * IR directly into gx-doc/HTML. The synthetic PDF.js bridge below is retained
+ * only for the Analyze tab and interactive diagnostics; it does not determine
+ * the document users read or export.
  *
  * @param {Uint8Array} bytes
  * @param {function} [onProgress]
+ * @param {string|null} [docId]
+ * @param {function} [onPage] receives the accumulated document after each page
  * @returns {Promise<{html,text,tableCount,pages,source}>}
  */
-async function extractViaScannedGeometry(bytes, onProgress, docId = null) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = window.__VSC_PDF_WORKER_SRC__ || pdfWorkerUrl;
+async function extractViaScannedGeometry(bytes, onProgress, docId = null, onPage = null) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
     const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
     const numPages = pdf.numPages;
 
     if (onProgress) onProgress('Preparing layout + OCR models…');
-    await ensureTesseract();
+    await ensureOcr();
+    // Which engine ran is a FINDING, not a silent field. A degraded run — the
+    // preferred engine failed to start and a fallback took over — reaches the
+    // user as a warning, because worse text at an unchanged confidence scale is
+    // otherwise indistinguishable from a good run.
+    _reportOcrEngine();
     const layoutAvailable = await ensureLayoutWorker().then(() => true).catch(layoutErr => {
         console.warn('[extractViaScannedGeometry] Layout model unavailable, OCR will run without region labels:', layoutErr.message);
         return false;
@@ -802,9 +909,9 @@ async function extractViaScannedGeometry(bytes, onProgress, docId = null) {
     const A = ANALYSIS_SCALE / VIEWPORT_SCALE;   // 2.0-space → 1.5-space
     const _aSeg = s => ({ ...s, x1: s.x1 * A, y1: s.y1 * A, x2: s.x2 * A, y2: s.y2 * A });
     const _aRect = r => ({ ...r, x: r.x * A, y: r.y * A, w: r.w * A, h: r.h * A });
-    const fontRegistry = createFontRegistry();
-    const htmlParts = [];
-    const textParts = [];
+    const scannedDoc = createScannedDocument({ source: getOcrReport().engine });
+    const lineage = createLineage(`ses_ocr_${docId || Date.now()}`);
+    const imageKeys = {};
     const pageResults = [];
     const analysisPages = [];     // analysis.pages[] for analyzePanel
     const worker = ensureGeometryWorker();
@@ -825,40 +932,83 @@ async function extractViaScannedGeometry(bytes, onProgress, docId = null) {
         const pctx = pageCanvas.getContext('2d');
         await page.render({ canvasContext: pctx, viewport: rViewport }).promise;
 
-        // 1) Layout detection (YOLO) + full-page OCR (Tesseract) in parallel.
-        //    Tesseract does its OWN line/word segmentation and returns words with
-        //    real bboxes + confidence — no projection-profile line splitting, no
-        //    per-line model round-trips. YOLO is kept ONLY to LABEL regions
-        //    (table/figure/heading) so tableBuilder + heading detection fire.
-        const detectBitmap = layoutAvailable ? await createImageBitmap(pageCanvas) : null;
-        const [rawRegions, ocr] = await Promise.all([
-            detectBitmap ? layoutDetect(detectBitmap) : Promise.resolve([]),   // bbox in 640-space
-            recognizePage(pageCanvas),           // { words:[{text,bbox,confidence}], text }
+        // 1) Layout detection (YOLO) + full-page OCR in parallel, both over the
+        //    same rendered surface. The OCR engine does its own line/word
+        //    segmentation; YOLO is kept ONLY to LABEL regions (table/figure/
+        //    heading) so tableBuilder + heading detection fire — it has no
+        //    notion of characters, and the OCR engine has no notion that a run
+        //    of boxes IS a table.
+        const [labelRegions, ocr] = await Promise.all([
+            layoutAvailable ? detectLayoutRegions(pageCanvas) : Promise.resolve([]),
+            recognizePage(pageCanvas),           // { words, lines, text }
         ]);
 
-        // Normalize 640-space YOLO boxes → fractional [0,1] page coords (top-left).
-        const labelRegions = rawRegions
-            .map(r => ({
-                label: r.label,
-                confidence: r.confidence,
-                bbox: {
-                    x: Math.max(0, r.bbox.x / LAYOUT_MODEL_SIZE),
-                    y: Math.max(0, r.bbox.y / LAYOUT_MODEL_SIZE),
-                    w: Math.min(1, r.bbox.w / LAYOUT_MODEL_SIZE),
-                    h: Math.min(1, r.bbox.h / LAYOUT_MODEL_SIZE),
-                },
-            }))
-            .filter(r => r.bbox.w > 0.005 && r.bbox.h > 0.005);
+        // 2) Build the neutral raster IR. OCR and layout stay in render-pixel
+        //    space; semantic blocks and reading-order edges are explicit.
+        const scannedPage = buildScannedPage({
+            page: i, width: rw, height: rh, ocr, layoutRegions: labelRegions,
+        });
+        const recognizedHash = await hashCanonical(scannedPage);
+        const recognizeEvent = await lineage.emit({
+            op: 'recognize_page',
+            engine: getOcrReport().engine,
+            page: i,
+        }, {
+            score: ocr.words?.length
+                ? ocr.words.reduce((sum, word) => sum + (Number(word.confidence) || 0), 0) / ocr.words.length / 100
+                : null,
+            subject: {
+                pointer: { docId, page: i, kind: 'scanned-page-ir' },
+                sha256: recognizedHash,
+                parent_sha256: null,
+            },
+        });
+        const verification = verifyScannedPage(scannedPage);
+        scannedPage.verification = verification;
+        const verifiedHash = await hashCanonical({
+            page: scannedPage.page,
+            source: recognizedHash,
+            verification,
+        });
+        await lineage.emit({
+            op: 'verify_extraction',
+            verifier: verification.verifier,
+            outcome: verification.status,
+            counts: verification.counts,
+        }, {
+            score: verification.score,
+            parents: [recognizeEvent.id],
+            source: 'deterministic-ocr-verify',
+            subject: {
+                pointer: { docId, page: i, kind: 'ocr-verification' },
+                sha256: verifiedHash,
+                parent_sha256: recognizedHash,
+            },
+        });
+        scannedDoc.pages.push(scannedPage);
 
-        // 2) Synthesize vector-shaped inputs from WORDS (real bboxes) and run the
-        //    real pipeline. YOLO labels tag words (heading/table) + emit borders.
+        // 3) Maintain the old synthesis only as an analysis compatibility
+        //    surface. It no longer feeds the document renderer.
         const geom = {
             pageWidthPt, pageHeightPt,
             renderWidth: rw, renderHeight: rh,
             viewportWidth: pageWidthPt * VIEWPORT_SCALE,
             viewportHeight: pageHeightPt * VIEWPORT_SCALE,
         };
-        const synth = synthesizeFromWords(ocr.words, labelRegions, geom);
+        // Feed the synthesizer the engine's EXACT geometry unit.
+        //
+        // `synthesizeFromWords` turns each unit into a synthetic PDF.js text
+        // item, and everything downstream — column-anchor clustering,
+        // tableBuilder, heading detection — reads those boxes as ground truth.
+        // Tesseract segments words itself; PP-OCR detects lines and measures
+        // word extents from the recognition crop's ink. Both current engines
+        // therefore supply words suitable for column anchors. Keep the line
+        // fallback for any future engine that can only apportion word boxes:
+        // estimated x-positions are acceptable for display, not table geometry.
+        const units = getOcrReport().wordBoxes === 'estimated' && ocr.lines?.length
+            ? ocr.lines
+            : ocr.words;
+        const synth = synthesizeFromWords(units, labelRegions, geom);
         const viewport = makeSyntheticViewport(pageWidthPt, pageHeightPt, VIEWPORT_SCALE);
 
         // No path segments on a scanned page; filledRects carry the table frames.
@@ -867,15 +1017,18 @@ async function extractViaScannedGeometry(bytes, onProgress, docId = null) {
             { filledRects: synth.filledRects },
         );
 
-        // Picture crops, off the canvas that is already rendered and still in
-        // hand. Passing {} here (what this did before) sent every figure on
-        // every scanned page through the assembler's PLACEHOLDER branch — an
-        // empty dashed box with no src — so a locally-OCR'd document showed the
-        // regions, tagged them, and displayed none of them. The pictures were
-        // never missing; nobody had cropped them.
-        const extractedImages = await _cropRegionsFromCanvas(
-            pageCanvas, classified, viewport, RENDER_SCALE, i, docId,
+        const semanticRegions = scannedPageToRegions(
+            scannedPage, viewport.width, viewport.height, verification,
         );
+
+        // Picture crops are addressed by the semantic block id. Store the blob
+        // key on the gx-doc image block; pixels never enter document markup.
+        const extractedImages = await _cropRegionsFromCanvas(
+            pageCanvas, semanticRegions, viewport, RENDER_SCALE, i, docId,
+        );
+        for (const [blockId, image] of Object.entries(extractedImages)) {
+            if (image?.key) imageKeys[blockId] = image.key;
+        }
 
         // The 2.0-scale page canvas has served every consumer (layout detect via
         // the transferred bitmap, Tesseract, and the picture crops above). Zero
@@ -885,35 +1038,15 @@ async function extractViaScannedGeometry(bytes, onProgress, docId = null) {
         pageCanvas.width = 0;
         pageCanvas.height = 0;
 
-        const result = assemblePage(
-            classified, textMeta, synth.textItems, viewport, pageWidthPt, i,
-            fontRegistry, rawSplits ?? columnSplits, extractedImages, null,
-        );
-
-        totalTables += result.tableCount || 0;
-        htmlParts.push(result.html);
-        textParts.push((result.text || '').trim());
-        // The regions this page resolved to, in the same shape geometryWorker
-        // posts on its 'page' message. This path had the same hole as the
-        // Docling one: it published HTML and no regions, so a locally-OCR'd
-        // document drew no overlays on the analyze canvas and offered no
-        // artifacts to send. `assemblePage` stamps `data-region-id` from these
-        // same objects, so the ids published here are the ids in the markup.
-        const pageRegions = classified.map((r, ri) => ({
-            id: r.id || `p${i}-r${ri}`,
-            type: r.type,
-            bbox: r.bbox,
-            algorithm: r.algorithm ?? 'ocr-geometry',
-            confidence: r.confidence ?? 1.0,
-            columnIndex: r.columnIndex ?? -1,
-            imageId: r.imageId ?? null,
-        }));
+        totalTables += scannedPage.tables.length;
+        const pageRegions = semanticRegions;
         pageResults.push({
             page: i, ocr: true, scanned: true,
-            tables: result.tableCount || 0,
+            tables: scannedPage.tables.length,
             regions: pageRegions,
+            verification,
         });
-        pushRegionPage(i, pageRegions, null, null);
+        pushRegionPage(i, pageRegions, null, verification);
 
         // Cache this page's synthetic inputs in the geometry worker so a later
         // re-extract (analyzePanel sliders / column splits) re-runs classify on
@@ -959,6 +1092,35 @@ async function extractViaScannedGeometry(bytes, onProgress, docId = null) {
         });
 
         page.cleanup();
+
+        // Stream the accumulated semantic document after every completed page,
+        // matching the backend Docling chunk contract. The page's image blobs,
+        // regions, analysis records, and gx-doc blocks all exist before this
+        // fires, so the UI never paints a half-addressable page.
+        if (onPage) {
+            const partialGxDoc = scannedDocumentToGxDoc(scannedDoc, { imageKeys });
+            const partial = {
+                page: i,
+                pageCount: numPages,
+                html: gxDocToHtml(partialGxDoc),
+                text: scannedDoc.pages
+                    .map(p => p.blocks.map(block => block.text).filter(Boolean).join('\n'))
+                    .join('\n\n'),
+                tableCount: totalTables,
+                pages: [...pageResults],
+                pageResult: pageResults[pageResults.length - 1],
+                gxDoc: partialGxDoc,
+                scannedDocument: scannedDoc,
+                lineage: [...lineage.events],
+            };
+            try {
+                await onPage(partial);
+            } catch (err) {
+                // Streaming is a presentation optimization. A surface failure
+                // must not discard extraction that can still complete normally.
+                console.warn(`[ScannedSemantic] page ${i} stream failed:`, err?.message || err);
+            }
+        }
     }
 
     // Push the synthetic analysis so analyzePanel treats scanned pages like
@@ -972,12 +1134,16 @@ async function extractViaScannedGeometry(bytes, onProgress, docId = null) {
         console.warn('[ScannedGeometry] analysis dispatch failed:', e.message);
     }
 
+    const gxDoc = scannedDocumentToGxDoc(scannedDoc, { imageKeys });
     return {
-        html: htmlParts.join('\n'),
-        text: textParts.join('\n\n'),
+        html: gxDocToHtml(gxDoc),
+        text: scannedDoc.pages.map(page => page.blocks.map(block => block.text).filter(Boolean).join('\n')).join('\n\n'),
         tableCount: totalTables,
         pages: pageResults,
-        source: 'local-ocr-geometry',
+        source: 'local-ocr-semantic-ir',
+        gxDoc,
+        scannedDocument: scannedDoc,
+        lineage: lineage.events,
     };
 }
 
@@ -1077,7 +1243,7 @@ function extractViaGeometryWorker(bytes, onProgress, docId = null) {
             type: 'process', 
             docId,
             bytes,
-            pdfWorkerSrc: window.__VSC_PDF_WORKER_SRC__ 
+            pdfWorkerSrc: pdfWorkerUrl
         });
     });
 }
@@ -1564,7 +1730,7 @@ async function handleFile(file, pdfIndex) {
                     // failure alone must not sink the run.
                     showStatus('Scanned document — preparing local OCR…');
                     try {
-                        await ensureTesseract();
+                        await ensureOcr();
                         useLocalScannedGeometry = true;
                         ensureLayoutWorker().catch(layoutErr =>
                             console.warn('[HandleFile] Layout model failed to load, OCR will run without region labels:', layoutErr.message));
@@ -1611,6 +1777,7 @@ async function handleFile(file, pdfIndex) {
             // pass passes no handler, so its chunks are simply never delivered.
             let streamedHtml = '';
             let streamedTables = 0;
+            let streamedChunks = 0;
             const streamedPages = [];
             const onChunk = backendIsScannedPrimary ? async (chunk) => {
                 if (pdfIndex !== 1 || !chunk?.assets?.order) return;
@@ -1621,11 +1788,17 @@ async function handleFile(file, pdfIndex) {
                 await _persistExtractedImages(part.images);
                 streamedHtml += (streamedHtml ? '\n' : '') + part.html;
                 streamedTables += part.tableCount;
+                streamedChunks++;
                 streamedPages.push(...part.pages);
                 // Paint immediately. `applyHtmlEverywhere` rewrites the state
                 // and every surface, so the accumulated document stays the
                 // single source of truth rather than being patched in place.
                 applyHtmlEverywhere(streamedHtml, null);
+                // applyHtmlEverywhere hydrates immediately, but the explicit
+                // await closes the contract for injected/late-mounted surfaces
+                // before the broker delivers the next chunk.
+                const preview = document.getElementById('html-preview');
+                if (preview) await hydrateImages(preview);
                 // Regions for the pages in THIS chunk, so the analyze canvas and
                 // the artifact panel fill in as the document streams rather than
                 // only at the end.
@@ -1646,7 +1819,7 @@ async function handleFile(file, pdfIndex) {
                     _phCapture('extraction_streamed', {
                         pages: streamedPages.length,
                         tables: streamedTables,
-                        chunks: streamedPages.length,
+                        chunks: streamedChunks,
                     });
                 }
             } catch (beErr) {
@@ -1659,7 +1832,7 @@ async function handleFile(file, pdfIndex) {
                 useBackend = false;
                 backendIsScannedPrimary = false;
                 try {
-                    await ensureTesseract();
+                    await ensureOcr();
                     useLocalScannedGeometry = true;
                 } catch (mlErr) {
                     localOcrFailReason = mlErr.message;
@@ -1719,12 +1892,51 @@ async function handleFile(file, pdfIndex) {
                 _crossCheckDocling(data.assets);
             }
         } else if (useLocalScannedGeometry) {
-            // ── Local scanned path: layout (YOLOv8, labels) + Tesseract (words) →
-            //    rasterSynth → classifyPage/assemblePage. Same downstream as
-            //    vector PDFs, so tables/headings/columns are reconstructed.
+            // ── Local scanned path: OCR + layout → semantic IR → gx-doc. Each
+            // completed page is painted immediately, like a Docling chunk.
             showStatus('Running local layout + OCR on scanned pages…');
-            const result = await extractViaScannedGeometry(bytesForWorker, (msg) => showStatus(msg), pdfState.docId);
-            data = { html: result.html, text: result.text || '', source: 'local-ocr-geometry', tableCount: result.tableCount, pages: result.pages };
+            let streamedLocalPages = 0;
+            const onLocalPage = pdfIndex === 1 ? async (chunk) => {
+                // Preserve the typed state alongside the accumulated HTML. The
+                // final assignment below receives the same structures, so the
+                // streamed and completed paths cannot drift.
+                pdfState.gxDoc = chunk.gxDoc;
+                pdfState.scannedDocument = chunk.scannedDocument;
+                pdfState.extractedText = chunk.text;
+                applyHtmlEverywhere(chunk.html, null);
+                const preview = document.getElementById('html-preview');
+                if (preview) await hydrateImages(preview);
+                refreshZoneToolbar();
+                streamedLocalPages = chunk.page;
+                showStatus(
+                    `Page ${chunk.page} of ${chunk.pageCount} ready — `
+                    + `${chunk.tableCount} table${chunk.tableCount !== 1 ? 's' : ''} so far…`,
+                );
+            } : null;
+            const result = await extractViaScannedGeometry(
+                bytesForWorker,
+                (msg) => showStatus(msg),
+                pdfState.docId,
+                onLocalPage,
+            );
+            if (streamedLocalPages) {
+                _phCapture('extraction_streamed', {
+                    source: 'local-ocr-semantic-ir',
+                    pages: streamedLocalPages,
+                    tables: result.tableCount,
+                    chunks: streamedLocalPages,
+                });
+            }
+            data = {
+                html: result.html,
+                text: result.text || '',
+                source: result.source,
+                tableCount: result.tableCount,
+                pages: result.pages,
+                gxDoc: result.gxDoc,
+                scannedDocument: result.scannedDocument,
+                lineage: result.lineage,
+            };
         } else {
             // ── Primary: deterministic geometry pipeline (Pass 1 + verifier) ──
             // NOTE: a SCANNED doc reaching here means both local OCR (Tesseract)
@@ -1752,12 +1964,16 @@ async function handleFile(file, pdfIndex) {
         pdfState.extractedText = data.text || '';
         // The typed IR mirrors the rendered HTML so exporters and the MCP fast
         // path can read blocks without re-parsing the DOM (import-export-gateway.md).
-        pdfState.gxDoc = htmlToGxDoc(data.html, {
-            source: (data.source === 'local-ocr-geometry' || data.source === 'docling-ocr')
+        // Raster extraction already produced the typed document IR. Re-parsing
+        // its HTML would discard the OCR evidence links and reading-order graph
+        // we introduced the IR to preserve.
+        pdfState.gxDoc = data.gxDoc || htmlToGxDoc(data.html, {
+            source: (data.source === 'local-ocr-semantic-ir' || data.source === 'docling-ocr')
                 ? 'pdf-scanned' : 'pdf',
             title: file.name,
             pageCount: data.pages?.length ?? null,
         });
+        pdfState.scannedDocument = data.scannedDocument || null;
         if (pdfIndex === 1) annotationEngine.loadFromGxDoc(pdfState.gxDoc);
         // Extraction facts the DOM cannot carry — which engine ran, how many
         // pages it saw, and whether the pre-flight classified the document as
@@ -1770,6 +1986,19 @@ async function handleFile(file, pdfIndex) {
             // rather than false for the compare slot.
             scannedPageCount: pdfIndex === 1 ? scannedCount : null,
             isScanned: pdfIndex === 1 ? !!isScannedDoc : null,
+            verification: data.pages?.length
+                ? {
+                    status: _aggregateVerificationStatus(data.pages),
+                    score: _meanVerificationScore(data.pages),
+                    pages: data.pages.map(page => ({
+                        page: page.page,
+                        status: page.verification?.status ?? null,
+                        score: page.verification?.score ?? null,
+                        counts: page.verification?.counts ?? null,
+                    })),
+                }
+                : null,
+            lineage: data.lineage || null,
         };
 
         if (pdfIndex === 1) {

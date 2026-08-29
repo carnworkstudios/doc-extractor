@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // tableBuilder.js
 // Converts a LatticeReconstructor result + PDF.js text items → an HTML <table>
 // with correct colspan/rowspan by checking whether interior grid boundaries are present.
@@ -143,7 +145,7 @@ function _splitFusedColumns(cells, cols, vLines, rows) {
  * @param {number} [eps=6]  — boundary-presence tolerance in px (increased for jitter)
  * @returns {string}  — HTML string; empty string if lattice is degenerate
  */
-export function buildTable(lattice, textItems, viewport, assignedItems = new Set(), proximityPx = 15) {
+export function buildTable(lattice, textItems, viewport, assignedItems = new Set(), proximityPx = 15, cellRenderer = null) {
     const { rows, cols, hLines, vLines } = lattice;
     const numRows = rows.length - 1;
     const numCols = cols.length - 1;
@@ -353,7 +355,11 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
                 }
             }
 
-            const cellContent = rebuildText(allItems, 0, { format: 'inline-html' }) || '&nbsp;';
+            const fallbackContent = rebuildText(allItems, 0, { format: 'inline-html' }) || '&nbsp;';
+            const cellContent = typeof cellRenderer === 'function'
+                ? (cellRenderer({ row: r, col: c, rowspan, colspan: effectiveColspan,
+                    items: allItems, fallbackContent }) || fallbackContent)
+                : fallbackContent;
             const tag = r === 0 ? 'th' : 'td';
             const colAttr = effectiveColspan > 1 ? ` colspan="${effectiveColspan}"` : '';
             const rowAttr = rowspan > 1 ? ` rowspan="${rowspan}"` : '';

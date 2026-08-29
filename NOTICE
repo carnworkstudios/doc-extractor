@@ -25,7 +25,9 @@ this software is itself offered under the AGPL, including any bundle that
 embeds it.
 
 If that does not work for your product, a commercial license is available
-which removes the copyleft obligation. Contact carnworkstudios for terms.
+which removes the copyleft obligation.
+
+  Contact: legal@ginexys.com
 
 THIRD-PARTY COMPONENTS
 ======================
@@ -39,3 +41,20 @@ THIRD-PARTY COMPONENTS
   monaco-editor   MIT
 
 Their respective licenses apply to those components.
+
+BUNDLED MODEL WEIGHTS
+=====================
+
+  PP-OCRv5 mobile ONNX models (public/models/ppocr/: det.onnx, rec.onnx,
+  cls.onnx, charset.txt) originate from PaddleOCR
+  (https://github.com/PaddlePaddle/PaddleOCR), Apache License 2.0, and are
+  obtained via the third-party ONNX export at
+  https://huggingface.co/bukuroo/PPOCRv5-ONNX (PaddlePaddle publishes
+  Paddle-format weights, not ONNX). Redistributed under the Apache License 2.0.
+
+  YOLOv8n-DocLayNet (public/models/yolov8n-doclaynet.onnx) is derived from
+  Ultralytics YOLOv8 trained on DocLayNet. Ultralytics YOLOv8 is
+  AGPL-3.0-licensed; DocLayNet is CC-BY-4.0 (IBM Research).
+
+  Tesseract language data, when used, is distributed under the Apache
+  License 2.0 by the tesseract-ocr project.

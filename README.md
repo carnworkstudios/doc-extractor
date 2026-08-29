@@ -1,15 +1,24 @@
 # PDF Processor
 
 **Browser-native PDF extraction pipeline for engineers, analysts, and technical writers.**  
-Convert complex PDF layouts (tables, multi-column flows, images, redlines) into clean, editable HTML and Markdown. Zero upload. Zero ML weights. Fully deterministic geometry.  
+Convert complex PDF layouts (tables, multi-column flows, images, redlines) into clean, editable HTML and Markdown. Zero upload. Fully deterministic geometry with OCR.  
 Part of the [Ginexys](https://ginexys.com) engineering pipeline.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](./LICENSE)
+[![Commercial license available](https://img.shields.io/badge/Commercial%20license-available-16a34a.svg)](#license)
 [![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/ginexys.ginexys-pdf?label=VS%20Code&color=007ACC&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=ginexys.ginexys-pdf)
 [![Browser version](https://img.shields.io/badge/Live-ginexys.com-9333ea?logo=googlechrome&logoColor=white)](https://ginexys.com/tools/pdf-processor/)
 [![Built with PDF.js](https://img.shields.io/badge/Built%20with-PDF.js-red.svg)](https://mozilla.github.io/pdf.js/)
 [![Vanilla JS](https://img.shields.io/badge/Vanilla-JS-yellow.svg)](#architecture-a-deterministic-structural-frontend)
 [![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen.svg)](#contributing)
+
+> **Licensing at a glance.** This project is **AGPL-3.0-or-later**. You may use,
+> modify and self-host it freely, but anything you distribute or serve that
+> incorporates it — including a minified web bundle — must also be offered under
+> the AGPL. **If you need to embed this in a closed-source product, a commercial
+> license is available.** See [License](#license) below.
+>
+> Releases up to and including `v0.1.0-mit` remain under the MIT License.
 
 ## Table of Contents
 
@@ -252,6 +261,32 @@ PRs welcome. Open an issue first for significant architectural changes, particul
 
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+**GNU Affero General Public License v3.0 or later** — see [LICENSE](./LICENSE).
 
-Copyright (c) 2026 Canworks Studios / Ginexys.
+You are free to use, study, modify and self-host this software. The AGPL's
+condition is reciprocity: if you distribute it, or run a modified version that
+users interact with over a network, you must offer those users the corresponding
+source under the same license. For a browser bundle this includes the bundle
+itself, since shipping minified JavaScript to a visitor is distribution.
+
+### Commercial license
+
+If the AGPL does not work for your product — most commonly because you embed the
+extraction engine in a closed-source application — a commercial license is
+available that removes the copyleft obligation.
+
+**Contact:** [legal@ginexys.com](mailto:legal@ginexys.com)
+
+### Version history
+
+| Versions | License |
+| --- | --- |
+| Up to and including tag `v0.1.0-mit` | MIT — see [LICENSE-MIT](./LICENSE-MIT) |
+| After `v0.1.0-mit` | AGPL-3.0-or-later |
+
+The MIT grant on earlier versions is perpetual and is not withdrawn.
+
+Third-party components and bundled model weights are attributed in
+[NOTICE](./NOTICE).
+
+Copyright (c) 2025-2026 Canworks Studios / Ginexys.

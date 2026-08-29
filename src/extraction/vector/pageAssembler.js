@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // pageAssembler.js
 // Takes classified page regions and produces final HTML in document order.
 //
@@ -1049,7 +1051,7 @@ function _regionLinkAttr(region, links, slack = 4) {
  * And SVG `<text>` is positioned by its BASELINE, which is exactly what the
  * classifier measured, so the old cap-height fudge disappears with it.
  */
-function _imageTextLayer(region, textMeta, imgPixels = null) {
+function _imageTextLayer(region, textMeta, imgPixels = null, visible = false) {
     const bbox = region.bbox;
     const idxs = region.textItemIndices || [];
     if (!bbox || !bbox.w || !bbox.h || !idxs.length) return { html: '', text: '' };
@@ -1128,9 +1130,32 @@ function _imageTextLayer(region, textMeta, imgPixels = null) {
         html: `<svg class="pdf-image-textlayer" viewBox="0 0 ${_num(vbW)} ${_num(vbH)}" ` +
               `preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" ` +
               `style="position:absolute;left:0;top:0;width:100%;height:100%;` +
-              `fill:currentColor;font-family:inherit;">${texts.join('')}</svg>`,
+              `fill:${visible ? 'currentColor' : 'transparent'};font-family:inherit;">${texts.join('')}</svg>`,
         text: items.map(tm => tm.str).join(' ').replace(/\s+/g, ' ').trim(),
     };
+}
+
+function _rgb(color, fallback = 'none') {
+    if (!Array.isArray(color) || color.length < 3) return fallback;
+    return `rgb(${color.slice(0, 3).map(v => Math.round(Math.max(0, Math.min(1, v)) * 255)).join(' ')})`;
+}
+
+function _vectorFigureSvg(region, overlay = false) {
+    const b = region.bbox;
+    if (!b?.w || !b?.h || !region.vectorPaths?.length) return '';
+    const paths = region.vectorPaths.map(path => {
+        const d = path.commands.map(c => `${c[0]}${c.slice(1).map(_num).join(' ')}`).join(' ');
+        const fill = path.filled ? _rgb(path.fillColor, 'currentColor') : 'none';
+        const stroke = _rgb(path.strokeColor, 'currentColor');
+        return `<path d="${d}" fill="${fill}" stroke="${stroke}" ` +
+            `stroke-width="${_num((path.strokeWidth || 1) * 2)}" vector-effect="non-scaling-stroke"/>`;
+    }).join('');
+    const style = overlay
+        ? 'position:absolute;inset:0;width:100%;height:100%;display:block;'
+        : `display:block;width:100%;height:auto;aspect-ratio:${_num(b.w)}/${_num(b.h)}`;
+    return `<svg class="extracted-pdf-vector" data-img-id="${esc(region.id)}" ` +
+        `viewBox="0 0 ${_num(b.w)} ${_num(b.h)}" preserveAspectRatio="none" ` +
+        `xmlns="http://www.w3.org/2000/svg" style="${style}">${paths}</svg>`;
 }
 
 /** Compose two 2D affine matrices in PDF's [a b c d e f] order: apply b, then a. */
@@ -1185,12 +1210,42 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
     let text = '';
     let tables = 0;
 
+    // A table cell is a layout container. Its classifier-produced children go
+    // through this same renderer so headings, paragraphs, lists, boxes, images
+    // and nested tables retain their semantics instead of becoming one inline
+    // text string. Spanning cells collect children from every covered grid slot.
+    const renderTableCell = region.cellChildren ? ({ row, col, rowspan, colspan, fallbackContent }) => {
+        const children = [];
+        for (let dr = 0; dr < rowspan; dr++) {
+            for (let dc = 0; dc < colspan; dc++) {
+                children.push(...(region.cellChildren[`${row + dr}:${col + dc}`] || []));
+            }
+        }
+        if (!children.length) return fallbackContent;
+        children.sort((a, b) => (a.bbox?.y ?? 0) - (b.bbox?.y ?? 0) ||
+                                (a.bbox?.x ?? 0) - (b.bbox?.x ?? 0));
+        const parts = [];
+        for (const child of children) {
+            const rendered = _renderRegion(child, textMeta, textItems, viewport, pageWidthPt,
+                fontRegistry, extractedImages, _pageScaleOpts, containers, linkByIndex, renderOpts);
+            tables += rendered.tables;
+            if (rendered.html) {
+                const childAddr = child.id != null
+                    ? ` data-region-id="${_escAttr(String(child.id))}"` +
+                      ` data-region-type="${_escAttr(String(child.type || ''))}"`
+                    : '';
+                parts.push(`<div class="pdf-table-cell-block"${childAddr}>${rendered.html}</div>`);
+            }
+        }
+        return parts.join('') || fallbackContent;
+    } : null;
+
     switch (region.type) {
         case RegionType.LATTICE_TABLE:
         case RegionType.TABLE: {          // TABLE kept as legacy alias
             if (!region.lattice) break;
             const scopedItems = _scopeItems(region, textItems, textMeta, linkByIndex);
-            const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set(), region.proximityPx);
+            const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set(), region.proximityPx, renderTableCell);
             if (tableHtml) {
                 html = `<div class="pdf-table-wrap pdf-table--lattice" data-region-id="${region.id}">${tableHtml}</div>`;
                 tables = 1;
@@ -1201,7 +1256,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
         case RegionType.STREAM_TABLE: {
             if (!region.lattice) break;
             const scopedItems = _scopeItems(region, textItems, textMeta, linkByIndex);
-            const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set(), region.proximityPx);
+            const tableHtml = buildTable(region.lattice, scopedItems, viewport, new Set(), region.proximityPx, renderTableCell);
             if (tableHtml) {
                 html = `<div class="pdf-table-wrap pdf-table--borderless" data-region-id="${region.id}">${tableHtml}</div>`;
                 tables = 1;
@@ -1225,6 +1280,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             const dataUrl  = imgEntry?.dataUrl ?? null;
 
             let imgTag, imgHtml;
+            const vectorSvg = _vectorFigureSvg(region);
             if (storeKey || dataUrl) {
                 // pw/ph are the crop dimensions at the producer's render scale
                 // (`scale`, 4× for the geometry worker's page render). Divide by
@@ -1255,6 +1311,9 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                     : ` src="${dataUrl}"`;
                 imgTag  = `<img class="extracted-pdf-image"${srcAttr} width="${natW}" height="${natH}" alt="PDF Image ${region.id}" style="max-width: 100%; height: auto; display: block;">`;
                 imgHtml = `<div class="pdf-image-placeholder" data-region-id="${region.id}"${cropAttr} style="margin: 10px 0;">${imgTag}</div>`;
+            } else if (vectorSvg) {
+                imgHtml = `<div class="pdf-image-placeholder pdf-vector-figure" data-region-id="${esc(region.id)}" ` +
+                    `style="margin:10px 0;width:100%;">${vectorSvg}</div>`;
             } else {
                 // Placeholder: use bbox proportions so layout reserves the right space
                 const bboxW = region.bbox ? region.bbox.w : 0;
@@ -1274,16 +1333,24 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                     `<span style="display: block; padding: 8px; font-size: 10px; font-family: monospace; color: #999;">[${region.id}]</span>` +
                     imgTag + `</div>`;
             }
-            
+
             // Overlay the picture's own labels as a positioned, editable text
             // layer — the same shape as a PDF viewer's selectable text over a
             // page canvas. A diagram's callouts are real content: the region
             // CLAIMS them so they don't scatter into the paragraph flow, and
             // without this they were then dropped from both the markup and the
             // text output, silently deleting every label on the page.
-            const layer = _imageTextLayer(region, textMeta, imgEntry || null);
+            const layer = _imageTextLayer(region, textMeta, imgEntry || null, !!vectorSvg);
+            // Operator geometry is transfer metadata, not a second visible
+            // rendering. Showing it above the crop duplicates strokes and can
+            // make a mixed raster/vector figure look like several images. The
+            // semantic label layer remains because the worker deliberately
+            // masks PDF.js's broken embedded-font pixels before this replaces
+            // them. Schema receives the vector Scene separately.
             if (layer.html) {
                 imgHtml = _imageStack(imgHtml, layer.html);
+            }
+            if (layer.html) {
                 text = layer.text;
             }
 
