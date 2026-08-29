@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // streamDetector.js
 // Detects borderless tables from text-item alignment patterns.
 // Called by contextClassifier after the lattice pass, on unclaimed text items.

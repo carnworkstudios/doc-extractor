@@ -1,0 +1,41 @@
+doc-extractor
+Copyright (c) 2025-2026 carnworkstudios
+
+LICENSING
+=========
+
+This project changed license. Which terms apply depends on the version:
+
+  * Version v0.1.0-mit and all earlier commits
+      MIT License. See LICENSE-MIT.
+      That grant is perpetual and irrevocable for those versions. Nothing
+      here withdraws it.
+
+  * All releases after v0.1.0-mit
+      GNU Affero General Public License, version 3 or later (AGPL-3.0-or-later).
+      See LICENSE.
+
+The boundary is the annotated git tag `v0.1.0-mit` (commit dda8615).
+
+COMMERCIAL LICENSING
+====================
+
+The AGPL requires that anything you distribute or serve which incorporates
+this software is itself offered under the AGPL, including any bundle that
+embeds it.
+
+If that does not work for your product, a commercial license is available
+which removes the copyleft obligation. Contact carnworkstudios for terms.
+
+THIRD-PARTY COMPONENTS
+======================
+
+  pdfjs-dist      Apache License 2.0
+  katex           MIT
+  pdf-lib         MIT
+  tesseract.js    Apache License 2.0
+  onnxruntime-web MIT
+  dompurify       Apache-2.0 OR MPL-2.0
+  monaco-editor   MIT
+
+Their respective licenses apply to those components.

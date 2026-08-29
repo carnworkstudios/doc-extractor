@@ -93,10 +93,6 @@ export default defineConfig({
         },
     },
 
-    optimizeDeps: {
-        exclude: ['mupdf'],
-    },
-
     build: {
         // Now relative to project root (was '../dist' when root was src/)
         outDir: path.resolve(__dirname, 'dist'),

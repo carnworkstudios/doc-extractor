@@ -2,6 +2,7 @@
     "name": "pdf-to-code",
     "version": "0.1.0",
     "description": "Editable multi-page PDF-to-HTML editor with export and table extraction utilities.",
+    "license": "AGPL-3.0-or-later",
     "private": true,
     "type": "module",
     "scripts": {
@@ -20,7 +21,6 @@
         "jquery": "^3.6.0",
         "katex": "^0.18.4",
         "monaco-editor": "^0.55.1",
-        "mupdf": "^1.27.0",
         "onnxruntime-web": "1.25.0-dev.20260327-722743c0e2",
         "pdf-lib": "^1.17.1",
         "pdfjs-dist": "^4.0.0",

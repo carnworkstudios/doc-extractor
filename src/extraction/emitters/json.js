@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // src/extraction/emitters/json.js
 // Stage 3c: AST → JSON string
 

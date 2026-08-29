@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // doclingCheck.js — structural cross-check of the advanced-extraction (Docling)
 // result against the deterministic pre-flight analyzer.
 //

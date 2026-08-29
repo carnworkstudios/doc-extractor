@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // layoutTreeBuilder.js — recursive XY-cut over region boxes → Boxwood LNode tree.
 //
 // Transforms flat classified regions into a recursive layout tree where every

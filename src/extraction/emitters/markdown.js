@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // src/extraction/emitters/markdown.js
 // Stage 3b: AST → Markdown string
 

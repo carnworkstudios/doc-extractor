@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // structTreeReader.js
 // Tier 1 extractor: joins the PDF structure tree with text items via MCID.
 //

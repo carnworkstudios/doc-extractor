@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // proseGate.js
 // Content-level discriminator: does a candidate region hold FLOWING TEXT
 // (paragraphs, bulleted or numbered lists) rather than tabular data?

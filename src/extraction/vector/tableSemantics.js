@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // tableSemantics.js — is this table's MEANING intact, not just its geometry?
 //
 // The other two scorers answer mechanical questions. `externalScorer` asks

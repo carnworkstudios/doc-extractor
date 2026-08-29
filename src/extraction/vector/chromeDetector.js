@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // chromeDetector.js — cross-page running header/footer detection.
 //
 // A running footer repeats on (nearly) every page with only its page number

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // boxDetector.js
 // Detects isolated-rectangle BOX regions (note/warning/caution/tip containers)
 // by pairing H and V segments that form closed rectangles.

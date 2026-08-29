@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // pageScale.js — natural-unit scale for the PDF extraction pipeline.
 //
 // S = body font size in viewport pixels — the natural length unit of the page.

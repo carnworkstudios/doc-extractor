@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // flowLinker.js — paragraph continuation chains across column/zone seams.
 //
 // A PDF column boundary is a rendering artifact, not a semantic one: a

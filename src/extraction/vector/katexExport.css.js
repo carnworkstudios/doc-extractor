@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // GENERATED FILE — do not edit by hand.
 // Run `node scripts/gen-katex-export-css.mjs` (wired as the pdf-processor
 // prebuild hook) to regenerate from node_modules/katex/dist/katex.min.css.

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // ===================================================================================
 // check-docling-adapter — the adapter's output must stay addressable
 // ===================================================================================

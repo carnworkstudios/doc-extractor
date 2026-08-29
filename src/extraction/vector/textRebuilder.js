@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // textRebuilder.js
 // Reconstructs reading-order plain text from a PDF.js getTextContent() item array.
 //

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // dividerDetector.js
 // Detects standalone horizontal rules (DIVIDER regions) from H-segments
 // that are not underlines, not inside any known region, with no nearby text.

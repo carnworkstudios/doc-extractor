@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // headingDetector.js
 // Heading type classification for a single Y-band line.
 // A line is a heading when its font size exceeds body average * HEADING_SCALE.

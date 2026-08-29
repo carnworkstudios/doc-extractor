@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // figureDetector.js
 // Detects vector line-art figures (wiring diagrams, dimensional drawings,
 // decorative art) that PDF.js reports as raw path segments, not image XObjects.

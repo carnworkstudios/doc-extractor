@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // src/extraction/tokenizer.js
 // Stage 1: DocTags string → flat token stream (regex-based, zero deps)
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // mathBuilder.js
 // Reconstructs display math from multi-baseline pdfjs text items into LaTeX.
 //

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2025-2026 carnworkstudios
 // spatialGraph.js
 // Coordinate-space content graph for a single PDF page.
 //
