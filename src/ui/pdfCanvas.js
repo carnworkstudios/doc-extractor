@@ -5,7 +5,12 @@
 
 import $ from 'jquery';
 import * as pdfjsLib from 'pdfjs-dist';
-import { refreshTextEditMode } from './pdfTextEdit.js';
+import {
+    clearParkedTextEdits,
+    parkTextEditsForPage,
+    refreshTextEditMode,
+    refreshTextEditPage,
+} from './pdfTextEdit.js';
 import { applyPdfReadOnly } from './workspaceLayout.js';
 // Global worker source is already configured in pdfAnalyzer.js or geometryWorker.js,
 // but just in case, it should be available.
@@ -123,7 +128,10 @@ function _release(entry) {
     // Drop the spans unless the user is editing inside them. Discarding a live
     // edit to save memory would be trading a real loss for an invisible gain.
     const layer = entry.$textLayer?.[0];
-    if (layer && !layer.contains(document.activeElement)) layer.replaceChildren();
+    if (layer && !layer.contains(document.activeElement)) {
+        parkTextEditsForPage(entry.wrapper);
+        layer.replaceChildren();
+    }
 
     entry.painted = false;
 }
@@ -157,6 +165,10 @@ async function _paint(entry, pdfDoc) {
         if (entry.task !== task) return;
         entry.task = null;
         entry._page = page;
+        // Edit Text may have been enabled while this page was off-screen or
+        // still rendering. Apply its mask and restore its edit state only after
+        // pdf.js has painted and the page's text layer has been built.
+        refreshTextEditPage(entry.wrapper);
     } catch (err) {
         // A cancelled render is the normal result of scrolling past a page
         // before it finished. Anything else is worth seeing.
@@ -277,6 +289,7 @@ export async function renderPDFToCanvas(bytes, containerId = 'pdf-canvas-contain
     if (!$container.length) return { wrappers: [], numPages: 0 };
     $container.empty();
     _teardownWindow(containerId);
+    clearParkedTextEdits();
 
     const wrappers = [];
     let numPages = 0;
@@ -342,6 +355,7 @@ export async function renderPDFToCanvas(bytes, containerId = 'pdf-canvas-contain
             // exactly that, which is why freeing 5 GB of canvas changed the peak
             // by nothing. `getPage` is cheap and pdf.js caches internally.
             painters.set($wrapper[0], {
+                wrapper: $wrapper[0],
                 canvas: $canvas[0],
                 $textLayer,
                 pageNum,

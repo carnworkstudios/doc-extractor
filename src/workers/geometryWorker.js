@@ -84,6 +84,22 @@ let _cachedChromeSigs  = null;   // cross-page running header/footer signatures
 // on the SAME text items (honoring slider/split pipeline) instead of the PDF.
 const _scannedPages = new Map(); // pageNum -> { textItems, filledRects, imageRegions, pageWidthPt, viewportScale }
 
+// Boxwood leaves retain a `measure` closure so resolveLayout can ask them how
+// their text wraps. That is executable worker-local state, not message data;
+// posting the raw tree makes structured clone throw (notably on scanned-page
+// re-extraction). The UI only inspects the tree's geometry, so strip functions
+// at the worker boundary.
+function _messageLayoutTree(tree) {
+    if (!tree) return null;
+    try {
+        return JSON.parse(JSON.stringify(tree, (_key, value) =>
+            typeof value === 'function' ? undefined : value));
+    } catch (err) {
+        console.warn('[geometryWorker] omitting non-serializable layout tree:', err?.message || err);
+        return null;
+    }
+}
+
 // Render the page once at 4× and crop every picture region the classifier
 // found (keyed by region.id), whether it was painted as a raster XObject,
 // as vector line art, as a swarm of image masks, or as a mix of all three.
@@ -791,7 +807,7 @@ self.onmessage = async (e) => {
                 })),
                 pageScale: scale.toJSON(),
                 docScale: docScale.toJSON(),
-                layoutTree: result.layoutTree ?? null,
+                layoutTree: _messageLayoutTree(result.layoutTree),
                 fidelityScore: result.fidelityScore ?? 0,
                 layoutMethod: result.layoutMethod ?? 'flat-zones',
                 verification: scoreExtraction(regions, textMeta, viewport),
@@ -964,7 +980,7 @@ async function _handleReprocess({ page: pageNum, pipeline = {}, carryImages = {}
             })),
             pageScale: scale.toJSON(),
             docScale: _cachedDocScale ? _cachedDocScale.toJSON() : null,
-            layoutTree: result.layoutTree ?? null,
+            layoutTree: _messageLayoutTree(result.layoutTree),
             fidelityScore: result.fidelityScore ?? 0,
             layoutMethod: result.layoutMethod ?? 'flat-zones',
             verification: scoreExtraction(regions, textMeta, viewport),
@@ -1046,7 +1062,7 @@ async function _handleScannedReprocess({ page: pageNum, pipeline = {}, carryImag
             })),
             pageScale: scale.toJSON(),
             docScale: _cachedDocScale ? _cachedDocScale.toJSON() : null,
-            layoutTree: result.layoutTree ?? null,
+            layoutTree: _messageLayoutTree(result.layoutTree),
             fidelityScore: result.fidelityScore ?? 0,
             layoutMethod: result.layoutMethod ?? 'flat-zones',
             verification: scoreExtraction(regions, textMeta, viewport),

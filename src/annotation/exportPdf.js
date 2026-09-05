@@ -11,11 +11,23 @@
  * through geometry.viewportToUserSpace, which is rotation-aware and verified
  * against pdf.js.
  *
+ * A TEXT EDIT REPLACES, IT DOES NOT COVER. The original show-operators inside
+ * the edit box are deleted from the page's content stream (contentStream.js)
+ * before the replacement is drawn. Covering them with an opaque rectangle, as
+ * this did previously, left the original glyphs in the file: copy-paste,
+ * pdftotext, search and screen readers all still returned them, a re-import
+ * rendered both layers at once, and anyone redacting that way shipped
+ * recoverable text. Where removal is impossible (text inside a form XObject or
+ * a Type 3 glyph proc) the rectangle is still drawn and the page is listed in
+ * the `onReport` callback's `coveredPages`, so the caller can tell the
+ * difference between gone and hidden.
+ *
  * Offline, deterministic, no print dialog.
  */
 
 import { PDFDocument, rgb, StandardFonts, BlendMode, PDFString, PDFName } from 'pdf-lib';
 import { viewportToUserSpace } from './geometry.js';
+import { removeTextInBoxes } from './contentStream.js';
 import { annotationsFromGxDoc } from './annotations.js';
 
 /**
@@ -246,17 +258,31 @@ function drawAnnotation(page, ann, rotation, mediaW, mediaH, font) {
  *
  * `to === ''` is a deletion — cover only, draw nothing.
  */
-function drawTextEdit(page, edit, rotation, mediaW, mediaH, font, bg) {
+/** The user-space box an edit occupies. Shared by the removal and the redraw. */
+function editBox(edit, rotation, mediaW, mediaH) {
     const fs = edit.fontSize || edit.h || 12;
     const pad = fs * 0.25;
-    const box = {
+    return rectToUser({
         x: edit.x - pad,
         y: edit.y - pad,
         w: Math.max(edit.w, fs * 0.5) + pad * 2,
         h: (edit.h || fs) + pad * 2,
-    };
-    const r = rectToUser(box, rotation, mediaW, mediaH);
-    page.drawRectangle({ x: r.x, y: r.y, width: r.w, height: r.h, color: bg });
+    }, rotation, mediaW, mediaH);
+}
+
+function drawTextEdit(page, edit, rotation, mediaW, mediaH, font, bg, covered) {
+    const fs = edit.fontSize || edit.h || 12;
+    const r = editBox(edit, rotation, mediaW, mediaH);
+
+    // The original glyphs are deleted from the content stream before this runs,
+    // so the rectangle is only here to hide whatever non-text graphics sat
+    // behind the run (rules, table fills). When removal succeeded it is not
+    // hiding text, and when it did not, `covered` is true and it is the last
+    // resort — visually correct, but the old text is still extractable, which
+    // buildAnnotatedPdf reports rather than hides.
+    if (covered) {
+        page.drawRectangle({ x: r.x, y: r.y, width: r.w, height: r.h, color: bg });
+    }
 
     const text = String(edit.to ?? '');
     if (!text) return;
@@ -277,7 +303,7 @@ function drawTextEdit(page, edit, rotation, mediaW, mediaH, font, bg) {
  *   fileName — download name
  * @returns {Promise<Uint8Array>} the exported PDF bytes
  */
-export async function buildAnnotatedPdf({ bytes, gxDoc, onPage }) {
+export async function buildAnnotatedPdf({ bytes, gxDoc, onPage, onReport }) {
     const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
     const out = await PDFDocument.create();
     const font = await out.embedFont(StandardFonts.Helvetica);
@@ -299,6 +325,11 @@ export async function buildAnnotatedPdf({ bytes, gxDoc, onPage }) {
         }
     }
     const editBg = rgb(1, 1, 1);
+    // Reported back to the caller: pages where the original glyphs could NOT be
+    // removed and are therefore only covered. A caller that is redacting needs
+    // to know the difference between "gone" and "hidden".
+    const coveredPages = [];
+    let removedOps = 0;
 
     const linksByPage = new Map();
     if (Array.isArray(gxDoc?.links)) {
@@ -318,9 +349,29 @@ export async function buildAnnotatedPdf({ bytes, gxDoc, onPage }) {
         if (pageEdits && pageEdits.length) {
             const size = outPage.getSize();
             const rotation = outPage.getRotation().angle;
+
+            // REPLACE, don't cover. Delete the original show-operators first, so
+            // the edited text is gone from the file rather than hidden under a
+            // rectangle that copy-paste, pdftotext and every extractor see
+            // straight through.
+            const boxes = pageEdits.map(e => editBox(e, rotation, size.width, size.height));
+            let covered = true;
+            try {
+                const res = removeTextInBoxes(outPage, boxes);
+                // Text living in a form XObject or a Type 3 glyph proc is not in
+                // this stream. Nothing was removed, so the cover is still needed
+                // and the caller is told the original text survives.
+                covered = res.removed === 0 && res.scanned > 0;
+                if (res.removed > 0) removedOps += res.removed;
+                if (covered) coveredPages.push(i + 1);
+            } catch (err) {
+                console.warn('[exportPdf] content-stream edit failed on page', i + 1, err.message);
+                coveredPages.push(i + 1);
+            }
+
             for (const edit of pageEdits) {
                 try {
-                    drawTextEdit(outPage, edit, rotation, size.width, size.height, font, editBg);
+                    drawTextEdit(outPage, edit, rotation, size.width, size.height, font, editBg, covered);
                 } catch (err) {
                     console.warn('[exportPdf] skipped text edit', edit.from, err.message);
                 }
@@ -360,6 +411,14 @@ export async function buildAnnotatedPdf({ bytes, gxDoc, onPage }) {
         } catch (err) {
             console.warn('[exportPdf] outline not written:', err.message);
         }
+    }
+
+    // The return type stays Uint8Array so existing callers are unaffected; a
+    // caller that cares whether an edit REPLACED or merely COVERED the original
+    // text passes onReport. `coveredPages` is the honest answer to "is the old
+    // text still in this file?" — non-empty means yes, on those pages.
+    if (typeof onReport === 'function') {
+        onReport({ removedOps, coveredPages: coveredPages.slice() });
     }
 
     return out.save();

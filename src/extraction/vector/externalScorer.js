@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // externalScorer.js — grade ANY extractor's regions against the source PDF.
 //
 // `extractionScorer.js` grades our own pipeline. Nothing in it is actually

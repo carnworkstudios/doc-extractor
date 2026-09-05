@@ -24,7 +24,7 @@
 //   line boxes are returned alongside, untouched.
 
 import * as ort from 'onnxruntime-web/wasm';
-import { measureS, inkCoverage, capForCoverage } from '../ocrScale.js';
+import { measureS, inkCoverage, capForCoverage, capForEvidence } from '../ocrScale.js';
 
 const BASE = (import.meta.env && import.meta.env.BASE_URL) || '/';
 const MODEL_DIR = `${BASE}models/ppocr/`;
@@ -298,28 +298,79 @@ function orderForReading(boxes, pageWidth) {
 // ── Detection ───────────────────────────────────────────────────────────────
 
 /**
+ * Forensic evidence about the CURRENT page, when a layout model with a forensic
+ * head has run on it.
+ *
+ * Set by the caller (`ocr/index.js` / the bench) before `recognizePage`, and
+ * CLEARED after every detect so it cannot leak from one page to the next — a
+ * stale blur reading applied to the following page is worse than none, because
+ * it is wrong in a way nothing downstream can see.
+ *
+ * `null` means UNKNOWN, not clean. `capForEvidence` treats it that way and falls
+ * back to the coverage-only path.
+ */
+let _forensic = null;
+
+/**
+ * @param {object|null} physical  physical values from
+ *        extraction/forensics/signals.js `readSignals()`, or null to clear.
+ */
+export function setPageForensics(physical) { _forensic = physical || null; }
+
+/**
  * Detect, adapting the input cap to the page's own body-text size.
  *
  * A probe pass runs at the current cap, `ocrScale` measures S from it, and the
  * pass is repeated only when S came back under target. An ordinary page
  * measures at target and pays for the probe alone; a starved page pays for one
  * extra detection (~0.2-0.3s) against a ~10s recognition stage.
+ *
+ * WHAT THE FORENSIC HEAD ADDS
+ * ---------------------------
+ * Ink coverage answers "is there ink the detector did not claim". It cannot
+ * answer "would more resolution help", and those are different questions with
+ * different right answers:
+ *
+ *   starved + page physically sound  -> raise the cap. This is the case the
+ *                                       adaptive path was written for.
+ *   starved + page blurred/warped/skewed past recovery -> raising the cap buys
+ *                                       nothing. Detection is quadratic in side
+ *                                       length, so the pipeline would pay 4x on
+ *                                       the pages that are already slowest, for
+ *                                       the same starved result.
+ *
+ * The signals can only DECLINE the second pass, never request one. A wrong
+ * forensic reading therefore costs a missed upscale — recoverable, and visible
+ * in `coverage` — but can never cost a 4x slowdown on every page.
  */
 async function detect(canvas) {
     const probe = await detectAt(canvas, _detMaxSide);
     const { coverage } = inkCoverage(canvas, probe.boxes);
-    const { cap, starved } = capForCoverage(_detMaxSide, coverage);
-    const S = measureS(probe.boxes, probe.ratio);      // reported, not decisive
-    _lastScale = { S: S == null ? null : +S.toFixed(2), cap, starved,
-                   coverage: +coverage.toFixed(3) };
-    if (!starved) return probe.boxes;
+    const S = measureS(probe.boxes, probe.ratio);
+    const decision = capForEvidence(_detMaxSide, coverage, S, _forensic);
+    const { cap, starved, blocked, reason, evidence } = decision;
+    _lastScale = {
+        S: S == null ? null : +S.toFixed(2), cap, starved,
+        coverage: +coverage.toFixed(3),
+        // Which instrument decided, and why. Without this a page that was
+        // starved and deliberately not upscaled is indistinguishable in the
+        // record from a page that was never starved.
+        blocked: !!blocked, reason: reason || null, evidence: evidence || null,
+        forensicHead: !!_forensic,
+    };
+    // The reading belongs to the page that has just been measured. Clearing it
+    // here means a caller that forgets to set it for the next page gets the
+    // coverage-only path rather than the previous page's condition.
+    _forensic = null;
+    if (!starved || blocked) return probe.boxes;
     const second = await detectAt(canvas, cap);
     _lastScale.coverage2 = +inkCoverage(canvas, second.boxes).coverage.toFixed(3);
     return second.boxes;
 }
 
 /** Last adaptive-scale decision, for the bench and the lineage record. */
-let _lastScale = { S: null, cap: DET_MAX_SIDE, starved: false };
+let _lastScale = { S: null, cap: DET_MAX_SIDE, starved: false,
+                   blocked: false, forensicHead: false };
 export function getScaleReport() { return _lastScale; }
 
 async function detectAt(canvas, cap) {

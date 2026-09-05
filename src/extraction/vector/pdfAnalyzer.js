@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // pdfAnalyzer.js
 // Lightweight PDF structure analyzer — runs on the main thread before extraction.
 // Produces metadata + per-page geometry breakdown:

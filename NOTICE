@@ -1,5 +1,5 @@
 doc-extractor
-Copyright (c) 2025-2026 carnworkstudios
+Copyright (c) 2025-2026 Canworks, LLC
 
 LICENSING
 =========
@@ -52,9 +52,20 @@ BUNDLED MODEL WEIGHTS
   https://huggingface.co/bukuroo/PPOCRv5-ONNX (PaddlePaddle publishes
   Paddle-format weights, not ONNX). Redistributed under the Apache License 2.0.
 
-  YOLOv8n-DocLayNet (public/models/yolov8n-doclaynet.onnx) is derived from
-  Ultralytics YOLOv8 trained on DocLayNet. Ultralytics YOLOv8 is
-  AGPL-3.0-licensed; DocLayNet is CC-BY-4.0 (IBM Research).
+  DocForensics-Layout-S (public/models/docforensics-layout-s.onnx) is
+  published by Ginexys, a d/b/a of Canworks, LLC, at
+  https://huggingface.co/ginexys/docforensics-layout and is dual-licensed:
+  AGPL-3.0-or-later, or a commercial licence that removes the copyleft
+  obligation. See that repository's LICENSE.md.
+
+  The weights carry no third-party copyleft: the backbone is initialised
+  from timm lcnet_100 (Apache-2.0) and the corpus is CDLA-Permissive-1.0
+  plus public-domain material.
+
+  The YOLOv8n-DocLayNet detector previously shipped here has been removed.
+  It derived from Ultralytics YOLOv8 (AGPL-3.0), which is the encumbrance
+  DocForensics-Layout-S was trained to replace, and it is no longer distributed
+  with this tool.
 
   Tesseract language data, when used, is distributed under the Apache
   License 2.0 by the tesseract-ocr project.

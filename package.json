@@ -1,5 +1,5 @@
 {
-    "name": "pdf-to-code",
+    "name": "pdf-processor",
     "version": "0.1.0",
     "description": "Editable multi-page PDF-to-HTML editor with export and table extraction utilities.",
     "license": "AGPL-3.0-or-later",
@@ -10,7 +10,7 @@
         "prebuild": "node ../../scripts/gen-katex-export-css.mjs",
         "build": "vite build",
         "preview": "vite preview",
-        "test": "node test/authGate.test.mjs && node test/scannedDocument.test.mjs && node test/workerBrokerStreaming.test.mjs && node test/tableCellContainers.test.mjs"
+        "test": "node test/authGate.test.mjs && node test/scannedDocument.test.mjs && node test/workerBrokerStreaming.test.mjs && node test/tableCellContainers.test.mjs && node test/forensics.test.mjs"
     },
     "dependencies": {
         "@canwork/boxwood": "^1.1.0",

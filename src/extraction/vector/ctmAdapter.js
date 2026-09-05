@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // ctmAdapter.js
 // Converts a PDF.js operator list into SubpathRecords for the pathReconciler.
 //
@@ -273,7 +273,14 @@ export function extractSubpaths(opList, viewport, OPS) {
             case OPS.closeFillStroke:
             case OPS.closeEOFillStroke:
                 for (const path of pendingPaintSubpaths) path.filled = true;
-                if (pendingRect) { filledRects.push({ ...pendingRect }); }
+                // `operatorIndex` is the rect's Z-ORDER. PDF content streams paint
+                // in operator order, so a fill whose index is greater than a text
+                // paint's was painted OVER that text. Without it a consumer cannot
+                // tell a redaction box from a table-cell shade — they are the same
+                // rectangle, distinguished only by when they were drawn.
+                // (forensics/overlays.js is the consumer; every other field here
+                // was already present and nothing reads a positional index.)
+                if (pendingRect) { filledRects.push({ ...pendingRect, operatorIndex: i }); }
                 displayList.push({ kind: 'PATH_PAINT', operatorIndex: i, paintOperator: fn,
                     subpathId: currentSubpath.id, ctm: ctm.slice(), fillColor: fillColor.slice(),
                     strokeColor: strokeColor.slice(), strokeWidth });

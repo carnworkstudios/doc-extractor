@@ -34,10 +34,10 @@ import { synthesizeFromWords, makeSyntheticViewport } from '../extraction/vector
 import { ensureOcr, recognizePage, getOcrReport } from './ocr/index.js';
 import { createLineage, hashCanonical } from './ocr/provenance.js';
 import { verifyScannedPage } from '../extraction/ocrVerifier.js';
-import { htmlToGxDoc, htmlToGxDocAddressable } from '../ir/htmlToGxDoc.js';
+import { requestedModelId } from '../workers/layoutModels.js';
+import { mimeForFile, parseFile } from '../import/parseFile.js';
+import { htmlToGxDoc } from '../ir/htmlToGxDoc.js';
 import { gxDocToHtml } from '../ir/gxDocToHtml.js';
-import { docxToGxDoc } from '../ir/docxToGxDoc.js';
-import { jsonToGxDoc } from '../ir/jsonToGxDoc.js';
 import { ensureBlockIds } from '../ir/gxDoc.js';
 import { gxDocToRegions } from '../ir/gxDocToRegions.js';
 import * as annotationEngine from '../annotation/engine.js';
@@ -662,7 +662,14 @@ function ensureLayoutWorker() {
             }
         });
 
-        _layoutWorker.postMessage({ type: 'init' });
+        // URL/localStorage selection is shared with the reusable OCR layout
+        // driver. Keeping this path on an unconditional init made the public
+        // `?layout=docforensics-layout-s` flag look wired while the real upload flow
+        // still always loaded YOLO.
+        _layoutWorker.postMessage({
+            type: 'init',
+            data: { modelId: requestedModelId(location.search, localStorage) },
+        });
 
         const STALL_MS = 90_000;
         let stallTimer = null;
@@ -878,7 +885,7 @@ async function _cropRegionsFromCanvas(pageCanvas, regions, viewport, renderScale
  * @param {function} [onPage] receives the accumulated document after each page
  * @returns {Promise<{html,text,tableCount,pages,source}>}
  */
-async function extractViaScannedGeometry(bytes, onProgress, docId = null, onPage = null) {
+export async function extractViaScannedGeometry(bytes, onProgress, docId = null, onPage = null) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
     const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
@@ -1249,17 +1256,9 @@ function extractViaGeometryWorker(bytes, onProgress, docId = null) {
 }
 
 export async function loadFileToSlot(file, slot = 1) {
-    const route = _routeFile(file.name);
-    let process;
-    if (route === 'docx') {
-        process = handleDocxFile(file, slot);
-    } else if (route === 'doc') {
-        process = handleDocumentFile(file, slot);
-    } else if (route === 'json') {
-        process = handleJsonFile(file, slot);
-    } else {
-        process = handleFile(file, slot);
-    }
+    const process = parseFile(file).then(parsed => parsed.kind === 'pdf'
+        ? handleFile(parsed.file, slot)
+        : mountParsedFile(parsed, slot));
     if (slot === 1) {
         _slot1Load = process.catch(() => {});
     }
@@ -1354,11 +1353,7 @@ export function initFileInputs() {
             if (e.data?.type === 'ginexys:pdf-bytes') {
                 const { buffer, encoding, fileName, mode } = e.data.payload;
                 const name = fileName ?? 'document.pdf';
-                const route = _routeFile(name);
-                const mimeType = route === 'docx'
-                    ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                    : route === 'json' ? 'application/json'
-                    : route === 'doc' ? 'text/html' : 'application/pdf';
+                const mimeType = mimeForFile(name);
                 // 0.1.7+ sends base64; older hosts sent a plain byte array.
                 let bytes;
                 if (encoding === 'base64' || typeof buffer === 'string') {
@@ -1370,10 +1365,9 @@ export function initFileInputs() {
                 }
                 const blob = new Blob([bytes], { type: mimeType });
                 const file = new File([blob], name, { type: mimeType });
-                const process = route === 'docx' ? handleDocxFile(file, 1)
-                    : route === 'json' ? handleJsonFile(file, 1)
-                    : route === 'doc' ? handleDocumentFile(file)
-                    : handleFile(file, 1);
+                const process = parseFile(file).then(parsed => parsed.kind === 'pdf'
+                    ? handleFile(parsed.file, 1)
+                    : mountParsedFile(parsed, 1));
                 _slot1Load = process.catch(() => {});
                 process.then(() => { if (mode) switchView(mode); });
             }
@@ -1381,99 +1375,23 @@ export function initFileInputs() {
     }
 }
 
-/** File extension → import pipeline: 'docx' | 'doc' (HTML/MD) | 'json' | 'pdf'. */
-function _routeFile(name) {
-    if (/\.docx$/i.test(name)) return 'docx';
-    if (/\.json$/i.test(name)) return 'json';
-    if (/\.(html?|md)$/i.test(name)) return 'doc';
-    return 'pdf';
-}
-
-async function handleDocumentFile(file, slot = 1) {
-    const text = await file.text();
-    let html = text;
-
-    if (/\.md$/i.test(file.name)) {
-        html = markdownToHtml(text);
-    }
-
-    // For external HTML files, preserve <style> blocks so the document renders
-    // with its own styles. DOMPurify strips <style> by default.
-    // <link rel="stylesheet"> pointing to external URLs is intentionally not
-    // allowed -- it would load arbitrary third-party CSS into the tool page.
-    // Scripts remain blocked regardless.
-    const clean = typeof DOMPurify !== 'undefined'
-        ? DOMPurify.sanitize(html, {
-            ADD_TAGS: ['style'],
-            ALLOW_DATA_ATTR: true,
-            ADD_ATTR: ['style'],
-            FORCE_BODY: false,
-          })
-        : html;
-
+async function mountParsedFile(parsed, slot = 1) {
     const pdfState = slot === 2 ? state.pdf2 : state.pdf1;
     const label = slot === 2 ? 'file2' : 'file1';
-
-    // Addressable, not plain: the walk stamps data-region-id onto the elements
-    // that produced blocks and wraps generic markup in the page scope the rest
-    // of the pipeline addresses through. The document still renders from its
-    // OWN markup, so its styles and structure survive; it is simply reachable
-    // now. Without this an imported file's artifacts all resolved to null.
-    const source = /\.md$/i.test(file.name) ? 'markdown' : 'html';
-    const { gxDoc, html: addressable } = htmlToGxDocAddressable(clean, {
-        source,
-        title: file.name,
-    });
-
-    pdfState.extractedHTML = addressable;
-    pdfState.extractedText = clean.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    pdfState.file = file;
-    pdfState.gxDoc = gxDoc;
-    // An imported HTML/Markdown document was never run through the PDF
-    // pipeline — no page model, no scanned classification, nothing measured.
-    pdfState.extraction = {
-        source: 'document-import',
-        pageCount: null,
-        tableCount: null,
-        scannedPageCount: null,
-        isScanned: null,
-    };
-    $(`#${label}-input`).closest('.file-btn').addClass('loaded');
-
-    if (slot === 2) {
-        _onSlotLoaded(2);
-        showToast(`${file.name} loaded for compare`, 'success');
-        return;
-    }
-
-    applyHtmlEverywhere(addressable, null);
-    publishImportedRegions(gxDoc, `${source}-import`);
-    switchView('html');
-    _onSlotLoaded(1);
-    showToast(`${file.name} loaded`, 'success');
-}
-
-async function handleDocxFile(file, slot = 1) {
-    const buf = await file.arrayBuffer();
-    const gxDoc = await docxToGxDoc(buf, { source: 'docx', title: file.name });
-    // Ids before render: gxDocToHtml writes block.id out as data-region-id, so
-    // the markup and the regions address each other by the same string.
-    ensureBlockIds(gxDoc);
-    const html = gxDocToHtml(gxDoc);
-    const pdfState = slot === 2 ? state.pdf2 : state.pdf1;
-    const label = slot === 2 ? 'file2' : 'file1';
+    const { file, gxDoc, html, text, source } = parsed;
 
     pdfState.gxDoc = gxDoc;
     pdfState.extractedHTML = html;
-    pdfState.extractedText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    pdfState.extractedText = text;
     pdfState.file = file;
     pdfState.extraction = {
-        source: 'docx',
-        pageCount: gxDoc.pages.length,
+        source: source === 'docx' || source === 'json' ? source : 'document-import',
+        pageCount: gxDoc?.pages?.length ?? null,
         tableCount: null,
         scannedPageCount: null,
-        isScanned: false,
+        isScanned: source === 'docx' || source === 'json' ? false : null,
     };
+    if (slot === 1 && source === 'json') annotationEngine.loadFromGxDoc(gxDoc);
     $(`#${label}-input`).closest('.file-btn').addClass('loaded');
 
     if (slot === 2) {
@@ -1483,118 +1401,10 @@ async function handleDocxFile(file, slot = 1) {
     }
 
     applyHtmlEverywhere(html, null);
-    publishImportedRegions(gxDoc, 'docx-import');
+    publishImportedRegions(gxDoc, `${source}-import`);
     switchView('html');
     _onSlotLoaded(1);
     showToast(`${file.name} loaded`, 'success');
-}
-
-async function handleJsonFile(file, slot = 1) {
-    try {
-        const text = await file.text();
-        const gxDoc = jsonToGxDoc(text, { source: 'json', title: file.name });
-        ensureBlockIds(gxDoc);
-        const html = gxDocToHtml(gxDoc);
-        const pdfState = slot === 2 ? state.pdf2 : state.pdf1;
-        const label = slot === 2 ? 'file2' : 'file1';
-
-        pdfState.gxDoc = gxDoc;
-        pdfState.extractedHTML = html;
-        pdfState.extractedText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-        pdfState.file = file;
-        pdfState.extraction = {
-            source: 'json',
-            pageCount: gxDoc.pages.length,
-            tableCount: null,
-            scannedPageCount: null,
-            isScanned: false,
-        };
-        if (slot === 1) annotationEngine.loadFromGxDoc(gxDoc);
-            $(`#${label}-input`).closest('.file-btn').addClass('loaded');
-
-        if (slot === 2) {
-            _onSlotLoaded(2);
-            showToast(`${file.name} loaded for compare`, 'success');
-            return;
-        }
-
-        applyHtmlEverywhere(html, null);
-        publishImportedRegions(gxDoc, 'json-import');
-        switchView('html');
-        _onSlotLoaded(1);
-        showToast(`${file.name} loaded`, 'success');
-    } catch (err) {
-        showToast(`Could not import ${file.name}: ${err.message}`, 'error');
-    }
-}
-
-/**
- * GitHub-flavoured pipe tables → HTML, lifted out before any other rule runs.
- *
- * A markdown table used to fall through every rule here and land as a run of
- * paragraphs, one per row. The document looked roughly right and the TABLE
- * artifact was gone: nothing to tag, nothing to send to the table tool, which
- * is the single most useful thing an imported document has. The delimiter row
- * is also indistinguishable from a thematic break once split, so tables have
- * to be claimed before `---` means anything else.
- *
- * Each table is swapped for a placeholder so the inline rules below cannot
- * reach inside it and mangle the markup.
- */
-function _extractMdTables(md, out) {
-    const ROW = /^\s*\|(.+)\|\s*$/;
-    const DELIM = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
-    const cells = (line) => line.replace(/^\s*\|/, '').replace(/\|\s*$/, '')
-        .split('|').map(c => c.trim());
-
-    const lines = md.split('\n');
-    const kept = [];
-    for (let i = 0; i < lines.length; i++) {
-        const isTable = ROW.test(lines[i]) && i + 1 < lines.length && DELIM.test(lines[i + 1]);
-        if (!isTable) { kept.push(lines[i]); continue; }
-
-        const headers = cells(lines[i]);
-        const rows = [];
-        let j = i + 2;
-        for (; j < lines.length && ROW.test(lines[j]); j++) rows.push(cells(lines[j]));
-
-        const head = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
-        const body = rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('');
-        out.push(`<div class="pdf-table-wrap pdf-table--lattice">` +
-                 `<table class="tablecoil"><tbody>${head}${body}</tbody></table></div>`);
-        kept.push(`@@GXTABLE${out.length - 1}@@`);
-        i = j - 1;
-    }
-    return kept.join('\n');
-}
-
-export function markdownToHtml(md) {
-    const tables = [];
-    const html = _extractMdTables(md, tables)
-        // A thematic break is a real block: it becomes a DIVIDER artifact.
-        // Claimed after tables so a delimiter row cannot be mistaken for one.
-        .replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, '<hr>')
-        .replace(/^#{6}\s+(.+)$/gm, '<h6>$1</h6>')
-        .replace(/^#{5}\s+(.+)$/gm, '<h5>$1</h5>')
-        .replace(/^#{4}\s+(.+)$/gm, '<h4>$1</h4>')
-        .replace(/^###\s+(.+)$/gm, '<h3>$1</h3>')
-        .replace(/^##\s+(.+)$/gm, '<h2>$1</h2>')
-        .replace(/^#\s+(.+)$/gm, '<h1>$1</h1>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        .replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>')
-        .replace(/(<li>.*<\/li>\n?)+/g, s => `<ul>${s}</ul>`)
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-        .replace(/\n{2,}/g, '</p><p>')
-        .replace(/^(?!<[h|u|l|p])/gm, '')
-        .replace(/^(.+)$/gm, (line) => {
-            if (/^<(h[1-6]|ul|li|p|hr|div|table)/.test(line)) return line;
-            if (/^@@GXTABLE\d+@@$/.test(line)) return line;
-            return `<p class="pdf-region type-paragraph">${line}</p>`;
-        });
-
-    return html.replace(/@@GXTABLE(\d+)@@/g, (_, i) => tables[Number(i)] || '');
 }
 
 async function handleFile(file, pdfIndex) {

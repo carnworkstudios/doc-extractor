@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // ===================================================================================
 // check-math — display-math reconstruction must produce renderable LaTeX
 // ===================================================================================

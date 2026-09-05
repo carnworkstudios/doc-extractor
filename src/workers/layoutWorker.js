@@ -20,57 +20,96 @@
 // asyncify build. Neither is ever loaded: wasmPaths is pinned below and the
 // session runs executionProviders:['wasm'].
 import * as ort from 'onnxruntime-web/wasm';
+// The model registry. Which model this worker loads, what its classes are, how
+// its input is normalised and whether it carries a forensic head are all read
+// from a manifest rather than inferred from the session — see layoutModels.js
+// for why sniffing output shapes is the wrong instrument here.
+import { MODELS, DEFAULT_MODEL_ID, manifestFor, assertSessionMatches } from './layoutModels.js';
 // Base-aware asset paths. In production the whole dist/ is copied to
 // dist/tools/pdf-processor/ (build.sh), so /models and /ort-wasm live UNDER the
 // Vite base ('/tools/pdf-processor/'), not at the site root. import.meta.env
 // .BASE_URL resolves to that base in the build and '/' in dev.
 const BASE = (import.meta.env && import.meta.env.BASE_URL) || '/';
-const MODEL_URL = `${BASE}models/yolov8n-doclaynet.onnx`;
 const ORT_WASM_PATH = `${BASE}ort-wasm/`;
 const CACHE_NAME = 'darla-models-v1';
-const MODEL_SIZE = 640;
-const CONF_THRESHOLD = 0.25;
 const IOU_THRESHOLD = 0.45;
 
-// DocLayNet 11-class labels, in the model's OWN class-index order.
+// ── Active model ───────────────────────────────────────────────────────────
+// Set by the `init` message. DocForensics is the production default; YOLO is
+// retained in the registry only for explicit A/B benchmark requests.
+let manifest = manifestFor(DEFAULT_MODEL_ID);
+let MODEL_SIZE = manifest.inputSize;
+let CONF_THRESHOLD = manifest.defaultConfidence;
+let CLASS_LABELS = manifest.classes;
+
+// ImageNet normalisation, for models whose backbone was pretrained on it.
+// Feeding [0,1] to such a backbone shifts every filter's input by a full
+// standard deviation from what it was trained on, which does not crash and does
+// not look wrong — it just quietly costs several points of mAP.
+const IMAGENET_MEAN = [0.485, 0.456, 0.406];
+const IMAGENET_STD = [0.229, 0.224, 0.225];
+
+// The class list is NOT written here any more. It lives in the model manifest
+// (layoutModels.js) and is read from it at init.
 //
-// Read straight from the ONNX metadata rather than assumed:
+// The reason is the bug this file used to carry: the array that stood here was
+// a different permutation of DocLayNet's classes and got 10 of 11 names wrong.
+// It was not obviously broken because the GEOMETRY was always right — only the
+// names were shuffled, so every paragraph came back as `page-footer` (real
+// class 9, Text) and every table as `page-header` (real class 8, Table). That
+// is why `TABLE_LABELS` in rasterSynth.js never fired on a scanned page.
 //
-//   {0:'Caption', 1:'Footnote', 2:'Formula', 3:'List-item', 4:'Page-footer',
-//    5:'Page-header', 6:'Picture', 7:'Section-header', 8:'Table', 9:'Text',
-//    10:'Title'}
+// A hardcoded array cannot be checked against anything. A manifest can, and
+// `assertSessionMatches()` does check it: a session whose detection output has
+// the wrong channel count for the declared class list makes the worker refuse
+// to run rather than relabel every region on the page.
 //
-// The previous array was a different permutation and got 10 of 11 classes
-// wrong. It was not obviously broken because the GEOMETRY was always right —
-// only the names were shuffled, so every paragraph came back as `page-footer`
-// (real class 9, Text) and every table as `page-header` (real class 8, Table).
-// That is why `TABLE_LABELS` in rasterSynth.js never fired on a scanned page.
-//
-// Names are kept in this repo's existing vocabulary ('section-heading', not
-// the model's 'Section-header') because rasterSynth.js keys off these strings.
-const CLASS_LABELS = [
-    'caption', 'footnote', 'formula', 'list-item', 'page-footer',
-    'page-header', 'picture', 'section-heading', 'table', 'text', 'title'
-];
+// Names stay in this repo's existing vocabulary rather than the upstream
+// model's, because rasterSynth.js keys off these strings.
 
 let session = null;
+
 
 self.onmessage = async (e) => {
     const { type, data, requestId } = e.data;
 
     try {
         switch (type) {
-            case 'init':
-                self.postMessage({ type: 'progress', status: 'Loading layout model…' });
-                await initModel();
-                self.postMessage({ type: 'ready' });
+            case 'init': {
+                // The requested id, which is NOT necessarily the one that ends
+                // up serving. `ready` reports what actually loaded, because a
+                // silent fallback to the incumbent would make an A/B comparison
+                // compare the incumbent with itself — the same failure
+                // ocr/index.js's engine report exists to prevent.
+                const requested = (data && data.modelId) || DEFAULT_MODEL_ID;
+                self.postMessage({ type: 'progress', status: `Loading layout model ${requested}…` });
+                const loaded = await initModel(requested);
+                self.postMessage({
+                    type: 'ready',
+                    model: loaded.id,
+                    requested,
+                    fellBack: loaded.id !== requested,
+                    reason: loaded.reason || null,
+                    classes: loaded.classes,
+                    forensics: !!loaded.forensics,
+                    confidence: CONF_THRESHOLD,
+                });
                 break;
+            }
 
-            case 'detect':
+            case 'detect': {
                 if (!session) throw new Error('Model not initialized. Send "init" first.');
-                const regions = await detect(data.imageBitmap, data.letterbox === true);
-                self.postMessage({ type: 'result', regions, requestId });
+                const out = await detect(
+                    data.imageBitmap, data.letterbox === true, data.evidence);
+                // `forensics` is undefined for a model with no Head B, and the
+                // caller must treat undefined as "this model cannot tell you"
+                // rather than as "the page is clean".
+                self.postMessage({
+                    type: 'result', regions: out.regions, forensics: out.forensics,
+                    model: manifest.id, requestId,
+                });
                 break;
+            }
 
             case 'dispose':
                 if (session) {
@@ -90,8 +129,7 @@ self.onmessage = async (e) => {
 
 // ── MODEL LOADING ──────────────────────────────────────────────────────────
 
-async function initModel() {
-    // Static import used instead of dynamic to avoid registerBackend undefined error
+async function initModel(modelId) {
 
     // Explicit file mapping (NOT a directory) so ORT loads the plain
     // simd-threaded WASM build. If we only set a directory, ORT 1.19 defaults
@@ -111,14 +149,42 @@ async function initModel() {
     // under Cloudflare Pages' 25 MiB per-file limit.
     const providers = ['wasm'];
 
-    const modelBuffer = await loadModelFromCacheOrNetwork();
+    // Load exactly the requested model. In particular, DocForensics must never
+    // fall back to YOLO: this run is intended to expose its real strengths and
+    // failures throughout the main extraction pipeline.
+    const order = [modelId];
+    let lastErr = null;
+    for (const id of order) {
+        const m = manifestFor(id);
+        try {
+            const buf = await loadModelFromCacheOrNetwork(`${BASE}${m.url}`);
+            const sess = await ort.InferenceSession.create(buf, { executionProviders: providers });
 
-    session = await ort.InferenceSession.create(modelBuffer, {
-        executionProviders: providers,
-    });
+            // Verify the session against the manifest BEFORE adopting it. A
+            // model whose channel count disagrees with its declared class list
+            // is a model whose labels are unknown, and running it produces
+            // correct boxes with wrong names — the failure mode that is
+            // hardest to notice and most expensive to have shipped.
+            const probe = sess.outputMetadata || null;
+            const detDims = probe && probe[0] && probe[0].dimensions;
+            const detChannels = detDims && detDims.length === 3 ? detDims[1] : (4 + m.classes.length);
+            assertSessionMatches(m, detChannels, sess.outputNames.length);
+
+            session = sess;
+            manifest = m;
+            MODEL_SIZE = m.inputSize;
+            CONF_THRESHOLD = m.defaultConfidence;
+            CLASS_LABELS = m.classes;
+            return { id, classes: [...m.classes], forensics: !!m.forensics,
+                     reason: lastErr ? String(lastErr.message || lastErr) : null };
+        } catch (err) {
+            lastErr = err;
+        }
+    }
+    throw new Error(`no layout model could be loaded: ${lastErr && lastErr.message}`);
 }
 
-async function loadModelFromCacheOrNetwork() {
+async function loadModelFromCacheOrNetwork(MODEL_URL) {
     // Try Cache API first
     try {
         const cache = await caches.open(CACHE_NAME);
@@ -147,7 +213,7 @@ async function loadModelFromCacheOrNetwork() {
 
 // ── INFERENCE ──────────────────────────────────────────────────────────────
 
-async function detect(imageBitmap, letterbox = false) {
+async function detect(imageBitmap, letterbox = false, evidence = null) {
     // Resize to 640x640 and extract pixel data.
     //
     // Two modes, because the original squashes:
@@ -193,18 +259,47 @@ async function detect(imageBitmap, letterbox = false) {
     const imageData = ctx.getImageData(0, 0, MODEL_SIZE, MODEL_SIZE);
     const { data } = imageData;
 
-    // Convert RGBA → NCHW float32 normalized [0,1]
+    // Convert RGBA → NCHW float32.
+    //
+    // Which normalisation is a per-model fact, declared in the manifest. The
+    // incumbent wants plain [0,1]; a model whose backbone was ImageNet-
+    // pretrained wants the ImageNet moments. Applying the wrong one costs
+    // several points of mAP and produces no error at all, so it is the kind of
+    // thing that must be read rather than assumed.
     const numPixels = MODEL_SIZE * MODEL_SIZE;
     const float32 = new Float32Array(3 * numPixels);
+    const imagenet = manifest.normalisation === 'imagenet';
     for (let i = 0; i < numPixels; i++) {
         const ri = i * 4;
-        float32[i]                  = data[ri]     / 255.0; // R
-        float32[i + numPixels]      = data[ri + 1] / 255.0; // G
-        float32[i + 2 * numPixels]  = data[ri + 2] / 255.0; // B
+        let r = data[ri] / 255.0, g = data[ri + 1] / 255.0, b = data[ri + 2] / 255.0;
+        if (imagenet) {
+            r = (r - IMAGENET_MEAN[0]) / IMAGENET_STD[0];
+            g = (g - IMAGENET_MEAN[1]) / IMAGENET_STD[1];
+            b = (b - IMAGENET_MEAN[2]) / IMAGENET_STD[2];
+        }
+        float32[i]                 = r;
+        float32[i + numPixels]     = g;
+        float32[i + 2 * numPixels] = b;
     }
 
     const inputTensor = new ort.Tensor('float32', float32, [1, 3, MODEL_SIZE, MODEL_SIZE]);
     const feeds = { [session.inputNames[0]]: inputTensor };
+    // Conditional DocForensics exports have a second deterministic evidence
+    // input: [is_form, is_geometry, is_clean, reserved]. The image-only YOLO
+    // model has no such input. Feed by DECLARED NAME rather than position so a
+    // future export cannot silently swap the two inputs.
+    for (const name of session.inputNames.slice(1)) {
+        if (name !== 'evidence') {
+            throw new Error(`unsupported layout-model input "${name}"`);
+        }
+        const values = Array.isArray(evidence) || ArrayBuffer.isView(evidence)
+            ? Array.from(evidence, Number)
+            : [0, 0, 0, 0];
+        if (values.length !== 4 || values.some((v) => !Number.isFinite(v))) {
+            throw new Error('layout evidence must be four finite numbers');
+        }
+        feeds[name] = new ort.Tensor('float32', Float32Array.from(values), [1, 4]);
+    }
     const results = await session.run(feeds);
 
     // YOLOv8 output shape: [1, numClasses+4, numDetections]
@@ -216,10 +311,29 @@ async function detect(imageBitmap, letterbox = false) {
     // Apply NMS
     const nmsDetections = nms(rawDetections, IOU_THRESHOLD);
 
+    // Head B, when the manifest says there is one. Read by INDEX into
+    // outputNames because ONNX output names are assigned at export time and are
+    // not stable across re-exports; the manifest's `signalOrder` is what makes
+    // the CONTENTS interpretable, and forensics/signals.js checks it.
+    let forensics;
+    if (manifest.forensics && session.outputNames.length >= 3) {
+        const sigT = results[session.outputNames[1]];
+        const mapT = results[session.outputNames[2]];
+        if (sigT && mapT) {
+            forensics = {
+                signalOrder: manifest.forensics.signalOrder,
+                mapOrder: manifest.forensics.mapOrder,
+                mapGrid: manifest.forensics.mapGrid,
+                signals: Array.from(sigT.data),
+                maps: Array.from(mapT.data),
+            };
+        }
+    }
+
     // Map detections to labeled regions. Legacy mode returns 640x640 model
     // space; letterbox mode undoes the pad and scale so boxes come back in
     // SOURCE-image pixels.
-    return nmsDetections.map((det, i) => ({
+    const regions = nmsDetections.map((det, i) => ({
         id: `det_${i}`,
         label: CLASS_LABELS[det.classId] || 'unknown',
         confidence: det.confidence,
@@ -233,6 +347,7 @@ async function detect(imageBitmap, letterbox = false) {
             }
             : { x: det.x, y: det.y, w: det.w, h: det.h },
     }));
+    return { regions, forensics };
 }
 
 // ── YOLOV8 POST-PROCESSING ────────────────────────────────────────────────

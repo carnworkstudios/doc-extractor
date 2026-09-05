@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // pageAssembler.js
 // Takes classified page regions and produces final HTML in document order.
 //
@@ -546,7 +546,11 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
     // and compare against measured bboxes. The score arbitrates which HTML
     // renderer is used (tree vs flat zones).
     const pageBox = { x: 0, y: 0, w: pageWidth, h: viewport.height || pageWidth * 1.4 };
-    const treeResult = layoutTreeBuilder(regions, pageBox, pageScale, { docScale });
+    const treeResult = layoutTreeBuilder(regions, pageBox, pageScale, {
+        docScale,
+        textItems,
+        measureText: createPdfMeasure(textItems, fontRegistry),
+    });
     layoutTree = treeResult.tree;
     layoutMethod = treeResult.method;
 
@@ -674,7 +678,12 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
         const pStyle = placementMap.get(r.id);
         return {
             ...r,
-            html: r.html.replace(/^(<div class="pdf-region)/, `$1 style="${pStyle};"`)
+            // The class attribute is emitted with its closing quote, so the
+            // capture must include it — matching `<div class="pdf-region`
+            // without the quote produced
+            // `class="pdf-region style="justify-self: center;""`, which folds
+            // the style into the class value and drops the hint entirely.
+            html: r.html.replace(/^(<div class="pdf-region")/, `$1 style="${pStyle};"`)
         };
     });
 

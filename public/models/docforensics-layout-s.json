@@ -1,0 +1,62 @@
+{
+  "id": "docforensics-layout-s",
+  "line": "layout",
+  "scale": "s",
+  "run_id": "w160",
+  "sizeBytes": 8773229,
+  "sizeMB": 8.773,
+  "sha256": "c148e85957c772c55364288469f461b4a146c3e6a9b46bd3e7e8647c79896721",
+  "opset": 18,
+  "opsetRequested": 17,
+  "inputSize": 640,
+  "normalisation": "imagenet",
+  "classes": [
+    "text",
+    "heading",
+    "list",
+    "table",
+    "picture",
+    "caption",
+    "formula",
+    "header",
+    "footer",
+    "footnote",
+    "seal",
+    "form",
+    "field",
+    "checkbox",
+    "signature"
+  ],
+  "detectionLayout": "yolov8",
+  "outputs": [
+    "detections",
+    "forensic_signals",
+    "forensic_maps"
+  ],
+  "forensics": {
+    "signalOrder": [
+      "skew",
+      "blur",
+      "noise",
+      "bleed",
+      "warp",
+      "tears",
+      "handwriting",
+      "native"
+    ],
+    "mapOrder": [
+      "blur",
+      "bleed",
+      "tears",
+      "handwriting"
+    ],
+    "mapGrid": 20
+  },
+  "trainedEpoch": 8,
+  "bestValMAP": 0.49916167018408547,
+  "parityMaxAbsErr": {
+    "forensic_signals": 4.470348358154297e-07,
+    "forensic_maps": 8.940696716308594e-07
+  },
+  "tensorDigestSha256": "035e9f4f1f226a80e024c2979073966c19bd7e537dd63a10126a57ea1e611c54"
+}

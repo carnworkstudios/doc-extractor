@@ -10,12 +10,13 @@ import { BatchQueueManager } from '@batch/batchQueue.js';
 import { WorkerPool } from '@batch/workerPool.js';
 import { switchView } from './viewController.js';
 import { showToast } from './toast.js';
-import { mountExtractedDocument, markdownToHtml } from './fileUpload.js';
+import {
+    extractViaScannedGeometry, mountExtractedDocument,
+} from './fileUpload.js';
+import { parseFileBytes } from '../import/parseFile.js';
 import { htmlToGxDoc } from '../ir/htmlToGxDoc.js';
 import { enforceBudget, touchDoc } from '../utils/imageStore.js';
 import { gxDocToHtml } from '../ir/gxDocToHtml.js';
-import { docxToGxDoc } from '../ir/docxToGxDoc.js';
-import { jsonToGxDoc } from '../ir/jsonToGxDoc.js';
 import { mergeGxDocs } from '../ir/mergeGxDocs.js';
 import { renderGxDocAs, downloadRendered } from './exportController.js';
 import { buildAnnotatedPdf } from '../annotation/exportPdf.js';
@@ -29,43 +30,26 @@ export let workerPool = null;
 export let _focusedBatchId = null;
 
 /**
- * Non-PDF batch import.
- * Deliberately the SAME importers a single-file upload uses (handleDocumentFile
- * / handleDocxFile / handleJsonFile) rather than the ad-hoc decoding the batch
- * worker used to do, which produced `<pre>`-wrapped markdown and no IR at all.
+ * Non-PDF batch import through the exact parser used by single-file upload.
  */
-async function decodeDocument({ bytes, format, name }) {
-    if (format === 'docx') {
-        const gxDoc = await docxToGxDoc(bytes.buffer, { source: 'docx', title: name });
-        const html = gxDocToHtml(gxDoc);
-        return { html, text: _htmlToPlain(html), gxDoc };
-    }
-
-    const raw = new TextDecoder().decode(bytes);
-
-    if (format === 'json') {
-        const gxDoc = jsonToGxDoc(raw, { source: 'json', title: name });
-        const html = gxDocToHtml(gxDoc);
-        return { html, text: _htmlToPlain(html), gxDoc };
-    }
-
-    if (format === 'html' || format === 'md') {
-        const html = format === 'md' ? markdownToHtml(raw) : raw;
-        const clean = typeof DOMPurify !== 'undefined'
-            ? DOMPurify.sanitize(html, { ADD_TAGS: ['style'], ALLOW_DATA_ATTR: true, ADD_ATTR: ['style'], FORCE_BODY: false })
-            : html;
-        return {
-            html: clean,
-            text: _htmlToPlain(clean),
-            gxDoc: htmlToGxDoc(clean, { source: format === 'md' ? 'markdown' : 'html', title: name }),
-        };
-    }
-
-    throw new Error(`Unsupported batch format: .${format}`);
+// OCR/layout sessions are shared singletons. Serialize image jobs so a batch
+// cannot run four pages through the same mutable sessions simultaneously.
+let _imageExtractionTail = Promise.resolve();
+function serialImageExtraction(job) {
+    const run = _imageExtractionTail.then(job, job);
+    _imageExtractionTail = run.catch(() => {});
+    return run;
 }
 
-function _htmlToPlain(html) {
-    return String(html).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+async function decodeDocument({ bytes, format, name, file }) {
+    return parseFileBytes(bytes, {
+        name,
+        type: file?.type || '',
+        extractImage: pdfBytes => serialImageExtraction(() =>
+            extractViaScannedGeometry(
+                pdfBytes, null, `batch-image-${Date.now().toString(36)}`,
+            )),
+    });
 }
 
 export function initBatchViewController() {
@@ -133,11 +117,11 @@ function _renderBatchUI() {
                 <div id="nav-batch-dropzone" class="nav-batch-dropzone" style="border: 2px dashed #cbd5e1; border-radius: 8px; padding: 16px 12px; text-align: center; background: #f8fafc; cursor: pointer; transition: all 0.2s ease;">
                     <iconify-icon icon="material-symbols:cloud-upload-outline" style="font-size: 24px; color: #64748b; margin-bottom: 4px;"></iconify-icon>
                     <div style="font-size: 12px; font-weight: 600; color: #1e293b;">Drag & drop batch files</div>
-                    <div style="font-size: 11px; color: #64748b; margin-bottom: 8px;">PDF, DOCX, HTML, MD, JSON</div>
+                    <div style="font-size: 11px; color: #64748b; margin-bottom: 8px;">PDF, images, DOCX, HTML, MD, JSON</div>
                     <button class="nav-action-btn" id="btn-browse-batch" style="margin: 0 auto; font-size: 11px; padding: 3px 8px;">
                         <iconify-icon icon="material-symbols:folder-open"></iconify-icon> Browse Files
                     </button>
-                    <input id="nav-batch-file-input" type="file" multiple accept="application/pdf,text/html,.html,text/markdown,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/json,.json" style="display: none;" />
+                    <input id="nav-batch-file-input" type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp,image/bmp,.png,.jpg,.jpeg,.webp,.bmp,text/html,.html,text/markdown,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/json,.json" style="display: none;" />
                 </div>
 
                 <!-- BATCH TOOLBAR -->

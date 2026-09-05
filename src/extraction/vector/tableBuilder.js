@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // tableBuilder.js
 // Converts a LatticeReconstructor result + PDF.js text items → an HTML <table>
 // with correct colspan/rowspan by checking whether interior grid boundaries are present.
@@ -160,6 +160,15 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
 
     const vpTransform = viewport.transform;
 
+    // Median row height, for the scale-relative assignment tolerance below.
+    const rowHs = [];
+    for (let i = 0; i < rows.length - 1; i++) rowHs.push(rows[i + 1] - rows[i]);
+    rowHs.sort((a, b) => a - b);
+    const medRowH = rowHs.length
+        ? (rowHs.length % 2 ? rowHs[rowHs.length >> 1]
+            : (rowHs[(rowHs.length >> 1) - 1] + rowHs[rowHs.length >> 1]) / 2)
+        : 0;
+
     // ── 1. Assign text items to cells ───────────────────────────────────────
     // Each cell holds an array of full text items with _x for sorting
     const cells = Array.from({ length: numRows }, () =>
@@ -198,9 +207,22 @@ export function buildTable(lattice, textItems, viewport, assignedItems = new Set
             }
         }
 
-        // Assign to the closest cell if it's within a reasonable threshold (e.g., 15px)
-        // This acts as our "KD-tree" proximity lookup without the heavy data structure
-        if (bestR !== -1 && bestC !== -1 && minDist < proximityPx && !assignedItems.has(idx)) {
+        // Assign to the closest cell if it is within tolerance.
+        //
+        // The tolerance SCALES WITH THE ROW, and that is the whole point. A
+        // fixed 15 px is wrong at both ends of the range: on a dense 12 px-row
+        // table it reaches a full row past the grid and absorbs the prose
+        // underneath (measured: 4 of 4 paragraph items filed into cells), while
+        // on a 60 px-row table it is needlessly tight. It happens to be right
+        // only for mid-sized rows.
+        //
+        // Same lesson as the filled-subpath recovery bug, where a fixed epsilon
+        // let a table's own rules swallow every run inside it: a tolerance for a
+        // scale-varying structure has to be a fraction of that structure.
+        // `proximityPx` remains the floor so no caller gets a LOOSER threshold
+        // than it asked for.
+        const rowTol = Math.min(proximityPx, Math.max(2, medRowH * 0.25));
+        if (bestR !== -1 && bestC !== -1 && minDist < rowTol && !assignedItems.has(idx)) {
             assignedItems.add(idx);
             const scaleX = Math.hypot(vpTransform[0], vpTransform[1]) || 1;
             cells[bestR][bestC].push({ ...item, _x: sx, _e: sx + (item.width || 0) * scaleX });

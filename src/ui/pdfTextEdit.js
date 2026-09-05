@@ -33,6 +33,11 @@ const MODE_CLASS = 'pdf-text-edit-mode';
 
 let _on = false;
 const _listeners = new Set();
+// Windowed PDF rendering deliberately removes off-screen text-layer nodes.
+// DOM is therefore only a view of an edit, not its source of truth. Keep the
+// changed runs keyed by their stable PDF-space identity so scrolling, zooming,
+// and re-rendering never discard an edit.
+const _parkedEdits = new Map(); // page -> Map(stable span key -> export record)
 
 export function isTextEditMode() { return _on; }
 
@@ -43,6 +48,15 @@ export function onTextEditChange(fn) {
 
 function _containers() {
     return Array.from(document.querySelectorAll(CONTAINER_SEL));
+}
+
+function _pageWrappers(roots) {
+    const wrappers = new Set();
+    for (const root of roots) {
+        if (root?.matches?.('.page-wrapper')) wrappers.add(root);
+        root?.querySelectorAll?.('.page-wrapper').forEach(wrapper => wrappers.add(wrapper));
+    }
+    return wrappers;
 }
 
 // ── Editable scope ───────────────────────────────────────────────────────────
@@ -60,19 +74,17 @@ function _containers() {
  * Per-span editing scopes every one of those operations to the run the user
  * actually clicked, which is also the unit the export rewrites.
  */
-function _setEditableScope(on) {
-    _containers().forEach(container => {
+function _setEditableScope(on, roots = _containers()) {
+    _pageWrappers(roots).forEach(wrapper => {
         // The .page-wrapper is ALSO contenteditable (pdfCanvas.js), and it is
         // the outermost one — so IT is the editing host the browser uses for
         // Ctrl+A / Home / End, no matter what the layer or span say. Both have
         // to be switched off for per-span editing to actually scope.
-        container.querySelectorAll('.page-wrapper').forEach(wrapper => {
-            wrapper.contentEditable = on ? 'false' : 'true';
-        });
-        container.querySelectorAll('.editable-text-layer').forEach(layer => {
+        wrapper.contentEditable = on ? 'false' : 'true';
+        wrapper.querySelectorAll('.editable-text-layer').forEach(layer => {
             layer.contentEditable = on ? 'false' : 'true';
         });
-        container.querySelectorAll('.pdf-text-span').forEach(span => {
+        wrapper.querySelectorAll('.pdf-text-span').forEach(span => {
             if (on) {
                 span.contentEditable = 'true';
                 span.spellcheck = false;
@@ -85,67 +97,51 @@ function _setEditableScope(on) {
 
 // ── Canvas text masking ──────────────────────────────────────────────────────
 
-/**
- * The raster canvas and the text layer paint the same glyphs, so an edit shows
- * as doubled text. Hiding the whole canvas would also remove figures, rules and
- * background art, leaving a page that no longer looks like the document.
- *
- * So we mask only the TEXT: paint each text item's box out in white, using the
- * geometry pdf.js gave us for that item. Everything non-text survives.
- *
- * This is deliberately the same cover-then-draw the pdf-lib export performs, so
- * what the user sees in edit mode is what the exported file contains. Trying to
- * suppress text at render time instead is not reliable — pdf.js draws glyphs as
- * paths as often as it uses fillText, so there is no one call to intercept.
- */
+// Keep a pristine bitmap for each currently-rendered canvas. Toggling edit mode
+// then restores from that bitmap before applying a fresh mask, so masks never
+// accumulate across mode changes.
 const _pristine = new WeakMap(); // canvas -> ImageData before masking
 
-function _maskCanvasText(on) {
-    _containers().forEach(container => {
-        container.querySelectorAll('.page-wrapper').forEach(wrapper => {
-            const canvas = wrapper.querySelector('canvas');
-            if (!canvas || !canvas.width) return;
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            if (!ctx) return;
+function _maskCanvasText(on, roots = _containers()) {
+    _pageWrappers(roots).forEach(wrapper => {
+        const canvas = wrapper.querySelector('canvas');
+        if (!canvas || !canvas.width) return;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
 
-            if (!on) {
-                const snap = _pristine.get(canvas);
-                if (snap) ctx.putImageData(snap, 0, 0);
-                return;
+        if (!on) {
+            const snap = _pristine.get(canvas);
+            if (snap) ctx.putImageData(snap, 0, 0);
+            return;
+        }
+
+        if (!_pristine.has(canvas)) {
+            try {
+                _pristine.set(canvas, ctx.getImageData(0, 0, canvas.width, canvas.height));
+            } catch (_) {
+                return; // tainted canvas — leave this page unmasked
             }
+        } else {
+            ctx.putImageData(_pristine.get(canvas), 0, 0);
+        }
 
-            // Snapshot once, then always repaint FROM the snapshot so repeated
-            // toggles never stack masks on masks.
-            if (!_pristine.has(canvas)) {
-                try {
-                    _pristine.set(canvas, ctx.getImageData(0, 0, canvas.width, canvas.height));
-                } catch (_) {
-                    return; // tainted canvas — leave the page as-is
-                }
-            } else {
-                ctx.putImageData(_pristine.get(canvas), 0, 0);
-            }
-
-            ctx.save();
-            ctx.fillStyle = '#ffffff';
-            wrapper.querySelectorAll('.pdf-text-span').forEach(span => {
-                const x = parseFloat(span.dataset.x);
-                const y = parseFloat(span.dataset.y);
-                const w = parseFloat(span.dataset.w);
-                const fs = parseFloat(span.dataset.fs);
-                if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(fs)) return;
-                // dataset is display space (PDF points); the canvas is rendered
-                // at SCALE, so every value scales up.
-                const pad = fs * SCALE * 0.28;
-                ctx.fillRect(
-                    x * SCALE - pad,
-                    y * SCALE - pad,
-                    Math.max((Number.isFinite(w) ? w : 0) * SCALE, fs * SCALE * 0.5) + pad * 2,
-                    fs * SCALE + pad * 2,
-                );
-            });
-            ctx.restore();
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        wrapper.querySelectorAll('.pdf-text-span').forEach(span => {
+            const x = parseFloat(span.dataset.x);
+            const y = parseFloat(span.dataset.y);
+            const w = parseFloat(span.dataset.w);
+            const fs = parseFloat(span.dataset.fs);
+            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(fs)) return;
+            const pad = fs * SCALE * 0.28;
+            ctx.fillRect(
+                x * SCALE - pad,
+                y * SCALE - pad,
+                Math.max((Number.isFinite(w) ? w : 0) * SCALE, fs * SCALE * 0.5) + pad * 2,
+                fs * SCALE + pad * 2,
+            );
         });
+        ctx.restore();
     });
 }
 
@@ -180,8 +176,62 @@ export function toggleTextEditMode() { return setTextEditMode(!_on); }
  */
 export function refreshTextEditMode() {
     _containers().forEach(c => c.classList.toggle(MODE_CLASS, _on));
-    // Fresh canvases and spans, so scope/mask/fit all have to be re-applied.
+    // Fresh canvases and spans need their edit scope, mask, and fitted text restored.
     if (_on) { _setEditableScope(true); _maskCanvasText(true); _fitAll(); }
+}
+
+/**
+ * Called by the windowed renderer after a page has finished painting. A page
+ * that enters the viewport after edit mode was enabled needs its edit scope,
+ * mask, and restored edits, just like pages visible at the time of the toggle.
+ */
+export function refreshTextEditPage(wrapper) {
+    if (!_on || !wrapper) return;
+    _restorePageEdits(wrapper);
+    _setEditableScope(true, [wrapper]);
+    _maskCanvasText(true, [wrapper]);
+    _measureSlots(wrapper);
+    wrapper.querySelectorAll('.pdf-text-span').forEach(_fitSpan);
+}
+
+/** Store a page's diffs immediately before its text nodes are windowed out. */
+export function parkTextEditsForPage(wrapper) {
+    if (!wrapper) return;
+    const page = Number(wrapper.dataset.page) || 1;
+    const edits = new Map();
+    wrapper.querySelectorAll('.pdf-text-span').forEach(span => {
+        const orig = span.dataset.orig;
+        if (orig == null || span.textContent === orig) return;
+        edits.set(_spanKey(span), {
+            x: parseFloat(span.dataset.x) || 0,
+            y: parseFloat(span.dataset.y) || 0,
+            w: parseFloat(span.dataset.w) || 0,
+            fontSize: parseFloat(span.dataset.fitFs) || parseFloat(span.dataset.fs) || 0,
+            from: orig,
+            to: span.textContent ?? '',
+        });
+    });
+    if (edits.size) _parkedEdits.set(page, edits);
+    else _parkedEdits.delete(page);
+}
+
+/** A new PDF render is a different document, so its page identities reset. */
+export function clearParkedTextEdits() { _parkedEdits.clear(); }
+
+function _spanKey(span) {
+    return JSON.stringify([span.dataset.x || '', span.dataset.y || '', span.dataset.w || '',
+        span.dataset.fs || '', span.dataset.orig || '']);
+}
+
+function _restorePageEdits(wrapper) {
+    const edits = _parkedEdits.get(Number(wrapper.dataset.page) || 1);
+    if (!edits?.size) return;
+    wrapper.querySelectorAll('.pdf-text-span').forEach(span => {
+        const edit = edits.get(_spanKey(span));
+        if (!edit) return;
+        span.textContent = edit.to;
+        span.classList.toggle('pdf-text-span--edited', edit.to !== span.dataset.orig);
+    });
 }
 
 /**
@@ -192,9 +242,12 @@ export function refreshTextEditMode() {
  */
 export function collectTextEdits() {
     const edits = [];
+    const seen = new Set();
+    const mountedPages = new Set();
     _containers().forEach(container => {
         container.querySelectorAll('.page-wrapper').forEach(wrapper => {
             const page = parseInt(wrapper.dataset.page, 10) || 1;
+            mountedPages.add(page);
             wrapper.querySelectorAll('.pdf-text-span').forEach(span => {
                 const orig = span.dataset.orig;
                 if (orig == null) return;              // not a pdf.js-built span
@@ -215,9 +268,20 @@ export function collectTextEdits() {
                     from: orig,
                     to: now,
                 });
+                seen.add(`${page}:${_spanKey(span)}`);
             });
         });
     });
+    // Include changed runs on pages currently outside the renderer window.
+    // Their boxes are encoded in the key, which is sufficient to restore the
+    // export record without retaining their DOM nodes.
+    for (const [page, pageEdits] of _parkedEdits) {
+        if (mountedPages.has(page)) continue;
+        for (const [key, edit] of pageEdits) {
+            if (seen.has(`${page}:${key}`)) continue;
+            edits.push({ ...edit, page, h: edit.fontSize });
+        }
+    }
     return edits;
 }
 

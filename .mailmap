@@ -1,0 +1,16 @@
+# Canonical identity for this repository.
+#
+# Every line below is the same person. Four of the five are clerical: a
+# machine-local hostname address, an old personal address, and a GitHub
+# noreply alias. The fifth, the carrier.com address on the first six
+# commits (Jan-Mar 2026), was a wrong git login on a personal project.
+#
+# This file corrects how those identities DISPLAY. It does not rewrite
+# history and it does not change who owns the copyright in those commits.
+# See architecture/code-provenance-and-ip.md in the businesses repo.
+
+Bright Gyasi <brightgyasi32@gmail.com> Gyasi <Bright.Gyasi@carrier.com>
+Bright Gyasi <brightgyasi32@gmail.com> Bonzai Carn <bonzai-carn@Bonzais-MacBook-Pro.local>
+Bright Gyasi <brightgyasi32@gmail.com> Bonzai Carn <bonzai-carn@Mac.lan>
+Bright Gyasi <brightgyasi32@gmail.com> unknown <bonzai2carn@gmail.com>
+Bright Gyasi <brightgyasi32@gmail.com> Bonzai2Carn <32083735+Bonzai2Carn@users.noreply.github.com>

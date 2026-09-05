@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // headerFooterDetector.js
 // Reclassifies regions in the top/bottom margin as HEADER or FOOTER
 // based on font size, pattern matching, and background color bands.

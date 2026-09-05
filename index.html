@@ -199,7 +199,7 @@
       </div> -->
 
     <div class="header-center">
-      <label class="file-btn" id="file1-label" title="Load primary PDF">
+      <label class="file-btn" id="file1-label" title="Load a PDF or document image">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
           <polyline points="17 8 12 3 7 8" />
@@ -207,7 +207,7 @@
         </svg>
         <span id="file1-name">Load</span>
         <input id="file1-input" type="file"
-          accept="application/pdf,text/html,.html,text/markdown,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/json,.json" />
+          accept="application/pdf,image/png,image/jpeg,image/webp,image/bmp,.png,.jpg,.jpeg,.webp,.bmp,text/html,.html,text/markdown,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/json,.json" />
       </label>
       <label class="file-btn file-btn--secondary" id="file2-label"
         title="Load a second file to compare (PDF, HTML, Markdown)">
@@ -218,7 +218,7 @@
         </svg>
         <span id="file2-name">Compare</span>
         <input id="file2-input" type="file"
-          accept="application/pdf,text/html,.html,text/markdown,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/json,.json" />
+          accept="application/pdf,image/png,image/jpeg,image/webp,image/bmp,.png,.jpg,.jpeg,.webp,.bmp,text/html,.html,text/markdown,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/json,.json" />
       </label>
 
       <!-- AI Open Core Premium Features UI -->
@@ -1392,6 +1392,47 @@
   <script src="/assets/os/contracts.js"></script>
   <script src="/assets/os/mcp.js"></script>
   <script src="/assets/os/bridge.js"></script>
+  <!-- GxPointer bootstrap. Every tool wires its buttons with
+       GxPointer.onPress(...) and does not guard the call, so if
+       /assets/os/pointer.js 404s or arrives late (file:// open, a tool served
+       from its own directory, a webview whose asset root differs) the first
+       onPress throws inside a synchronous init and aborts every button wired
+       after it — the toolbar goes dead with no error naming the button.
+       This inline shim guarantees window.GxPointer exists with identical
+       onPress/onCanvasDrag semantics; pointer.js upgrades it in place. -->
+  <script>
+  (function () {
+      if (window.GxPointer) return;
+      function primary(e) { return e.button === 0 && e.isPrimary !== false; }
+      function onPress(el, fn) {
+          if (!el) return;
+          el.addEventListener('pointerdown', function (e) { if (primary(e)) fn(e); });
+          el.addEventListener('click', function (e) { if (e.detail === 0) fn(e); });
+      }
+      function onCanvasDrag(el, h) {
+          if (!el) return;
+          var active = false;
+          el.addEventListener('pointerdown', function (e) {
+              if (!primary(e)) return;
+              active = true;
+              try { el.setPointerCapture(e.pointerId); } catch (err) {}
+              if (h && h.onDown) h.onDown(e);
+          });
+          el.addEventListener('pointermove', function (e) {
+              if (active && e.isPrimary !== false && h && h.onMove) h.onMove(e);
+          });
+          function end(e) {
+              if (!active) return;
+              active = false;
+              try { el.releasePointerCapture(e.pointerId); } catch (err) {}
+              if (h && h.onUp) h.onUp(e);
+          }
+          el.addEventListener('pointerup', end);
+          el.addEventListener('pointercancel', end);
+      }
+      window.GxPointer = { onPress: onPress, onCanvasDrag: onCanvasDrag, __gxShim: true };
+  })();
+  </script>
   <script src="/assets/os/pointer.js"></script>
   <!-- "Open in Ginexys" on a published artifact page lands here with
          ?artifact=<id>[&region=<r>]. Loads the content from the public API —

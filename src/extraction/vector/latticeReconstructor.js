@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // latticeReconstructor.js
 // Takes raw PathSegment[] from ctmAdapter and reconstructs table cell grids.
 //

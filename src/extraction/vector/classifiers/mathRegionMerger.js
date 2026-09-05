@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // mathRegionMerger.js — rejoins a display equation that the line grouper split.
 //
 // THE FAILURE THIS FIXES ──────────────────────────────────────────────────────

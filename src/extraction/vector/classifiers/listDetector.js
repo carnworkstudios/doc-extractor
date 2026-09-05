@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // listDetector.js
 // List type classification for a single Y-band line.
 // Checks for bullet or numbered-list patterns at the start of the line string.

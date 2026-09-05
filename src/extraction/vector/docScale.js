@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // docScale.js — document-level tolerance calibration.
 //
 // PageScale measures the unit (S = modal body font per page) but the ratios

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // extractionScorer.js — checker v0: deterministic verification of a page extraction.
 //
 // Pure function, no DOM, no AI. Grades what the pipeline produced so that

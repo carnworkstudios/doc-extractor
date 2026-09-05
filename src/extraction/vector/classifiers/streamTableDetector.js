@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // streamTableDetector.js
 // Thin wrapper around detectStreamTables for the orchestrator.
 // Calls the existing borderless-table detector on unclaimed text items.

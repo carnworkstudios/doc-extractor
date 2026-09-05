@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (c) 2025-2026 carnworkstudios
+// Copyright (c) 2025-2026 Canworks, LLC
 // layoutTreeBuilder.js — recursive XY-cut over region boxes → Boxwood LNode tree.
 //
 // Transforms flat classified regions into a recursive layout tree where every
@@ -67,6 +67,9 @@ export function layoutTreeBuilder(regions, pageBox, pageScale, opts = {}) {
         maxDepth: opts.maxDepth ?? MAX_DEPTH,
         minCellBoxes: opts.minCellBoxes ?? MIN_CELL_BOXES,
         excludeBands: opts.excludeBands ?? _pageFrameExclusionBands(pageBox, pageScale),
+        // Regions reference their text by index into this array rather than
+        // carrying it, so leaves need it to measure (and to raise overflow).
+        textItems: opts.textItems || null,
         depth: 0,
     });
 
@@ -127,12 +130,12 @@ function _buildTree(boxes, frame, opts) {
 
     // If only one box remains, it's a leaf
     if (boxes.length <= opts.minCellBoxes) {
-        return _makeLeaf(boxes, frame);
+        return _makeLeaf(boxes, frame, opts);
     }
 
     const active = boxes.filter(b => !_isExcluded(b.box, opts.excludeBands));
     if (active.length <= opts.minCellBoxes) {
-        return _makeLeaf(boxes, frame);
+        return _makeLeaf(boxes, frame, opts);
     }
 
     // Try horizontal (row) cut first — rows are more common in document layout
@@ -197,7 +200,7 @@ function _buildTree(boxes, frame, opts) {
     }
 
     // No confident cut found — make a leaf with all remaining boxes
-    return _makeLeaf(boxes, frame);
+    return _makeLeaf(boxes, frame, opts);
 }
 
 function _findValleyCut(boxes, axis, minValley, frame) {
@@ -305,23 +308,116 @@ function _groupFrame(group) {
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
-function _makeLeaf(boxes, frame) {
-    // A leaf node carries no split — it renders as a block container
-    // with its region IDs in reading order.
-    const ids = boxes
-        .sort((a, b) => (a.region?.yCenter ?? 0) - (b.region?.yCenter ?? 0))
-        .map(b => b.id)
-        .filter(Boolean);
+function _makeLeaf(boxes, frame, opts) {
+    // A leaf holds regions whose positions the XY-cut could not separate any
+    // further — they are siblings on the page, at known absolute coordinates.
+    //
+    // Those coordinates used to be dropped here: every child was emitted as
+    // `{ style: {}, measure: null }`, which gives the solver nothing to place
+    // them with, so it stacked all of them at the parent's origin. Every leaf
+    // in a page then resolved to one identical box, and compareBoxes() scored
+    // that collapse rather than the layout — which is why fidelityScore sat
+    // near zero on documents whose tree was actually correct.
+    //
+    // A `zones` split carries each region's real box through instead. Zone
+    // boxes are absolute page coordinates (verified against the solver), the
+    // same space `region.bbox` is already in, so they pass straight through.
+    const ordered = boxes
+        .filter(b => b.id)
+        .sort((a, b) => (a.region?.yCenter ?? a.box?.y ?? 0) - (b.region?.yCenter ?? b.box?.y ?? 0));
+
+    const ids = ordered.map(b => b.id);
+
+    // No usable geometry — fall back to the plain container.
+    if (!ordered.every(b => b.box && Number.isFinite(b.box.x) && Number.isFinite(b.box.y))) {
+        return {
+            id: ids.length === 1 ? ids[0] : undefined,
+            style: {},
+            children: ids.map(id => ({ id, style: {}, measure: null })),
+        };
+    }
+
+    const zones = {};
+    for (const b of ordered) {
+        zones[b.id] = { x: b.box.x, y: b.box.y, w: b.box.w, h: b.box.h };
+    }
 
     return {
-        id: ids.length === 1 ? ids[0] : undefined,
+        // The container must NOT borrow its child's id. It is not zone-placed,
+        // so it resolves to the leaf frame rather than the region's box, and a
+        // duplicate id makes two different boxes answer to one region — whoever
+        // reads them first wins. Keeping it anonymous leaves exactly one box
+        // per region id.
         style: {},
-        children: ids.map(id => ({
-            id,
-            style: {},
-            measure: null,
-        })),
+        split: { zones },
+        children: ordered.map(b => {
+            const text = _regionText(b.region, opts && opts.textItems);
+            const fontSize = b.region?.fontSize || 12;
+            return {
+                id: b.id,
+                style: { w: b.box.w, h: b.box.h },
+                // The solver reads text ONLY through this hook — a plain `text`
+                // property is ignored. Supplying it is what lets a fixed-height
+                // region raise an OverflowSignal once an edit no longer fits,
+                // which is the difference between a reflow that warns and one
+                // that silently moves the page.
+                measure: text
+                    ? (avail) => _measureText(text, fontSize, avail.w, opts && opts.measureText)
+                    : null,
+            };
+        }),
     };
+}
+
+/**
+ * Wrap `text` at `maxW` and report the block metrics the solver expects.
+ *
+ * Uses the caller's font-aware measurer when supplied (opts.measureText), and
+ * otherwise falls back to an average-advance estimate so a tree built without
+ * one still lays out.
+ */
+function _measureText(text, fontSize, maxW, measureText) {
+    if (typeof measureText === 'function') {
+        return measureText(text, { fontSize }, maxW);
+    }
+    const avgCharW = fontSize * 0.5;
+    const perLine = Math.max(1, Math.floor(maxW / avgCharW));
+    const words = String(text).split(/\s+/).filter(Boolean);
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+        const next = cur ? cur + ' ' + w : w;
+        if (next.length > perLine && cur) { lines.push(cur); cur = w; }
+        else cur = next;
+    }
+    if (cur) lines.push(cur);
+    if (!lines.length) lines.push('');
+    return {
+        lines,
+        w: Math.min(maxW, Math.max(...lines.map(l => l.length * avgCharW))),
+        h: lines.length * fontSize * 1.2,
+        ascent: fontSize * 0.8,
+        descent: fontSize * 0.2,
+    };
+}
+
+/**
+ * Best-effort plain text for a region, for measurement only.
+ *
+ * Regions reference their text by index into the page's textItems array rather
+ * than carrying a copy, so that array must be threaded in (opts.textItems) or
+ * every region measures as empty and OverflowSignal can never fire.
+ */
+function _regionText(region, textItems) {
+    if (!region) return '';
+    if (typeof region.text === 'string' && region.text) return region.text;
+    if (Array.isArray(region.textItemIndices) && Array.isArray(textItems)) {
+        return region.textItemIndices.map(i => textItems[i]?.str || '').join('');
+    }
+    if (Array.isArray(region.lines)) {
+        return region.lines.map(l => (typeof l === 'string' ? l : l?.text || '')).join(' ');
+    }
+    return '';
 }
 
 /**
