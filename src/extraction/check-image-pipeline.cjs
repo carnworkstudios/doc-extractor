@@ -52,7 +52,6 @@ const SRC = path.join(__dirname, '..');
 // it has crops to pass.
 const CALLERS = [
     'workers/geometryWorker.js',
-    'ui/fileUpload.js',
 ];
 
 /** Split a call's argument list at top level, respecting nesting and strings. */
@@ -155,7 +154,7 @@ function splitArgs(src, openIdx) {
     }
     ok((worker.match(/\} = _splitCarriedCrops\(/g) || []).length === 2,
        'both re-extract handlers split carried crops from the ones needing a render');
-    ok(/const c = carryImages\?\.\[r\.id\];[\s\S]{0,120}c\?\.key/.test(worker),
+    ok(/const id = r\.mathFallbackCropId \|\| r\.id;[\s\S]{0,240}const c = carryImages\?\.\[id\];[\s\S]{0,120}c\?\.key/.test(worker),
        'a carried crop is identified by its store key — the pixels never travel');
 
     // ── 3b. The pixels go to the store, and the key is page-scoped ───────────

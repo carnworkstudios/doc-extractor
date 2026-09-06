@@ -110,6 +110,7 @@ body {
   align-items: center;
   gap: 12px;
   padding: 0 16px;
+  border-bottom: 1px solid var(--border);
   /* background: var(--header-bg); */
   flex-shrink: 0;
   z-index: 100;
@@ -195,7 +196,7 @@ body {
   margin-left: auto;
   padding: 3px;
   border-radius: 10px;
-  background: var(--tab-track);
+  /* background: var(--tab-track); */
   /* #616161 */
   box-shadow:
     inset 2px 2px 5px rgba(0, 0, 0, 0.12),
@@ -205,10 +206,10 @@ body {
 
 .tab-btn {
   padding: 5px 14px;
-  border-radius: 20px;
+  border-radius: 8px;
   border: 1px solid transparent;
-  background: transparent;
-  color: var(--tab-text);
+  background: lightgray;
+  /* color: var(--tab-text); */
   font-family: inherit;
   font-size: 12px;
   font-weight: 500;

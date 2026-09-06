@@ -95,7 +95,7 @@ const SRC = path.join(__dirname, '..');
     // ── 4. Feedback control ──────────────────────────────────────────────────
     // Two panes that echo each other walk the document. Whoever moves first owns
     // the gesture until it stops.
-    ok(/_driver/.test(code) && /_driver !== el/.test(code),
+    ok(/_driver/.test(code) && /_driver !== source/.test(code),
        'the pane being driven does not drive back');
     ok(/requestAnimationFrame/.test(code),
        'scroll handling is coalesced to a frame rather than run per event');

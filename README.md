@@ -1,4 +1,6 @@
-# PDF Processor
+# Document Workbench
+
+_Formerly PDF Processor. The repository path, package id (`ginexys.ginexys-pdf`) and URLs are unchanged, so existing installs and links keep working._
 
 **Browser-native PDF extraction pipeline for engineers, analysts, and technical writers.**  
 Convert complex PDF layouts (tables, multi-column flows, images, redlines) into clean, editable HTML and Markdown. Zero upload. Fully deterministic geometry with OCR.  
@@ -45,7 +47,7 @@ Part of the [Ginexys](https://ginexys.com) engineering pipeline.
 
 ---
 
-![PDF Processor demo: extract tables, compare two PDFs, edit HTML in the browser](./pdf-extractor-demo.gif)
+![Document Workbench demo: extract tables, compare two PDFs, edit HTML in the browser](./pdf-extractor-demo.gif)
 
 ## Try it now
 
@@ -55,13 +57,13 @@ Part of the [Ginexys](https://ginexys.com) engineering pipeline.
 
 You got a PDF: a quarterly report, a research paper, a contract, a datasheet. It has tables. It has multi-column layouts. It probably has redlines you need to track across versions. Most PDF tools either upload your file to a cloud service or strip layout completely and hand back a wall of text.
 
-PDF Processor stays in the browser and reasons about geometry directly. The original PDF never leaves your machine. The extracted HTML preserves the columns, tables, and figures as they were laid out, not as a flat text dump. And you can edit the extracted output as easily as the original.
+Document Workbench stays in the browser and reasons about geometry directly. The original PDF never leaves your machine. The extracted HTML preserves the columns, tables, and figures as they were laid out, not as a flat text dump. And you can edit the extracted output as easily as the original.
 
 ---
 
 ## Architecture: a deterministic-structural frontend
 
-PDF Processor occupies a specific niche in the design space of PDF tooling. The four architectural commitments below are load-bearing. Change any one and the rest of the system shifts. Full reasoning in **[Finding the niche: frontend-first PDF extraction design space](https://ginexys.com/blog/posts/frontend-pdf-extraction-design-space/)**.
+Document Workbench occupies a specific niche in the design space of PDF tooling. The four architectural commitments below are load-bearing. Change any one and the rest of the system shifts. Full reasoning in **[Finding the niche: frontend-first PDF extraction design space](https://ginexys.com/blog/posts/frontend-pdf-extraction-design-space/)**.
 
 - **No backend dependency.** Free-tier extraction runs entirely in the browser tab or VS Code webview. Standalone extraction never hits a network.
 - **No ML model weights.** No multi-gigabyte downloads, no cold-start latency. The geometry pipeline is deterministic, so the same input always produces the same output.
@@ -72,7 +74,7 @@ PDF Processor occupies a specific niche in the design space of PDF tooling. The 
 
 ## Engine deep-dive
 
-PDF Processor is composed of five separable engines, each addressing one well-defined problem. Each has a deep-dive write-up explaining the algorithm, the failure modes it avoids, and the trade-offs accepted.
+Document Workbench is composed of five separable engines, each addressing one well-defined problem. Each has a deep-dive write-up explaining the algorithm, the failure modes it avoids, and the trade-offs accepted.
 
 ### 1. Path reconciler: turning PDF path operators into clean segments
 
@@ -169,7 +171,7 @@ Tier-1 regions are **pre-claimed** before Tier 2 and Tier 3 run, so geometry onl
 
 ## 📚 Documentation
 
-Detailed guides are available to help you get the most out of PDF Processor:
+Detailed guides are available to help you get the most out of Document Workbench:
 
 - **[Getting Started](docs/getting-started.md).** Loading documents, switching views, basic editing.
 - **[Comparison Tools](docs/comparison-tools.md).** Visual Diff and Compare Diff workflows.
@@ -192,7 +194,7 @@ Detailed guides are available to help you get the most out of PDF Processor:
 ext install ginexys.ginexys-pdf
 ```
 
-Right-click any `.pdf` file in Explorer, then pick "Open with PDF Processor." The full extraction pipeline runs locally inside the VS Code webview.
+Right-click any `.pdf` file in Explorer, then pick "Open with Document Workbench." The full extraction pipeline runs locally inside the VS Code webview.
 
 ### Local development
 
@@ -219,10 +221,10 @@ Vite serves on `http://localhost:5173`. Plain static-host inspection is also sup
 
 ## Part of the Ginexys pipeline
 
-PDF Processor is the **Extract** step of the Ginexys engineering document pipeline:
+Document Workbench is the **Extract** step of the Ginexys engineering document pipeline:
 
 ```
-Extract  (PDF/image → structured data)   PDF Processor  (this tool)
+Extract  (PDF/image → structured data)   Document Workbench  (this tool)
    ↓
 Transform (reshape, edit, clean)         TAFNE
    ↓

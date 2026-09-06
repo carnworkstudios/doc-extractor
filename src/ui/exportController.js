@@ -781,7 +781,7 @@ export function wrapAsWordDoc(body, name) {
 <head>
   <meta charset="utf-8">
   <meta name="ProgId" content="Word.Document">
-  <meta name="Generator" content="Ginexys PDF Processor">
+  <meta name="Generator" content="Ginexys Document Workbench">
   <title>${xmlEsc(name)}</title>
   <!--[if gte mso 9]>
   <xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml>
