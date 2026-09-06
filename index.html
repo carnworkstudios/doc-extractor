@@ -1,42 +1,75 @@
 <!doctype html>
 <html lang="en">
+  <head>
+    <script src="/assets/js/posthog-init.js"></script>
+    <meta charset="utf-8" />
+    <script>
+      try {
+        document.documentElement.dataset.theme =
+          localStorage.getItem("cws-theme") || "light";
+      } catch (_) {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <!-- ── Icons ── -->
+    <link rel="icon" type="image/png" href="/assets/images/Ginexys_Logo.png" />
+    <title>
+      Free Online PDF to HTML Extractor — Browser OCR, Zero Upload · GINEXYS
+    </title>
+    <meta
+      name="description"
+      content="Free browser-based PDF Processor that converts PDF to structured HTML with OCR. Layout-preserving extraction, AI-assisted grid mapping, and side-by-side diff view — no file upload, no install, 100% private."
+    />
+    <meta
+      name="keywords"
+      content="PDF to HTML online, PDF Processor free, browser OCR no upload, extract text from PDF online, PDF table extractor, convert PDF to structured HTML, local PDF parsing, Tesseract OCR online, PDF layout extraction, PDF to markdown, GINEXYS"
+    />
+    <meta name="author" content="GINEXYS" />
+    <meta name="robots" content="index, follow" />
+    <link
+      rel="canonical"
+      href="https://ginexys.com/tools/pdf-processor/index.html"
+    />
 
-<head>
-  <script src="/assets/js/posthog-init.js"></script>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <!-- ── Icons ── -->
-  <link rel="icon" type="image/png" href="/assets/images/Ginexys_Logo.png" />
-  <title>
-    Free Online PDF to HTML Extractor — Browser OCR, Zero Upload · GINEXYS
-  </title>
-  <meta name="description"
-    content="Free browser-based PDF Processor that converts PDF to structured HTML with OCR. Layout-preserving extraction, AI-assisted grid mapping, and side-by-side diff view — no file upload, no install, 100% private." />
-  <meta name="keywords"
-    content="PDF to HTML online, PDF Processor free, browser OCR no upload, extract text from PDF online, PDF table extractor, convert PDF to structured HTML, local PDF parsing, Tesseract OCR online, PDF layout extraction, PDF to markdown, GINEXYS" />
-  <meta name="author" content="GINEXYS" />
-  <meta name="robots" content="index, follow" />
-  <link rel="canonical" href="https://ginexys.com/tools/pdf-processor/index.html" />
+    <!-- ── Open Graph ── -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="GINEXYS" />
+    <meta
+      property="og:title"
+      content="Free PDF to HTML Extractor — Browser OCR, Zero Upload · GINEXYS"
+    />
+    <meta
+      property="og:description"
+      content="Extract structured HTML from any PDF in your browser. OCR support, layout preservation, AI-assisted grid mapping, side-by-side diff. No file upload — your data never leaves your device."
+    />
+    <meta
+      property="og:url"
+      content="https://ginexys.com/tools/pdf-processor/index.html"
+    />
+    <meta
+      property="og:image"
+      content="https://ginexys.com/assets/images/og-image.png"
+    />
 
-  <!-- ── Open Graph ── -->
-  <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="GINEXYS" />
-  <meta property="og:title" content="Free PDF to HTML Extractor — Browser OCR, Zero Upload · GINEXYS" />
-  <meta property="og:description"
-    content="Extract structured HTML from any PDF in your browser. OCR support, layout preservation, AI-assisted grid mapping, side-by-side diff. No file upload — your data never leaves your device." />
-  <meta property="og:url" content="https://ginexys.com/tools/pdf-processor/index.html" />
-  <meta property="og:image" content="https://ginexys.com/assets/images/og-image.png" />
+    <!-- ── Twitter / X Card ── -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Free PDF to HTML Extractor — Browser OCR, Zero Upload · GINEXYS"
+    />
+    <meta
+      name="twitter:description"
+      content="Convert PDF to structured HTML with OCR — all in your browser. Zero upload, zero install. Layout-preserving with AI-assisted table extraction."
+    />
+    <meta
+      name="twitter:image"
+      content="https://ginexys.com/assets/images/og-image.png"
+    />
+    <meta name="twitter:site" content="@GINEXYS" />
 
-  <!-- ── Twitter / X Card ── -->
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Free PDF to HTML Extractor — Browser OCR, Zero Upload · GINEXYS" />
-  <meta name="twitter:description"
-    content="Convert PDF to structured HTML with OCR — all in your browser. Zero upload, zero install. Layout-preserving with AI-assisted table extraction." />
-  <meta name="twitter:image" content="https://ginexys.com/assets/images/og-image.png" />
-  <meta name="twitter:site" content="@GINEXYS" />
-
-  <!-- ── Structured Data ── -->
-  <script type="application/ld+json">
+    <!-- ── Structured Data ── -->
+    <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@graph": [
@@ -98,8 +131,8 @@
       }
     </script>
 
-  <!-- ── FAQ Structured Data (AEO / Perplexity targeting) ── -->
-  <script type="application/ld+json">
+    <!-- ── FAQ Structured Data (AEO / Perplexity targeting) ── -->
+    <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "FAQPage",
@@ -156,28 +189,31 @@
       }
     </script>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
-  <link rel="stylesheet" href="src/styles.css" />
-  <!-- ginexys-modals.css references portfolio.css's :root CSS custom properties.
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+    <link rel="stylesheet" href="src/styles.css" />
+    <!-- ginexys-modals.css references portfolio.css's :root CSS custom properties.
          pdf-processor uses its own design tokens in src/styles.css, so loading the
          full portfolio.css here would collide. Instead load only the modal's
          required tokens (~2KB) extracted to ginexys-modals-tokens.css. -->
-  <link rel="stylesheet" href="/assets/css/ginexys-modals-tokens.css" />
-  <link rel="stylesheet" href="/assets/css/ginexys-modals.css" />
-  <script src="/assets/js/ginexys-modals.js" defer></script>
-  <script src="/assets/js/ginexys-billing.js" defer></script>
-  <script src="/assets/js/ginexys-auth.js" defer></script>
-  <script src="/assets/js/ginexys-settings.js" defer></script>
-  <script src="/assets/js/ginexys-gate.js" defer></script>
-</head>
+    <link rel="stylesheet" href="/assets/css/ginexys-modals-tokens.css" />
+    <link rel="stylesheet" href="/assets/css/ginexys-modals.css" />
+    <script src="/assets/js/ginexys-modals.js" defer></script>
+    <script src="/assets/js/ginexys-billing.js" defer></script>
+    <script src="/assets/js/ginexys-auth.js" defer></script>
+    <script src="/assets/js/ginexys-settings.js" defer></script>
+    <script src="/assets/js/ginexys-gate.js" defer></script>
+  </head>
 
-<body>
-  <!-- ── HEADER ───────────────────────────────────────────────────────── -->
-  <header class="app-header">
-    <!-- <div class="header-left">
+  <body>
+    <!-- ── HEADER ───────────────────────────────────────────────────────── -->
+    <header class="app-header">
+      <!-- <div class="header-left">
         <span class="app-logo">
           <svg
             width="20"
@@ -198,605 +234,1254 @@
         </span>
       </div> -->
 
-    <div class="header-center">
-      <label class="file-btn" id="file1-label" title="Load a PDF or document image">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="17 8 12 3 7 8" />
-          <line x1="12" y1="3" x2="12" y2="15" />
-        </svg>
-        <span id="file1-name">Load</span>
-        <input id="file1-input" type="file"
-          accept="application/pdf,image/png,image/jpeg,image/webp,image/bmp,.png,.jpg,.jpeg,.webp,.bmp,text/html,.html,text/markdown,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/json,.json" />
-      </label>
-      <label class="file-btn file-btn--secondary" id="file2-label"
-        title="Load a second file to compare (PDF, HTML, Markdown)">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <circle cx="12" cy="12" r="10" />
-          <line x1="12" y1="8" x2="12" y2="16" />
-          <line x1="8" y1="12" x2="16" y2="12" />
-        </svg>
-        <span id="file2-name">Compare</span>
-        <input id="file2-input" type="file"
-          accept="application/pdf,image/png,image/jpeg,image/webp,image/bmp,.png,.jpg,.jpeg,.webp,.bmp,text/html,.html,text/markdown,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/json,.json" />
-      </label>
-
-      <!-- AI Open Core Premium Features UI -->
-      <!-- <div -->
-      <!-- style="display: flex; gap: 8px; align-items: center; margin-left: 16px; border-left: 1px solid #e5e7eb; padding-left: 16px;"> -->
-      <label class="gx-checkbox-label gx-pro-locked"
-        title="Smart OCR: reads scanned documents with Docling OCR, and re-tunes low-confidence pages on vector PDFs — Pro feature">
-        <input type="checkbox" id="ai-layout-toggle" disabled />
-        <span class="gx-checkbox-text">✨ Smart OCR</span>
-        <span class="gx-pro-badge">PRO</span>
-        <div class="gx-pro-interceptor" data-pro-feature="pdf-ai-extract"></div>
-      </label>
-      <!-- <input type="password" id="ai-api-key" placeholder="OpenRouter Key (or .env)" style="border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 12px; width: 160px; outline: none;"> -->
-      <!-- </div> -->
-    </div>
-
-    <nav class="tab-bar" role="tablist">
-      <button class="tab-btn active" data-view="pdf" role="tab">PDF</button>
-      <button class="tab-btn" data-view="html" role="tab">Doc</button>
-      <button class="tab-btn" data-view="editor" role="tab">Editor</button>
-      <button class="tab-btn" data-view="analyze" role="tab">Analyze</button>
-      <button class="tab-btn" data-view="diff" role="tab" disabled id="diff-tab-btn">
-        Compare Diff
-      </button>
-    </nav>
-
-    <div class="header-right">
-      <button id="pdfSendBtn" class="gx-tool-send-btn" title="Send to another Ginexys tool (Pro)">
-        <img src="/assets/images/Ginexys_Logo.png" width="18" height="18" alt="Ginexys"
-          style="border-radius: 50%; display: block" />
-      </button>
-      <div class="dropdown" id="export-dropdown">
-        <button class="icon-btn icon-btn--primary dropdown-toggle" id="btn-export-main">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
+      <div class="header-center">
+        <label
+          class="file-btn"
+          id="file1-label"
+          title="Load a PDF or document image"
+        >
+          <svg
+            aria-hidden="true"
+            fill="#000000"
+            width="14"
+            height="14"
+            viewBox="0 0 1920 1920"
+            xmlns="http://www.w3.org/2000/svg"
+            data-iconid="501595"
+            data-svgname="Import Arrow"
+          >
+            <path
+              d="m807.186 686.592 272.864 272.864H0v112.94h1080.05l-272.864 272.978 79.736 79.849 409.296-409.183-409.296-409.184-79.736 79.736ZM1870.419 434.69l-329.221-329.11C1509.688 74.07 1465.979 56 1421.48 56H451.773v730.612h112.94V168.941h790.584v451.762h451.762v1129.405H564.714v-508.233h-112.94v621.173H1920V554.52c0-45.176-17.619-87.754-49.58-119.83Zm-402.181-242.37 315.443 315.442h-315.443V192.319Z"
+              fill-rule="evenodd"
+            ></path>
           </svg>
-          Export
-        </button>
-        <div class="dropdown-menu">
-          <button class="dropdown-item" data-format="html">
-            <span class="item-icon"><iconify-icon icon="material-symbols:html-outline"></iconify-icon></span>
-            Standalone Webpage (.html)
-          </button>
-          <button class="dropdown-item" data-format="markdown">
-            <span class="item-icon"><iconify-icon icon="material-symbols:markdown-outline"></iconify-icon></span>
-            Markdown (.md)
-          </button>
-          <button class="dropdown-item" data-format="pdf">
-            <span class="item-icon"><iconify-icon icon="material-symbols:picture-as-pdf-outline"></iconify-icon></span>
-            Print to PDF (.pdf)
-          </button>
-          <button class="dropdown-item" data-format="xml">
-            <span class="item-icon"><iconify-icon icon="material-symbols:code-blocks-outline"></iconify-icon></span>
-            Structural Tree (.xml)
-          </button>
-          <button class="dropdown-item" data-format="doc">
-            <span class="item-icon"><iconify-icon icon="material-symbols:description-outline"></iconify-icon></span>
-            Word Document (.doc)
-          </button>
-          <button class="dropdown-item" data-format="json">
-            <span class="item-icon"><iconify-icon icon="material-symbols:data-object-outline"></iconify-icon></span>
-            Structured JSON (.json)
-          </button>
-          <div class="dropdown-divider"></div>
-          <div class="dropdown-item gx-pro-locked" data-format="notion" style="position: relative">
-            <span class="item-icon"><iconify-icon icon="material-symbols:note-stack-outline"></iconify-icon></span>
-            Export to Notion <span class="gx-pro-badge">PRO</span>
-            <div class="gx-pro-interceptor" data-pro-feature="pdf-export-notion"></div>
-          </div>
-          <div class="dropdown-item gx-pro-locked" data-format="sheets" style="position: relative">
-            <span class="item-icon"><iconify-icon icon="material-symbols:table-outline"></iconify-icon></span>
-            Export to Google Sheets <span class="gx-pro-badge">PRO</span>
-            <div class="gx-pro-interceptor" data-pro-feature="pdf-export-sheets"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </header>
+          <span id="file1-name">Load</span>
+          <input
+            id="file1-input"
+            type="file"
+            accept="application/pdf,image/png,image/jpeg,image/webp,image/bmp,.png,.jpg,.jpeg,.webp,.bmp,text/html,.html,text/markdown,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/json,.json"
+          />
+        </label>
+        <label
+          class="file-btn file-btn--secondary"
+          id="file2-label"
+          title="Load a second file to compare (PDF, HTML, Markdown)"
+        >
+          <svg
+            aria-hidden="true"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+            data-iconid="450746"
+            data-svgname="Compare Arrows"
+          >
+            <path
+              d="M2 4h9v1H3v15h8v1H2zm10 19h1V2h-1zM8.283 10.283l-.566-.566L4.934 12.5l2.783 2.783.566-.566L6.566 13H11v-1H6.566zM14 12h4.08l-1.54-1.54.92-.92 2.96 2.96-2.96 2.96-.92-.92L18.08 13H14v8h9V4h-9z"
+            ></path>
+            <path fill="none" d="M0 0h24v24H0z"></path>
+          </svg>
+          <span id="file2-name">Compare</span>
+          <input
+            id="file2-input"
+            type="file"
+            accept="application/pdf,image/png,image/jpeg,image/webp,image/bmp,.png,.jpg,.jpeg,.webp,.bmp,text/html,.html,text/markdown,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/json,.json"
+          />
+        </label>
 
-  <!-- ── TOOLBAR / RIBBON ─────────────────────────────────────────────── -->
-  <div class="toolbar-bar" id="format-toolbar">
-    <!-- Clipboard: pdf, html -->
-    <div class="ribbon-group" data-toolbar-ctx="pdf html">
-      <div class="ribbon-group-buttons">
-        <button class="tool-btn" id="btn-format-painter"
-          title="Format Painter — copy formatting, click target to apply">
-          <iconify-icon icon="material-symbols:format-paint-outline"></iconify-icon>
-        </button>
+        <!-- AI Open Core Premium Features UI -->
+        <!-- <div -->
+        <!-- style="display: flex; gap: 8px; align-items: center; margin-left: 16px; border-left: 1px solid #e5e7eb; padding-left: 16px;"> -->
+        <label
+          class="gx-checkbox-label gx-pro-locked"
+          title="Smart OCR: reads scanned documents with Docling OCR, and re-tunes low-confidence pages on vector PDFs — Pro feature"
+        >
+          <input type="checkbox" id="ai-layout-toggle" disabled />
+          <span class="gx-checkbox-text">✨ Smart OCR</span>
+          <span class="gx-pro-badge">PRO</span>
+          <div
+            class="gx-pro-interceptor"
+            data-pro-feature="pdf-ai-extract"
+          ></div>
+        </label>
+        <!-- <input type="password" id="ai-api-key" placeholder="OpenRouter Key (or .env)" style="border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 12px; width: 160px; outline: none;"> -->
+        <!-- </div> -->
       </div>
-      <span class="ribbon-group-label">Clipboard</span>
-    </div>
-    <div class="toolbar-sep" data-toolbar-ctx="pdf html"></div>
 
-    <!-- Font: pdf, html -->
-    <div class="ribbon-group" data-toolbar-ctx="pdf html">
-      <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
-        <select class="tool-select tool-select--font" id="sel-font-family" title="Font family">
-          <option value="">Font</option>
-          <option value="Inter, sans-serif">Inter</option>
-          <option value="Georgia, serif">Georgia</option>
-          <option value="'Times New Roman', serif">Times New Roman</option>
-          <option value="Arial, sans-serif">Arial</option>
-          <option value="'Courier New', monospace">Courier New</option>
-        </select>
-        <select class="tool-select tool-select--size" id="sel-font-size" title="Font size">
-          <option value="">Size</option>
-          <option value="1">8</option>
-          <option value="2">10</option>
-          <option value="3">12</option>
-          <option value="4">14</option>
-          <option value="5">18</option>
-          <option value="6">24</option>
-          <option value="7">36</option>
-        </select>
-        <button class="tool-btn" id="btn-bold" title="Bold (Ctrl+B)">
-          <iconify-icon icon="material-symbols:format-bold"></iconify-icon>
+      <nav class="tab-bar" role="tablist">
+        <button class="tab-btn active" data-view="pdf" role="tab">
+          <iconify-icon
+            icon="material-symbols:picture-as-pdf-outline"
+          ></iconify-icon
+          ><span>PDF</span>
         </button>
-        <button class="tool-btn" id="btn-italic" title="Italic (Ctrl+I)">
-          <iconify-icon icon="material-symbols:format-italic"></iconify-icon>
+        <button class="tab-btn" data-view="html" role="tab">
+          <iconify-icon icon="material-symbols:article-outline"></iconify-icon
+          ><span>Doc</span>
         </button>
-        <button class="tool-btn" id="btn-underline" title="Underline (Ctrl+U)">
-          <iconify-icon icon="material-symbols:format-underlined"></iconify-icon>
+        <button class="tab-btn" data-view="editor" role="tab">
+          <iconify-icon
+            icon="material-symbols:edit-document-outline"
+          ></iconify-icon
+          ><span>Editor</span>
         </button>
-        <button class="tool-btn" id="btn-superscript" title="Superscript (Ctrl+Shift+=)">
-          <iconify-icon icon="material-symbols:superscript"></iconify-icon>
+        <button class="tab-btn" data-view="analyze" role="tab">Analyze</button>
+        <button
+          class="tab-btn"
+          data-view="diff"
+          role="tab"
+          disabled
+          id="diff-tab-btn"
+        >
+          Compare Diff
         </button>
-        <button class="tool-btn" id="btn-subscript" title="Subscript (Ctrl+=)">
-          <iconify-icon icon="material-symbols:subscript"></iconify-icon>
-        </button>
-        <span class="ribbon-btn-sep"></span>
-        <div class="split-btn dropdown" id="dd-highlight">
-          <button class="tool-btn" id="btn-highlight" title="Highlight color">
-            <iconify-icon icon="material-symbols:format-ink-highlighter"></iconify-icon>
-          </button>
-          <button class="tool-btn split-btn-caret" title="Highlight colors">
-            <iconify-icon icon="material-symbols:arrow-drop-down"></iconify-icon>
-          </button>
-          <div class="dropdown-menu split-menu color-menu" data-color-menu="highlight">
-            <div class="color-swatch-grid" data-color-grid="hiliteColor"></div>
-            <button class="dropdown-item" data-clear-highlight>
-              <span class="item-icon"><iconify-icon icon="material-symbols:format-color-reset"></iconify-icon></span>
-              Remove Highlight
-            </button>
-          </div>
-        </div>
-        <div class="split-btn dropdown" id="dd-font-color">
-          <button class="tool-btn" id="btn-font-color" title="Font color">
-            <iconify-icon icon="material-symbols:format-color-text"></iconify-icon>
-          </button>
-          <button class="tool-btn split-btn-caret" title="Font colors">
-            <iconify-icon icon="material-symbols:arrow-drop-down"></iconify-icon>
-          </button>
-          <div class="dropdown-menu split-menu color-menu" data-color-menu="font">
-            <div class="color-swatch-grid" data-color-grid="foreColor"></div>
-          </div>
-        </div>
-      </div>
-      <span class="ribbon-group-label">Font</span>
-    </div>
-    <div class="toolbar-sep" data-toolbar-ctx="html"></div>
+      </nav>
 
-    <!-- Paragraph: html only -->
-    <div class="ribbon-group" data-toolbar-ctx="html">
-      <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
-        <div class="split-btn dropdown" id="dd-bullets">
-          <button class="tool-btn" id="btn-ul" title="Bullet list">
-            <iconify-icon icon="material-symbols:format-list-bulleted"></iconify-icon>
+      <div class="header-right">
+        <button
+          id="theme-toggle-btn"
+          class="icon-btn theme-toggle-btn"
+          type="button"
+          title="Use dark mode"
+          aria-label="Toggle color theme"
+          aria-pressed="false"
+        >
+          <iconify-icon class="theme-icon-dark" icon="material-symbols:dark-mode-outline"></iconify-icon>
+          <iconify-icon class="theme-icon-light" icon="material-symbols:light-mode-outline"></iconify-icon>
+        </button>
+        <button
+          id="pdfSendBtn"
+          class="gx-tool-send-btn"
+          title="Send to another Ginexys tool (Pro)"
+        >
+          <img
+            src="/assets/images/Ginexys_Logo.png"
+            width="18"
+            height="18"
+            alt="Ginexys"
+            style="border-radius: 50%; display: block"
+          />
+        </button>
+        <div class="dropdown" id="export-dropdown">
+          <button
+            class="icon-btn icon-btn--primary dropdown-toggle"
+            id="btn-export-main"
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Export
           </button>
-          <button class="tool-btn split-btn-caret" title="Bullet styles">
-            <iconify-icon icon="material-symbols:arrow-drop-down"></iconify-icon>
-          </button>
-          <div class="dropdown-menu split-menu">
-            <button class="dropdown-item" data-list-style="disc">
-              <span class="item-icon">&bull;</span> Disc
+          <div class="dropdown-menu">
+            <button class="dropdown-item" data-format="html">
+              <span class="item-icon"
+                ><iconify-icon
+                  icon="material-symbols:html-outline"
+                ></iconify-icon
+              ></span>
+              Standalone Webpage (.html)
             </button>
-            <button class="dropdown-item" data-list-style="circle">
-              <span class="item-icon">&#9675;</span> Circle
+            <button class="dropdown-item" data-format="markdown">
+              <span class="item-icon"
+                ><iconify-icon
+                  icon="material-symbols:markdown-outline"
+                ></iconify-icon
+              ></span>
+              Markdown (.md)
             </button>
-            <button class="dropdown-item" data-list-style="square">
-              <span class="item-icon">&#9642;</span> Square
+            <button class="dropdown-item" data-format="pdf">
+              <span class="item-icon"
+                ><iconify-icon
+                  icon="material-symbols:picture-as-pdf-outline"
+                ></iconify-icon
+              ></span>
+              Print to PDF (.pdf)
             </button>
-            <button class="dropdown-item" data-list-style="none">
-              <span class="item-icon">&mdash;</span> None
+            <button class="dropdown-item" data-format="xml">
+              <span class="item-icon"
+                ><iconify-icon
+                  icon="material-symbols:code-blocks-outline"
+                ></iconify-icon
+              ></span>
+              Structural Tree (.xml)
             </button>
-          </div>
-        </div>
-        <div class="split-btn dropdown" id="dd-numbering">
-          <button class="tool-btn" id="btn-ol" title="Numbered list">
-            <iconify-icon icon="material-symbols:format-list-numbered"></iconify-icon>
-          </button>
-          <button class="tool-btn split-btn-caret" title="Numbering styles">
-            <iconify-icon icon="material-symbols:arrow-drop-down"></iconify-icon>
-          </button>
-          <div class="dropdown-menu split-menu">
-            <button class="dropdown-item" data-list-style="decimal">
-              <span class="item-icon">1.</span> 1, 2, 3&hellip;
+            <button class="dropdown-item" data-format="doc">
+              <span class="item-icon"
+                ><iconify-icon
+                  icon="material-symbols:description-outline"
+                ></iconify-icon
+              ></span>
+              Word Document (.doc)
             </button>
-            <button class="dropdown-item" data-list-style="lower-alpha">
-              <span class="item-icon">a.</span> a, b, c&hellip;
-            </button>
-            <button class="dropdown-item" data-list-style="upper-alpha">
-              <span class="item-icon">A.</span> A, B, C&hellip;
-            </button>
-            <button class="dropdown-item" data-list-style="lower-roman">
-              <span class="item-icon">i.</span> i, ii, iii&hellip;
-            </button>
-            <button class="dropdown-item" data-list-style="upper-roman">
-              <span class="item-icon">I.</span> I, II, III&hellip;
-            </button>
-          </div>
-        </div>
-        <button class="tool-btn" id="btn-dl" title="Definition list (term / description)">
-          <iconify-icon icon="material-symbols:list-alt-outline"></iconify-icon>
-        </button>
-        <span class="ribbon-btn-sep"></span>
-        <button class="tool-btn" id="btn-outdent" title="Decrease indent">
-          <iconify-icon icon="material-symbols:format-indent-decrease"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="btn-indent" title="Increase indent">
-          <iconify-icon icon="material-symbols:format-indent-increase"></iconify-icon>
-        </button>
-        <span class="ribbon-btn-sep"></span>
-        <button class="tool-btn" id="btn-align-left" title="Align left">
-          <iconify-icon icon="material-symbols:format-align-left"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="btn-align-center" title="Align center">
-          <iconify-icon icon="material-symbols:format-align-center"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="btn-align-right" title="Align right">
-          <iconify-icon icon="material-symbols:format-align-right"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="btn-align-justify" title="Justify">
-          <iconify-icon icon="material-symbols:format-align-justify"></iconify-icon>
-        </button>
-        <span class="ribbon-btn-sep"></span>
-        <button class="tool-btn" id="btn-dist-h" title="Distribute horizontally (row, space-between)">
-          <iconify-icon icon="material-symbols:align-space-between"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="btn-dist-v" title="Distribute vertically (column, even gap)">
-          <iconify-icon icon="material-symbols:align-space-between" style="transform: rotate(90deg)"></iconify-icon>
-        </button>
-        <span class="ribbon-btn-sep"></span>
-        <div class="split-btn dropdown" id="dd-columns">
-          <button class="tool-btn" id="btn-columns" title="Split selection into columns">
-            <iconify-icon icon="material-symbols:view-column-outline"></iconify-icon>
-          </button>
-          <button class="tool-btn split-btn-caret" title="Column count">
-            <iconify-icon icon="material-symbols:arrow-drop-down"></iconify-icon>
-          </button>
-          <div class="dropdown-menu split-menu">
-            <button class="dropdown-item" data-cols="2">
-              <span class="item-icon"><iconify-icon icon="material-symbols:view-column-outline"></iconify-icon></span>
-              2 Columns
-            </button>
-            <button class="dropdown-item" data-cols="3">
-              <span class="item-icon"><iconify-icon icon="material-symbols:view-week-outline"></iconify-icon></span>
-              3 Columns
-            </button>
-            <button class="dropdown-item" data-cols="4">
-              <span class="item-icon"><iconify-icon icon="material-symbols:view-week-outline"></iconify-icon></span>
-              4 Columns
+            <button class="dropdown-item" data-format="json">
+              <span class="item-icon"
+                ><iconify-icon
+                  icon="material-symbols:data-object-outline"
+                ></iconify-icon
+              ></span>
+              Structured JSON (.json)
             </button>
             <div class="dropdown-divider"></div>
-            <button class="dropdown-item" data-cols="1">
-              <span class="item-icon"><iconify-icon icon="material-symbols:view-agenda-outline"></iconify-icon></span>
-              Remove Columns
+            <div
+              class="dropdown-item gx-pro-locked"
+              data-format="notion"
+              style="position: relative"
+            >
+              <span class="item-icon"
+                ><iconify-icon
+                  icon="material-symbols:note-stack-outline"
+                ></iconify-icon
+              ></span>
+              Export to Notion <span class="gx-pro-badge">PRO</span>
+              <div
+                class="gx-pro-interceptor"
+                data-pro-feature="pdf-export-notion"
+              ></div>
+            </div>
+            <div
+              class="dropdown-item gx-pro-locked"
+              data-format="sheets"
+              style="position: relative"
+            >
+              <span class="item-icon"
+                ><iconify-icon
+                  icon="material-symbols:table-outline"
+                ></iconify-icon
+              ></span>
+              Export to Google Sheets <span class="gx-pro-badge">PRO</span>
+              <div
+                class="gx-pro-interceptor"
+                data-pro-feature="pdf-export-sheets"
+              ></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ── TOOLBAR / RIBBON ─────────────────────────────────────────────── -->
+    <div class="toolbar-bar" id="format-toolbar">
+      <!-- Analyze metadata and actions are moved into these hosts at boot so
+         their original ids and event listeners remain the source of truth. -->
+      <div
+        class="ribbon-group"
+        id="analyze-meta-ribbon"
+        data-toolbar-ctx="analyze"
+      >
+        <div
+          class="ribbon-group-buttons ribbon-group-buttons--wrap"
+          id="analyze-meta-ribbon-buttons"
+        ></div>
+        <span class="ribbon-group-label">Analyze view</span>
+      </div>
+      <!-- Navigation -->
+      <div
+        class="ribbon-group"
+        id="analyze-navigation-ribbon"
+        data-toolbar-ctx="analyze"
+      >
+        <div
+          class="ribbon-group-buttons ribbon-group-buttons-wrap"
+          id="analyze-navigation-ribbon-buttons"
+        >
+          <div class="analyze-toolbar-nav">
+            <button
+              class="atb-btn"
+              id="analyze-page-prev"
+              disabled
+              title="Previous page"
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+              >
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+            <span id="analyze-page-counter" class="atb-page-counter">—</span>
+            <button
+              class="atb-btn"
+              id="analyze-page-next"
+              disabled
+              title="Next page"
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+              >
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
             </button>
           </div>
         </div>
-        <span class="ribbon-btn-sep"></span>
-        <button class="tool-btn" id="btn-border" title="Toggle paragraph / box border">
-          <iconify-icon icon="material-symbols:border-outer"></iconify-icon>
-        </button>
       </div>
-      <span class="ribbon-group-label">Paragraph</span>
-    </div>
-    <div class="toolbar-sep" data-toolbar-ctx="html"></div>
-
-    <!-- Styles: html only -->
-    <div class="ribbon-group" data-toolbar-ctx="html">
-      <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
-        <select class="tool-select" id="sel-block" title="Paragraph style">
-          <option value="">Paragraph</option>
-          <option value="h1">Heading 1</option>
-          <option value="h2">Heading 2</option>
-          <option value="h3">Heading 3</option>
-          <option value="h4">Heading 4</option>
-          <option value="h5">Heading 5</option>
-          <option value="h6">Heading 6</option>
-          <option value="small">Small text</option>
-        </select>
-        <button class="tool-btn" id="btn-add-page" title="Add blank page">
-          <iconify-icon icon="material-symbols:note-add-outline"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="btn-insert-box" title="Insert callout / text box">
-          <iconify-icon icon="material-symbols:add-notes-outline"></iconify-icon>
-        </button>
-        <button class="tool-btn pdf-mirror-toggle" id="doc-pdf-mirror-toggle"
-          style="background: gold; border: 1.5px solid"
-          title="Show the original PDF alongside the doc, for reference while editing" aria-expanded="false">
-          <iconify-icon icon="material-symbols:picture-as-pdf-outline"></iconify-icon>
-        </button>
+      <div class="toolbar-sep" data-toolbar-ctx="analyze"></div>
+      <div
+        class="ribbon-group"
+        id="analyze-actions-ribbon"
+        data-toolbar-ctx="analyze"
+      >
+        <div
+          class="ribbon-group-buttons ribbon-group-buttons--wrap"
+          id="analyze-actions-ribbon-buttons"
+        ></div>
+        <span class="ribbon-group-label">Analyze tools</span>
       </div>
-      <span class="ribbon-group-label">Styles</span>
-    </div>
-    <div class="toolbar-sep" data-toolbar-ctx="html"></div>
-
-    <!-- Editing (Undo/Redo): html -->
-    <div class="ribbon-group" id="undo-redo-group" data-toolbar-ctx="html">
-      <div class="ribbon-group-buttons">
-        <button class="tool-btn" id="btn-undo" title="Undo structural edit" disabled>
-          <iconify-icon icon="material-symbols:undo"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="btn-redo" title="Redo" disabled>
-          <iconify-icon icon="material-symbols:redo"></iconify-icon>
-        </button>
-      </div>
-      <span class="ribbon-group-label">Editing</span>
-    </div>
-
-    <div class="toolbar-sep" data-toolbar-ctx="pdf"></div>
-    <!-- PDF zoom: pdf -->
-    <div class="ribbon-group" id="pdf-zoom-group" aria-label="PDF zoom" data-toolbar-ctx="pdf">
-      <div class="ribbon-group-buttons">
-        <button class="tool-btn" id="btn-zoom-out" title="Zoom out">
-          <iconify-icon icon="material-symbols:zoom-out"></iconify-icon>
-        </button>
-        <span class="page-counter" id="zoom-pct">100%</span>
-        <button class="tool-btn" id="btn-zoom-in" title="Zoom in">
-          <iconify-icon icon="material-symbols:zoom-in"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="btn-zoom-fit" title="Fit width">
-          <iconify-icon icon="material-symbols:fit-screen-outline"></iconify-icon>
-        </button>
-      </div>
-      <span class="ribbon-group-label">Zoom</span>
-    </div>
-    <!-- Annotate: pdf only -->
-    <div class="toolbar-sep" data-toolbar-ctx="pdf"></div>
-    <div class="ribbon-group" id="annotate-group" data-toolbar-ctx="pdf">
-      <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
-        <button class="tool-btn" id="btn-ann-mode"
-          title="Toggle Text / Annotate mode (Annotate lets you draw on the page)">
-          <iconify-icon icon="material-symbols:edit-note-outline"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="btn-pdf-text-edit" aria-pressed="false"
-          title="Edit Text — hide the page image and edit the PDF text directly (exported via pdf-lib)">
-          <iconify-icon icon="material-symbols:text-fields"></iconify-icon>
-        </button>
-        <span class="ribbon-btn-sep"></span>
-        <button class="tool-btn" id="ann-tool-select" data-ann-tool="select" title="Select (V)">
-          <iconify-icon icon="material-symbols:cursor"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="ann-tool-highlight" data-ann-tool="highlight" title="Highlight (H)">
-          <iconify-icon icon="material-symbols:format-ink-highlighter"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="ann-tool-ink" data-ann-tool="ink" title="Freehand pen (P)">
-          <iconify-icon icon="material-symbols:ink-pen"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="ann-tool-rect" data-ann-tool="rect" title="Rectangle (R)">
-          <iconify-icon icon="material-symbols:crop-square"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="ann-tool-ellipse" data-ann-tool="ellipse" title="Ellipse (O)">
-          <iconify-icon icon="material-symbols:circle-outline"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="ann-tool-arrow" data-ann-tool="arrow" title="Arrow (A)">
-          <iconify-icon icon="material-symbols:trending-flat"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="ann-tool-measure" data-ann-tool="measure" title="Measure (M)">
-          <iconify-icon icon="material-symbols:straighten"></iconify-icon>
-        </button>
-        <span class="ribbon-btn-sep"></span>
-        <button class="tool-btn" id="btn-ann-undo" title="Undo annotation" disabled>
-          <iconify-icon icon="material-symbols:undo"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="btn-ann-redo" title="Redo annotation" disabled>
-          <iconify-icon icon="material-symbols:redo"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="btn-ann-clear" title="Clear all annotations" disabled>
-          <iconify-icon icon="material-symbols:delete-sweep-outline"></iconify-icon>
-        </button>
-      </div>
-      <span class="ribbon-group-label">Annotate</span>
-    </div>
-
-    <div class="toolbar-sep" data-toolbar-ctx="pdf html"></div>
-
-    <!-- Selection Mode: pdf, html -->
-    <div class="ribbon-group" data-toolbar-ctx="pdf html">
-      <div class="ribbon-group-buttons">
-        <button class="tool-btn" id="btn-select-mode" title="Toggle Selection / Edit mode">
-          <iconify-icon icon="material-symbols:arrow-selector-tool-outline"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="btn-group-selected" title="Group selected regions into a zone"
-          style="display: none">
-          <iconify-icon icon="material-symbols:group-work-outline"></iconify-icon>
-        </button>
-      </div>
-      <span class="ribbon-group-label">Select</span>
-    </div>
-    <div class="toolbar-sep" data-toolbar-ctx="html"></div>
-
-    <!-- Table editing: html -->
-    <div class="ribbon-group" data-toolbar-ctx="html">
-      <div class="ribbon-group-buttons">
-        <button class="tool-btn" id="btn-table-add-row" title="Add row below" disabled>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-            stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2.5" y="2.5" width="11" height="5" rx="1" />
-            <line x1="2.5" y1="5.5" x2="13.5" y2="5.5" />
-            <path d="M8 10v4M6 12h4" />
-          </svg>
-        </button>
-        <button class="tool-btn" id="btn-table-add-col" title="Add column right" disabled>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-            stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2.5" y="2.5" width="5" height="11" rx="1" />
-            <line x1="5.5" y1="2.5" x2="5.5" y2="13.5" />
-            <path d="M10 8h4M12 6v4" />
-          </svg>
-        </button>
-        <button class="tool-btn" id="btn-table-del-row" title="Delete row" disabled>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-            stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2.5" y="2.5" width="11" height="5" rx="1" />
-            <line x1="2.5" y1="5.5" x2="13.5" y2="5.5" />
-            <line x1="6" y1="12" x2="10" y2="12" stroke="#ef4444" />
-          </svg>
-        </button>
-        <button class="tool-btn" id="btn-table-del-col" title="Delete column" disabled>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-            stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2.5" y="2.5" width="5" height="11" rx="1" />
-            <line x1="5.5" y1="2.5" x2="5.5" y2="13.5" />
-            <line x1="10" y1="8" x2="14" y2="8" stroke="#ef4444" />
-          </svg>
-        </button>
-        <button class="tool-btn" id="btn-table-merge" title="Merge cells" disabled>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-            stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="3" width="12" height="10" rx="1.5" />
-            <path d="M5.5 8h5M4 8l2-2M4 8l2 2M12 8l-2-2M12 8l-2 2" />
-          </svg>
-        </button>
-        <button class="tool-btn" id="btn-table-undo" title="Undo table edit" disabled>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-            stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3.5 6.5h7a3 3 0 0 1 3 3v0.5a3 3 0 0 1-3 3H9" />
-            <path d="M6.5 3.5L3.5 6.5l3 3" />
-          </svg>
-        </button>
-        <button class="tool-btn" id="btn-table-redo" title="Redo table edit" disabled>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-            stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12.5 6.5h-7a3 3 0 0 0-3 3v0.5a3 3 0 0 0 3 3H7" />
-            <path d="M9.5 3.5l3 3-3 3" />
-          </svg>
-        </button>
-      </div>
-      <span class="ribbon-group-label">Table</span>
-    </div>
-    <div class="toolbar-sep" data-toolbar-ctx="html"></div>
-
-    <!-- Page navigation: pdf -->
-    <div class="ribbon-group" id="page-nav-group" data-toolbar-ctx="pdf">
-      <div class="ribbon-group-buttons page-nav" id="page-nav">
-        <button class="tool-btn" id="btn-toggle-nav" title="Toggle Document Navigation / Outline / Annotations">
-          <iconify-icon icon="material-symbols:dock-to-left-outline"></iconify-icon>
-        </button>
-        <button class="tool-btn" id="btn-prev-page" title="Previous page">
-          <iconify-icon icon="material-symbols:chevron-left"></iconify-icon>
-        </button>
-        <span class="page-counter" id="page-counter">Page 1 of 1</span>
-        <button class="tool-btn" id="btn-next-page" title="Next page">
-          <iconify-icon icon="material-symbols:chevron-right"></iconify-icon>
-        </button>
-      </div>
-      <span class="ribbon-group-label">Navigate</span>
-    </div>
-  </div>
-
-  <!-- ── STATUS BAR ──────────────────────────────────────────────────── -->
-  <div id="status-bar" class="status-bar" hidden>
-    <div class="status-spinner"></div>
-    <span id="status-msg">Loading…</span>
-    <span id="status-progress" class="status-progress"></span>
-  </div>
-
-  <!-- ── WORKSPACE WRAPPER ───────────────────────────────────────────── -->
-  <div id="app-workspace">
-    <!-- LEFT NAVIGATION PANEL -->
-    <aside id="nav-panel" class="nav-panel">
-      <div class="nav-tab-strip">
-        <button class="nav-tab-btn" data-tab="outline" title="Document Outline">
-          <iconify-icon icon="material-symbols:account-tree-outline"></iconify-icon>
-        </button>
-        <button class="nav-tab-btn" data-tab="bookmarks" title="Bookmarks">
-          <iconify-icon icon="material-symbols:bookmark-outline"></iconify-icon>
-        </button>
-        <button class="nav-tab-btn" data-tab="annotations" title="Annotations">
-          <iconify-icon icon="material-symbols:draw-outline"></iconify-icon>
-        </button>
-        <button class="nav-tab-btn" data-tab="links" title="Hyperlinks & References">
-          <iconify-icon icon="material-symbols:link"></iconify-icon>
-        </button>
-        <button class="nav-tab-btn" data-tab="batch" title="Batch Documents & Queue">
-          <iconify-icon icon="material-symbols:folder-zip-outline"></iconify-icon>
-        </button>
-        <!-- MCP Pill (VS Code only) -->
-        <div class="gx-mcp-pill-wrap" id="mcpPillWrap">
-          <button class="gx-mcp-pill" id="mcpPillBtn" aria-label="Use with Copilot" aria-expanded="false">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z" />
-              <path d="M12 8v4l3 3" />
-            </svg>
-            <span>MCP</span>
+      <div class="toolbar-sep" data-toolbar-ctx="analyze"></div>
+      <!-- PDF can expose the extracted document as a reference pane. -->
+      <div class="ribbon-group" data-toolbar-ctx="pdf">
+        <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+          <button
+            class="tool-btn doc-mirror-toggle"
+            id="pdf-doc-mirror-toggle"
+            title="Show the extracted document beside the PDF"
+            aria-expanded="false"
+          >
+            <iconify-icon icon="material-symbols:article-outline"></iconify-icon>
           </button>
-          <div class="gx-mcp-popover" id="mcpPopover" role="tooltip">
-            <div class="gx-mcp-popover-title">Use with Copilot</div>
-            <div class="gx-mcp-popover-ref">
-              <span>#ginexys_extract_pdf_text</span>
-              <button title="Copy" onclick="navigator.clipboard.writeText('#ginexys_extract_pdf_text')">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="9" y="9" width="13" height="13" rx="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
+        </div>
+        <span class="ribbon-group-label">Document</span>
+      </div>
+      <div class="toolbar-sep" data-toolbar-ctx="pdf"></div>
+      <!-- Document Toggles -->
+       <div class="ribbon-group" data-toolbar-ctx="html">
+        <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+          <button
+            class="tool-btn pdf-mirror-toggle"
+            id="doc-pdf-mirror-toggle"
+            style="background: gold; border: 1.5px solid"
+            title="Show the original PDF alongside the doc, for reference while editing"
+            aria-expanded="false"
+          >
+            <iconify-icon
+              icon="material-symbols:picture-as-pdf-outline"
+            ></iconify-icon>
+          </button>
+          <button
+            class="tool-btn editor-mirror-toggle"
+            id="doc-editor-mirror-toggle"
+            title="Show the source editor alongside the document"
+            aria-expanded="false"
+          >
+            <iconify-icon icon="material-symbols:edit-document-outline"></iconify-icon>
+          </button>
+        </div>
+        <span class="ribbon-group-label">Document Pane</span>
+      </div>
+      
+      <div class="toolbar-sep" data-toolbar-ctx="html"></div>
+      <!-- Clipboard: pdf, html -->
+      <div class="ribbon-group" data-toolbar-ctx="pdf html">
+        <!-- Editing (Undo/Redo): html -->
+      <!-- <div class="ribbon-group" id="undo-redo-group" data-toolbar-ctx="html">
+        <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+          <button
+            class="tool-btn"
+            id="btn-undo"
+            title="Undo structural edit"
+            disabled
+          >
+            <iconify-icon icon="material-symbols:undo"></iconify-icon>
+          </button>
+          <button class="tool-btn" id="btn-redo" title="Redo" disabled>
+            <iconify-icon icon="material-symbols:redo"></iconify-icon>
+          </button>
+        </div>
+        <span class="ribbon-group-label">Editing</span>
+      </div> -->
+        <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+          <button
+            class="tool-btn"
+            id="btn-format-painter"
+            title="Format Painter — copy formatting, click target to apply"
+          >
+            <iconify-icon
+              icon="material-symbols:format-paint-outline"
+            ></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-undo"
+            title="Undo structural edit"
+            disabled
+          >
+            <iconify-icon icon="material-symbols:undo"></iconify-icon>
+          </button>
+          <button class="tool-btn" id="btn-redo" title="Redo" disabled>
+            <iconify-icon icon="material-symbols:redo"></iconify-icon>
+          </button>
+        </div>
+        <span class="ribbon-group-label">Clipboard</span>
+      </div>
+      <div class="toolbar-sep" data-toolbar-ctx="pdf html"></div>
+
+      <!-- Font: pdf, html -->
+      <div class="ribbon-group" data-toolbar-ctx="pdf html">
+        <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+          <select
+            class="tool-select tool-select--font"
+            id="sel-font-family"
+            title="Font family"
+          >
+            <option value="">Font</option>
+            <option value="Inter, sans-serif">Inter</option>
+            <option value="Georgia, serif">Georgia</option>
+            <option value="'Times New Roman', serif">Times New Roman</option>
+            <option value="Arial, sans-serif">Arial</option>
+            <option value="'Courier New', monospace">Courier New</option>
+          </select>
+          <select
+            class="tool-select tool-select--size"
+            id="sel-font-size"
+            title="Font size"
+          >
+            <option value="">Size</option>
+            <option value="1">8</option>
+            <option value="2">10</option>
+            <option value="3">12</option>
+            <option value="4">14</option>
+            <option value="5">18</option>
+            <option value="6">24</option>
+            <option value="7">36</option>
+          </select>
+          <button class="tool-btn" id="btn-bold" title="Bold (Ctrl+B)">
+            <iconify-icon icon="material-symbols:format-bold"></iconify-icon>
+          </button>
+          <button class="tool-btn" id="btn-italic" title="Italic (Ctrl+I)">
+            <iconify-icon icon="material-symbols:format-italic"></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-underline"
+            title="Underline (Ctrl+U)"
+          >
+            <iconify-icon
+              icon="material-symbols:format-underlined"
+            ></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-superscript"
+            title="Superscript (Ctrl+Shift+=)"
+          >
+            <iconify-icon icon="material-symbols:superscript"></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-subscript"
+            title="Subscript (Ctrl+=)"
+          >
+            <iconify-icon icon="material-symbols:subscript"></iconify-icon>
+          </button>
+          <!-- <span class="ribbon-btn-sep"></span> -->
+          <div class="split-btn dropdown" id="dd-highlight">
+            <button class="tool-btn" id="btn-highlight" title="Highlight color">
+              <iconify-icon
+                icon="material-symbols:format-ink-highlighter"
+              ></iconify-icon>
+            </button>
+            <button class="tool-btn split-btn-caret" title="Highlight colors">
+              <iconify-icon
+                icon="material-symbols:arrow-drop-down"
+              ></iconify-icon>
+            </button>
+            <div
+              class="dropdown-menu split-menu color-menu"
+              data-color-menu="highlight"
+            >
+              <div
+                class="color-swatch-grid"
+                data-color-grid="hiliteColor"
+              ></div>
+              <button class="dropdown-item" data-clear-highlight>
+                <span class="item-icon"
+                  ><iconify-icon
+                    icon="material-symbols:format-color-reset"
+                  ></iconify-icon
+                ></span>
+                Remove Highlight
               </button>
             </div>
-            <div class="gx-mcp-popover-sample">
-              Sample prompt:
-              <code>#ginexys_extract_pdf_text extract all tables and write them to output.md</code>
-            </div>
-            <div class="gx-mcp-popover-docs">
-              <a href="https://ginexys.com/docs#mcp-tools" target="_blank">Full MCP docs &rarr;</a>
+          </div>
+          <div class="split-btn dropdown" id="dd-font-color">
+            <button class="tool-btn" id="btn-font-color" title="Font color">
+              <iconify-icon
+                icon="material-symbols:format-color-text"
+              ></iconify-icon>
+            </button>
+            <button class="tool-btn split-btn-caret" title="Font colors">
+              <iconify-icon
+                icon="material-symbols:arrow-drop-down"
+              ></iconify-icon>
+            </button>
+            <div
+              class="dropdown-menu split-menu color-menu"
+              data-color-menu="font"
+            >
+              <div class="color-swatch-grid" data-color-grid="foreColor"></div>
             </div>
           </div>
         </div>
-        <!-- Ginexys Send To -->
-        <span class="doc-ctx-sep-v" data-ctx-surface="html"></span>
+        <span class="ribbon-group-label">Font</span>
       </div>
-      <div class="nav-panel-body">
-        <div class="nav-panel-header">
-          <span class="nav-panel-title" id="nav-panel-title">Navigation</span>
-          <div class="nav-panel-actions">
-            <button class="nav-action-btn" id="btn-add-bookmark" title="Bookmark current page">
-              <iconify-icon icon="material-symbols:add"></iconify-icon> Pin
-              Page
-            </button>
-            <button class="nav-action-btn" id="btn-add-link" title="Add Hyperlink" style="display: none">
-              <iconify-icon icon="material-symbols:add-link"></iconify-icon>
-              Add Link
-            </button>
-            <button class="nav-action-btn" id="btn-batch-upload" title="Add Batch Files" style="display: none">
-              <iconify-icon icon="material-symbols:upload-file"></iconify-icon>
-              Upload
-            </button>
-            <button class="nav-close-btn" id="nav-panel-close" title="Close Panel">
-              &times;
-            </button>
-          </div>
-        </div>
-        <div class="nav-panel-views">
-          <div id="nav-view-outline" class="nav-panel-view active"></div>
-          <div id="nav-view-bookmarks" class="nav-panel-view"></div>
-          <div id="nav-view-annotations" class="nav-panel-view"></div>
-          <div id="nav-view-links" class="nav-panel-view"></div>
-          <div id="nav-view-batch" class="nav-panel-view"></div>
-        </div>
-      </div>
-    </aside>
+      <div class="toolbar-sep" data-toolbar-ctx="html"></div>
 
-    <!-- Holds every pane so the panes can stack vertically on tablet
+      <!-- Paragraph: html only -->
+      <div class="ribbon-group" data-toolbar-ctx="html">
+        <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+          <!-- Styles: html only -->
+      <div class="ribbon-group" data-toolbar-ctx="html">
+        <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+          <select class="tool-select" id="sel-block" title="Paragraph style">
+            <option value="">Paragraph</option>
+            <option value="h1">Heading 1</option>
+            <option value="h2">Heading 2</option>
+            <option value="h3">Heading 3</option>
+            <option value="h4">Heading 4</option>
+            <option value="h5">Heading 5</option>
+            <option value="h6">Heading 6</option>
+            <option value="small">Small text</option>
+          </select>
+          <button class="tool-btn" id="btn-add-page" title="Add blank page">
+            <iconify-icon
+              icon="material-symbols:note-add-outline"
+            ></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-insert-box"
+            title="Insert callout / text box"
+          >
+            <iconify-icon
+              icon="material-symbols:add-notes-outline"
+            ></iconify-icon>
+          </button>
+        </div>
+        <!-- <span class="ribbon-group-label">Styles</span> -->
+      </div>
+          <div class="split-btn dropdown" id="dd-bullets">
+            <button class="tool-btn" id="btn-ul" title="Bullet list">
+              <iconify-icon
+                icon="material-symbols:format-list-bulleted"
+              ></iconify-icon>
+            </button>
+            <button class="tool-btn split-btn-caret" title="Bullet styles">
+              <iconify-icon
+                icon="material-symbols:arrow-drop-down"
+              ></iconify-icon>
+            </button>
+            <div class="dropdown-menu split-menu">
+              <button class="dropdown-item" data-list-style="disc">
+                <span class="item-icon">&bull;</span> Disc
+              </button>
+              <button class="dropdown-item" data-list-style="circle">
+                <span class="item-icon">&#9675;</span> Circle
+              </button>
+              <button class="dropdown-item" data-list-style="square">
+                <span class="item-icon">&#9642;</span> Square
+              </button>
+              <button class="dropdown-item" data-list-style="none">
+                <span class="item-icon">&mdash;</span> None
+              </button>
+            </div>
+          </div>
+          <div class="split-btn dropdown" id="dd-numbering">
+            <button class="tool-btn" id="btn-ol" title="Numbered list">
+              <iconify-icon
+                icon="material-symbols:format-list-numbered"
+              ></iconify-icon>
+            </button>
+            <button class="tool-btn split-btn-caret" title="Numbering styles">
+              <iconify-icon
+                icon="material-symbols:arrow-drop-down"
+              ></iconify-icon>
+            </button>
+            <div class="dropdown-menu split-menu">
+              <button class="dropdown-item" data-list-style="decimal">
+                <span class="item-icon">1.</span> 1, 2, 3&hellip;
+              </button>
+              <button class="dropdown-item" data-list-style="lower-alpha">
+                <span class="item-icon">a.</span> a, b, c&hellip;
+              </button>
+              <button class="dropdown-item" data-list-style="upper-alpha">
+                <span class="item-icon">A.</span> A, B, C&hellip;
+              </button>
+              <button class="dropdown-item" data-list-style="lower-roman">
+                <span class="item-icon">i.</span> i, ii, iii&hellip;
+              </button>
+              <button class="dropdown-item" data-list-style="upper-roman">
+                <span class="item-icon">I.</span> I, II, III&hellip;
+              </button>
+            </div>
+          </div>
+          <button
+            class="tool-btn"
+            id="btn-dl"
+            title="Definition list (term / description)"
+          >
+            <iconify-icon
+              icon="material-symbols:list-alt-outline"
+            ></iconify-icon>
+          </button>
+          <!-- <span class="ribbon-btn-sep"></span> -->
+          <button class="tool-btn" id="btn-outdent" title="Decrease indent">
+            <iconify-icon
+              icon="material-symbols:format-indent-decrease"
+            ></iconify-icon>
+          </button>
+          <button class="tool-btn" id="btn-indent" title="Increase indent">
+            <iconify-icon
+              icon="material-symbols:format-indent-increase"
+            ></iconify-icon>
+          </button>
+          <!-- <span class="ribbon-btn-sep"></span> -->
+          <button class="tool-btn" id="btn-align-left" title="Align left">
+            <iconify-icon
+              icon="material-symbols:format-align-left"
+            ></iconify-icon>
+          </button>
+          <button class="tool-btn" id="btn-align-center" title="Align center">
+            <iconify-icon
+              icon="material-symbols:format-align-center"
+            ></iconify-icon>
+          </button>
+          <button class="tool-btn" id="btn-align-right" title="Align right">
+            <iconify-icon
+              icon="material-symbols:format-align-right"
+            ></iconify-icon>
+          </button>
+          <button class="tool-btn" id="btn-align-justify" title="Justify">
+            <iconify-icon
+              icon="material-symbols:format-align-justify"
+            ></iconify-icon>
+          </button>
+          <!-- <span class="ribbon-btn-sep"></span> -->
+          <button
+            class="tool-btn"
+            id="btn-dist-h"
+            title="Distribute horizontally (row, space-between)"
+          >
+            <iconify-icon
+              icon="material-symbols:align-space-between"
+            ></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-dist-v"
+            title="Distribute vertically (column, even gap)"
+          >
+            <iconify-icon
+              icon="material-symbols:align-space-between"
+              style="transform: rotate(90deg)"
+            ></iconify-icon>
+          </button>
+          <!-- <span class="ribbon-btn-sep"></span> -->
+          <div class="split-btn dropdown" id="dd-columns">
+            <button
+              class="tool-btn"
+              id="btn-columns"
+              title="Split selection into columns"
+            >
+              <iconify-icon
+                icon="material-symbols:view-column-outline"
+              ></iconify-icon>
+            </button>
+            <button class="tool-btn split-btn-caret" title="Column count">
+              <iconify-icon
+                icon="material-symbols:arrow-drop-down"
+              ></iconify-icon>
+            </button>
+            <div class="dropdown-menu split-menu">
+              <button class="dropdown-item" data-cols="2">
+                <span class="item-icon"
+                  ><iconify-icon
+                    icon="material-symbols:view-column-outline"
+                  ></iconify-icon
+                ></span>
+                2 Columns
+              </button>
+              <button class="dropdown-item" data-cols="3">
+                <span class="item-icon"
+                  ><iconify-icon
+                    icon="material-symbols:view-week-outline"
+                  ></iconify-icon
+                ></span>
+                3 Columns
+              </button>
+              <button class="dropdown-item" data-cols="4">
+                <span class="item-icon"
+                  ><iconify-icon
+                    icon="material-symbols:view-week-outline"
+                  ></iconify-icon
+                ></span>
+                4 Columns
+              </button>
+              <div class="dropdown-divider"></div>
+              <button class="dropdown-item" data-cols="1">
+                <span class="item-icon"
+                  ><iconify-icon
+                    icon="material-symbols:view-agenda-outline"
+                  ></iconify-icon
+                ></span>
+                Remove Columns
+              </button>
+            </div>
+          </div>
+          <!-- <span class="ribbon-btn-sep"></span> -->
+          <button
+            class="tool-btn"
+            id="btn-border"
+            title="Toggle paragraph / box border"
+          >
+            <iconify-icon icon="material-symbols:border-outer"></iconify-icon>
+          </button>
+        </div>
+        <span class="ribbon-group-label">Paragraph</span>
+      </div>
+      <div class="toolbar-sep" data-toolbar-ctx="html"></div>
+
+      <div class="toolbar-sep" data-toolbar-ctx="pdf"></div>
+      <!-- PDF zoom: pdf -->
+      <div
+        class="ribbon-group"
+        id="pdf-zoom-group"
+        aria-label="PDF zoom"
+        data-toolbar-ctx="pdf"
+      >
+        <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+          <button class="tool-btn" id="btn-zoom-out" title="Zoom out">
+            <iconify-icon icon="material-symbols:zoom-out"></iconify-icon>
+          </button>
+          <span class="page-counter" id="zoom-pct">100%</span>
+          <button class="tool-btn" id="btn-zoom-in" title="Zoom in">
+            <iconify-icon icon="material-symbols:zoom-in"></iconify-icon>
+          </button>
+          <button class="tool-btn" id="btn-zoom-fit" title="Fit width">
+            <iconify-icon
+              icon="material-symbols:fit-screen-outline"
+            ></iconify-icon>
+          </button>
+        </div>
+        <span class="ribbon-group-label">Zoom</span>
+      </div>
+      <!-- Annotate: pdf only -->
+      <div class="toolbar-sep" data-toolbar-ctx="pdf"></div>
+      <div class="ribbon-group" id="annotate-group" data-toolbar-ctx="pdf">
+        <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+          <button
+            class="tool-btn"
+            id="btn-ann-mode"
+            title="Toggle Text / Annotate mode (Annotate lets you draw on the page)"
+          >
+            <iconify-icon
+              icon="material-symbols:edit-note-outline"
+            ></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-pdf-text-edit"
+            aria-pressed="false"
+            title="Edit Text — hide the page image and edit the PDF text directly (exported via pdf-lib)"
+          >
+            <iconify-icon icon="material-symbols:text-fields"></iconify-icon>
+          </button>
+          <!-- <span class="ribbon-btn-sep"></span> -->
+          <button
+            class="tool-btn"
+            id="ann-tool-select"
+            data-ann-tool="select"
+            title="Select (V)"
+          >
+            <iconify-icon icon="material-symbols:cursor"></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="ann-tool-highlight"
+            data-ann-tool="highlight"
+            title="Highlight (H)"
+          >
+            <iconify-icon
+              icon="material-symbols:format-ink-highlighter"
+            ></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="ann-tool-ink"
+            data-ann-tool="ink"
+            title="Freehand pen (P)"
+          >
+            <iconify-icon icon="material-symbols:ink-pen"></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="ann-tool-rect"
+            data-ann-tool="rect"
+            title="Rectangle (R)"
+          >
+            <iconify-icon icon="material-symbols:crop-square"></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="ann-tool-ellipse"
+            data-ann-tool="ellipse"
+            title="Ellipse (O)"
+          >
+            <iconify-icon icon="material-symbols:circle-outline"></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="ann-tool-arrow"
+            data-ann-tool="arrow"
+            title="Arrow (A)"
+          >
+            <iconify-icon icon="material-symbols:trending-flat"></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="ann-tool-measure"
+            data-ann-tool="measure"
+            title="Measure (M)"
+          >
+            <iconify-icon icon="material-symbols:straighten"></iconify-icon>
+          </button>
+          <!-- <span class="ribbon-btn-sep"></span> -->
+          <button
+            class="tool-btn"
+            id="btn-ann-undo"
+            title="Undo annotation"
+            disabled
+          >
+            <iconify-icon icon="material-symbols:undo"></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-ann-redo"
+            title="Redo annotation"
+            disabled
+          >
+            <iconify-icon icon="material-symbols:redo"></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-ann-clear"
+            title="Clear all annotations"
+            disabled
+          >
+            <iconify-icon
+              icon="material-symbols:delete-sweep-outline"
+            ></iconify-icon>
+          </button>
+        </div>
+        <span class="ribbon-group-label">Annotate</span>
+      </div>
+
+      <div class="toolbar-sep" data-toolbar-ctx="pdf html"></div>
+
+      <!-- Selection Mode: pdf, html -->
+      <div class="ribbon-group" data-toolbar-ctx="pdf html">
+        <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+          <button
+            class="tool-btn"
+            id="btn-select-mode"
+            title="Toggle Selection / Edit mode"
+          >
+            <iconify-icon
+              icon="material-symbols:arrow-selector-tool-outline"
+            ></iconify-icon>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-group-selected"
+            title="Group selected regions into a zone"
+            style="display: none"
+          >
+            <iconify-icon
+              icon="material-symbols:group-work-outline"
+            ></iconify-icon>
+          </button>
+        </div>
+        <span class="ribbon-group-label">Select</span>
+      </div>
+      <div class="toolbar-sep" data-toolbar-ctx="html"></div>
+
+      <!-- Table editing: html -->
+      <div class="ribbon-group" data-toolbar-ctx="html">
+        <div class="ribbon-group-buttons ribbon-group-buttons--wrap">
+          <button
+            class="tool-btn"
+            id="btn-table-add-row"
+            title="Add row below"
+            disabled
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="2.5" y="2.5" width="11" height="5" rx="1" />
+              <line x1="2.5" y1="5.5" x2="13.5" y2="5.5" />
+              <path d="M8 10v4M6 12h4" />
+            </svg>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-table-add-col"
+            title="Add column right"
+            disabled
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="2.5" y="2.5" width="5" height="11" rx="1" />
+              <line x1="5.5" y1="2.5" x2="5.5" y2="13.5" />
+              <path d="M10 8h4M12 6v4" />
+            </svg>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-table-del-row"
+            title="Delete row"
+            disabled
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="2.5" y="2.5" width="11" height="5" rx="1" />
+              <line x1="2.5" y1="5.5" x2="13.5" y2="5.5" />
+              <line x1="6" y1="12" x2="10" y2="12" stroke="#ef4444" />
+            </svg>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-table-del-col"
+            title="Delete column"
+            disabled
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="2.5" y="2.5" width="5" height="11" rx="1" />
+              <line x1="5.5" y1="2.5" x2="5.5" y2="13.5" />
+              <line x1="10" y1="8" x2="14" y2="8" stroke="#ef4444" />
+            </svg>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-table-merge"
+            title="Merge cells"
+            disabled
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="2" y="3" width="12" height="10" rx="1.5" />
+              <path d="M5.5 8h5M4 8l2-2M4 8l2 2M12 8l-2-2M12 8l-2 2" />
+            </svg>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-table-undo"
+            title="Undo table edit"
+            disabled
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M3.5 6.5h7a3 3 0 0 1 3 3v0.5a3 3 0 0 1-3 3H9" />
+              <path d="M6.5 3.5L3.5 6.5l3 3" />
+            </svg>
+          </button>
+          <button
+            class="tool-btn"
+            id="btn-table-redo"
+            title="Redo table edit"
+            disabled
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12.5 6.5h-7a3 3 0 0 0-3 3v0.5a3 3 0 0 0 3 3H7" />
+              <path d="M9.5 3.5l3 3-3 3" />
+            </svg>
+          </button>
+        </div>
+        <span class="ribbon-group-label">Table</span>
+      </div>
+      <div class="toolbar-sep" data-toolbar-ctx="html"></div>
+
+      <!-- Page navigation: pdf -->
+      <div class="ribbon-group" id="page-nav-group" data-toolbar-ctx="pdf">
+        <div
+          class="ribbon-group-buttons ribbon-group-buttons--wrap page-nav"
+          id="page-nav"
+        >
+          <button
+            class="tool-btn"
+            id="btn-toggle-nav"
+            title="Toggle Document Navigation / Outline / Annotations"
+          >
+            <iconify-icon
+              icon="material-symbols:dock-to-left-outline"
+            ></iconify-icon>
+          </button>
+          <button class="tool-btn" id="btn-prev-page" title="Previous page">
+            <iconify-icon icon="material-symbols:chevron-left"></iconify-icon>
+          </button>
+          <span class="page-counter" id="page-counter">Page 1 of 1</span>
+          <button class="tool-btn" id="btn-next-page" title="Next page">
+            <iconify-icon icon="material-symbols:chevron-right"></iconify-icon>
+          </button>
+        </div>
+        <span class="ribbon-group-label">Navigate</span>
+      </div>
+    </div>
+
+    <!-- ── STATUS BAR ──────────────────────────────────────────────────── -->
+    <div id="status-bar" class="status-bar" hidden>
+      <div class="status-spinner"></div>
+      <span id="status-msg">Loading…</span>
+      <span id="status-progress" class="status-progress"></span>
+    </div>
+
+    <!-- ── WORKSPACE WRAPPER ───────────────────────────────────────────── -->
+    <div id="app-workspace">
+      <!-- LEFT NAVIGATION PANEL -->
+      <aside id="nav-panel" class="nav-panel">
+        <div class="nav-tab-strip">
+          <button class="nav-tab-btn" data-tab="tools" title="Document Tools">
+            <iconify-icon icon="material-symbols:build-outline"></iconify-icon>
+          </button>
+          <button
+            class="nav-tab-btn"
+            data-tab="outline"
+            title="Document Outline"
+          >
+            <iconify-icon
+              icon="material-symbols:account-tree-outline"
+            ></iconify-icon>
+          </button>
+          <button class="nav-tab-btn" data-tab="bookmarks" title="Bookmarks">
+            <iconify-icon
+              icon="material-symbols:bookmark-outline"
+            ></iconify-icon>
+          </button>
+          <button
+            class="nav-tab-btn"
+            data-tab="annotations"
+            title="Annotations"
+          >
+            <iconify-icon icon="material-symbols:draw-outline"></iconify-icon>
+          </button>
+          <button
+            class="nav-tab-btn"
+            data-tab="links"
+            title="Hyperlinks & References"
+          >
+            <iconify-icon icon="material-symbols:link"></iconify-icon>
+          </button>
+          <button
+            class="nav-tab-btn"
+            data-tab="batch"
+            title="Batch Documents & Queue"
+          >
+            <iconify-icon
+              icon="material-symbols:folder-zip-outline"
+            ></iconify-icon>
+          </button>
+          <!-- MCP Pill (VS Code only) -->
+          <div class="gx-mcp-pill-wrap" id="mcpPillWrap">
+            <button
+              class="gx-mcp-pill"
+              id="mcpPillBtn"
+              aria-label="Use with Copilot"
+              aria-expanded="false"
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+              >
+                <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z" />
+                <path d="M12 8v4l3 3" />
+              </svg>
+              <span>MCP</span>
+            </button>
+            <div class="gx-mcp-popover" id="mcpPopover" role="tooltip">
+              <div class="gx-mcp-popover-title">Use with Copilot</div>
+              <div class="gx-mcp-popover-ref">
+                <span>#ginexys_extract_pdf_text</span>
+                <button
+                  title="Copy"
+                  onclick="
+                    navigator.clipboard.writeText('#ginexys_extract_pdf_text')
+                  "
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <rect x="9" y="9" width="13" height="13" rx="2" />
+                    <path
+                      d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+                    />
+                  </svg>
+                </button>
+              </div>
+              <div class="gx-mcp-popover-sample">
+                Sample prompt:
+                <code
+                  >#ginexys_extract_pdf_text extract all tables and write them
+                  to output.md</code
+                >
+              </div>
+              <div class="gx-mcp-popover-docs">
+                <a href="https://ginexys.com/docs#mcp-tools" target="_blank"
+                  >Full MCP docs &rarr;</a
+                >
+              </div>
+            </div>
+          </div>
+          <!-- Ginexys Send To -->
+          <span class="doc-ctx-sep-v" data-ctx-surface="html"></span>
+        </div>
+        <div class="nav-panel-body">
+          <div class="nav-panel-header">
+            <span class="nav-panel-title" id="nav-panel-title">Navigation</span>
+            <div class="nav-panel-actions">
+              <button
+                class="nav-action-btn"
+                id="btn-add-bookmark"
+                title="Bookmark current page"
+              >
+                <iconify-icon icon="material-symbols:add"></iconify-icon> Pin
+                Page
+              </button>
+              <button
+                class="nav-action-btn"
+                id="btn-add-link"
+                title="Add Hyperlink"
+                style="display: none"
+              >
+                <iconify-icon icon="material-symbols:add-link"></iconify-icon>
+                Add Link
+              </button>
+              <button
+                class="nav-action-btn"
+                id="btn-batch-upload"
+                title="Add Batch Files"
+                style="display: none"
+              >
+                <iconify-icon
+                  icon="material-symbols:upload-file"
+                ></iconify-icon>
+                Upload
+              </button>
+              <button
+                class="nav-close-btn"
+                id="nav-panel-close"
+                title="Close Panel"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
+          <div class="nav-panel-views">
+            <div id="nav-view-tools" class="nav-panel-view">
+              <section class="document-views-group" aria-label="Document views">
+                <span class="document-views-label">Document Views</span>
+                <div
+                  id="document-view-buttons"
+                  class="document-view-buttons"
+                  role="group"
+                  aria-label="Choose PDF, document, or source editor"
+                ></div>
+              </section>
+            </div>
+            <div id="nav-view-outline" class="nav-panel-view active"></div>
+            <div id="nav-view-bookmarks" class="nav-panel-view"></div>
+            <div id="nav-view-annotations" class="nav-panel-view"></div>
+            <div id="nav-view-links" class="nav-panel-view"></div>
+            <div id="nav-view-batch" class="nav-panel-view"></div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Holds every pane so the panes can stack vertically on tablet
            without the 40px nav rail (a sibling of THIS, not of the panes)
            being dragged into the same reflow. -->
-    <div id="workspace-split">
-      <!-- ══ WORKSPACE PANES ═══════════════════════════════════════════════
+      <div id="workspace-split">
+        <!-- ══ WORKSPACE PANES ═══════════════════════════════════════════════
            Every surface is a PERMANENT sibling here; a tab decides which ones
            are [hidden], it does not decide where anything lives. That is what
            lets "show the original PDF beside the Doc" be a visibility flip
@@ -807,56 +1492,73 @@
            divider lands between the PDF and whichever pane follows it —
            Doc or Analyze — without needing a second divider. -->
 
-      <!-- The two document panes. `display: contents` everywhere except the
+        <!-- The two document panes. `display: contents` everywhere except the
            Analyze T-split, so in every other layout #pane-pdf / #pane-doc stay
            direct flex children of #workspace-split and nothing changes. In the
            T-split it becomes a real flex container, which is what gives
            #pane-divider a box to resize inside. -->
-      <div id="pane-stack">
-        <!-- PDF PANE -->
-        <div id="pane-pdf" class="work-pane">
-          <div class="vd-pane-header" id="pdf-header-bar">
-            <span class="vd-label vd-label--pdf">Original</span>
-            <!-- The open document's name lives here, not on the load button.
+        <div id="pane-stack">
+          <!-- PDF PANE -->
+          <div id="pane-pdf" class="work-pane">
+            <div class="vd-pane-header" id="pdf-header-bar">
+              <span class="vd-label vd-label--pdf">Original</span>
+              <!-- The open document's name lives here, not on the load button.
                Click to swap the file, ✕ to unload it. -->
-            <span class="gx-file-chip is-empty" data-slot="1">
-              <span class="gx-file-name"></span>
-              <button class="gx-file-x" type="button" data-unload-slot="1" title="Close this document"
-                aria-label="Close this document">
-                &times;
-              </button>
-            </span>
-            <span class="vd-hint">Rendered source with editable text overlay</span>
+              <span class="gx-file-chip is-empty" data-slot="1">
+                <span class="gx-file-name"></span>
+                <button
+                  class="gx-file-x"
+                  type="button"
+                  data-unload-slot="1"
+                  title="Close this document"
+                  aria-label="Close this document"
+                >
+                  &times;
+                </button>
+              </span>
+              <span class="vd-hint"
+                >Rendered source with editable text overlay</span
+              >
+            </div>
+            <div id="pdf-canvas-container" class="canvas-scroll">
+              <p class="empty-hint">Open a PDF to view it here.</p>
+            </div>
           </div>
-          <div id="pdf-canvas-container" class="canvas-scroll">
-            <p class="empty-hint">Open a PDF to view it here.</p>
-          </div>
-        </div>
 
-        <!-- Shown only when the PDF pane is sharing the workspace -->
-        <div class="vd-divider" id="pane-divider" hidden></div>
+          <!-- Shown only when the PDF pane is sharing the workspace -->
+          <div class="vd-divider" id="pane-divider" hidden></div>
 
-        <!-- DOC PANE -->
-        <div id="pane-doc" class="work-pane" hidden>
-          <div class="vd-pane-header" id="doc-header-bar">
-            <span class="vd-label vd-label--html">Extracted HTML</span>
-            <span class="gx-file-chip is-empty" data-slot="1">
-              <span class="gx-file-name"></span>
-              <button class="gx-file-x" type="button" data-unload-slot="1" title="Close this document"
-                aria-label="Close this document">
-                &times;
-              </button>
-            </span>
-            <span class="vd-hint">Editable rendered output</span>
+          <!-- DOC PANE -->
+          <div id="pane-doc" class="work-pane" hidden>
+            <div class="vd-pane-header" id="doc-header-bar">
+              <span class="vd-label vd-label--html">Extracted HTML</span>
+              <span class="gx-file-chip is-empty" data-slot="1">
+                <span class="gx-file-name"></span>
+                <button
+                  class="gx-file-x"
+                  type="button"
+                  data-unload-slot="1"
+                  title="Close this document"
+                  aria-label="Close this document"
+                >
+                  &times;
+                </button>
+              </span>
+              <span class="vd-hint">Editable rendered output</span>
+            </div>
+            <div
+              id="html-preview"
+              class="prose-area"
+              contenteditable="true"
+              spellcheck="true"
+            >
+              <p class="empty-hint">
+                Open a PDF to see the extracted HTML or Add Blank Page to Edit.
+              </p>
+            </div>
           </div>
-          <div id="html-preview" class="prose-area" contenteditable="true" spellcheck="true">
-            <p class="empty-hint">
-              Open a PDF to see the extracted HTML or Add Blank Page to Edit.
-            </p>
-          </div>
-        </div>
 
-        <!-- Reference board decoupled from active submodule build
+          <!-- Reference board decoupled from active submodule build
           <div class="vd-divider" id="notes-divider" hidden></div>
           <div id="pane-notes" class="work-pane" hidden>
             <div class="vd-pane-header" id="notes-header-bar">
@@ -866,533 +1568,903 @@
             <div id="notes-board"></div>
           </div>
           -->
-      </div>
-      <!-- /#pane-stack -->
+        </div>
+        <!-- /#pane-stack -->
 
-      <!-- Divider between the document group and the canvas. Vertical in the
+        <!-- Divider between the document group and the canvas. Vertical in the
            wide T, horizontal in the narrow one — paneDivider reads its own
            container's flex-direction, so no JS knows which. -->
-      <div class="vd-divider" id="stack-divider" hidden></div>
+        <div class="vd-divider" id="stack-divider" hidden></div>
 
-      <!-- MONACO EDITOR PANE -->
-      <div id="pane-editor" class="work-pane" hidden>
-        <div id="monaco-editor-container" class="monaco-fill"></div>
-      </div>
+        <!-- MONACO EDITOR PANE -->
+        <div id="pane-editor" class="work-pane" hidden>
+          <div id="monaco-editor-container" class="monaco-fill"></div>
+        </div>
 
-      <!-- COMPARE DIFF VIEW (Diffchecker Style) -->
-      <div id="pane-diff" class="work-pane diff-layout" hidden>
-        <!-- Single compact control bar: mode · layout · precision · stats -->
-        <div class="diff-bar">
-          <div class="diff-bar-left">
-            <div class="diff-pill-group" role="group" aria-label="Content mode">
-              <button class="diff-pill active" data-cmp-view="rich-text">
-                Rich
-              </button>
-              <button class="diff-pill" data-cmp-view="plain-text">
-                Plain
-              </button>
+        <!-- COMPARE DIFF VIEW (Diffchecker Style) -->
+        <div id="pane-diff" class="work-pane diff-layout" hidden>
+          <!-- Single compact control bar: mode · layout · precision · stats -->
+          <div class="diff-bar">
+            <div class="diff-bar-left">
+              <div
+                class="diff-pill-group"
+                role="group"
+                aria-label="Content mode"
+              >
+                <button class="diff-pill active" data-cmp-view="rich-text">
+                  Rich
+                </button>
+                <button class="diff-pill" data-cmp-view="plain-text">
+                  Plain
+                </button>
+              </div>
+
+              <div class="diff-bar-sep"></div>
+
+              <div class="diff-pill-group" role="group" aria-label="Layout">
+                <button
+                  class="diff-pill active"
+                  id="layout-split"
+                  title="Split view"
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 13 13"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                  >
+                    <rect x="1" y="1" width="4.5" height="11" rx="1" />
+                    <rect x="7.5" y="1" width="4.5" height="11" rx="1" />
+                  </svg>
+                  Split
+                </button>
+                <button
+                  class="diff-pill"
+                  id="layout-unified"
+                  title="Unified view"
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 13 13"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                  >
+                    <rect x="1" y="1" width="11" height="11" rx="1" />
+                    <line x1="1" y1="5" x2="12" y2="5" />
+                    <line x1="1" y1="9" x2="12" y2="9" />
+                  </svg>
+                  Unified
+                </button>
+              </div>
+
+              <div class="diff-bar-sep"></div>
+
+              <div
+                class="diff-pill-group"
+                role="group"
+                aria-label="Diff precision"
+              >
+                <button class="diff-pill active" id="precision-word">
+                  Word
+                </button>
+                <button class="diff-pill" id="precision-char">Char</button>
+              </div>
             </div>
 
-            <div class="diff-bar-sep"></div>
-
-            <div class="diff-pill-group" role="group" aria-label="Layout">
-              <button class="diff-pill active" id="layout-split" title="Split view">
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6">
-                  <rect x="1" y="1" width="4.5" height="11" rx="1" />
-                  <rect x="7.5" y="1" width="4.5" height="11" rx="1" />
-                </svg>
-                Split
-              </button>
-              <button class="diff-pill" id="layout-unified" title="Unified view">
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6">
-                  <rect x="1" y="1" width="11" height="11" rx="1" />
-                  <line x1="1" y1="5" x2="12" y2="5" />
-                  <line x1="1" y1="9" x2="12" y2="9" />
-                </svg>
-                Unified
-              </button>
-            </div>
-
-            <div class="diff-bar-sep"></div>
-
-            <div class="diff-pill-group" role="group" aria-label="Diff precision">
-              <button class="diff-pill active" id="precision-word">
-                Word
-              </button>
-              <button class="diff-pill" id="precision-char">Char</button>
+            <div class="diff-bar-right" id="diff-stats">
+              <span class="diff-stat diff-stat--remove">
+                <span id="stat-removed-count">0</span> removed
+              </span>
+              <span class="diff-stat diff-stat--add">
+                <span id="stat-added-count">0</span> added
+              </span>
+              <div style="position: relative; display: inline-block">
+                <button
+                  class="diff-pill gx-pro-locked"
+                  style="position: relative"
+                  disabled
+                >
+                  Export Report <span class="gx-pro-badge">PRO</span>
+                  <div
+                    class="gx-pro-interceptor"
+                    data-pro-feature="pdf-diff-export"
+                  ></div>
+                </button>
+              </div>
             </div>
           </div>
 
-          <div class="diff-bar-right" id="diff-stats">
-            <span class="diff-stat diff-stat--remove">
-              <span id="stat-removed-count">0</span> removed
-            </span>
-            <span class="diff-stat diff-stat--add">
-              <span id="stat-added-count">0</span> added
-            </span>
-            <div style="position: relative; display: inline-block">
-              <button class="diff-pill gx-pro-locked" style="position: relative" disabled>
-                Export Report <span class="gx-pro-badge">PRO</span>
-                <div class="gx-pro-interceptor" data-pro-feature="pdf-diff-export"></div>
-              </button>
+          <!-- MAIN CONTENT AREA -->
+          <div class="diff-workspace">
+            <div id="diff-container" class="split-view">
+              <!-- Left Pane -->
+              <div class="diff-pane left-pane" id="pane-left">
+                <div class="diff-pane-label">
+                  <span class="vd-label vd-label--pdf">Original</span>
+                  <span class="gx-file-chip is-empty" data-slot="1">
+                    <span class="gx-file-name"></span>
+                    <button
+                      class="gx-file-x"
+                      type="button"
+                      data-unload-slot="1"
+                      title="Close this document"
+                      aria-label="Close this document"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                </div>
+                <div class="pane-content" id="content-left">
+                  <div class="empty-state">Load Original PDF</div>
+                </div>
+              </div>
+
+              <!-- Resizer -->
+              <div class="pane-resizer" id="pane-resizer"></div>
+
+              <!-- Right Pane -->
+              <div class="diff-pane right-pane" id="pane-right">
+                <div class="diff-pane-label">
+                  <span class="vd-label vd-label--html">Modified</span>
+                  <span class="gx-file-chip is-empty" data-slot="2">
+                    <span class="gx-file-name"></span>
+                    <button
+                      class="gx-file-x"
+                      type="button"
+                      data-unload-slot="2"
+                      title="Close this document"
+                      aria-label="Close this document"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                </div>
+                <div class="pane-content" id="content-right">
+                  <div class="empty-state">Load Modified PDF</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- MAIN CONTENT AREA -->
-        <div class="diff-workspace">
-          <div id="diff-container" class="split-view">
-            <!-- Left Pane -->
-            <div class="diff-pane left-pane" id="pane-left">
-              <div class="diff-pane-label">
-                <span class="vd-label vd-label--pdf">Original</span>
-                <span class="gx-file-chip is-empty" data-slot="1">
-                  <span class="gx-file-name"></span>
-                  <button class="gx-file-x" type="button" data-unload-slot="1" title="Close this document"
-                    aria-label="Close this document">
-                    &times;
-                  </button>
-                </span>
-              </div>
-              <div class="pane-content" id="content-left">
-                <div class="empty-state">Load Original PDF</div>
-              </div>
-            </div>
-
-            <!-- Resizer -->
-            <div class="pane-resizer" id="pane-resizer"></div>
-
-            <!-- Right Pane -->
-            <div class="diff-pane right-pane" id="pane-right">
-              <div class="diff-pane-label">
-                <span class="vd-label vd-label--html">Modified</span>
-                <span class="gx-file-chip is-empty" data-slot="2">
-                  <span class="gx-file-name"></span>
-                  <button class="gx-file-x" type="button" data-unload-slot="2" title="Close this document"
-                    aria-label="Close this document">
-                    &times;
-                  </button>
-                </span>
-              </div>
-              <div class="pane-content" id="content-right">
-                <div class="empty-state">Load Modified PDF</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── ANALYZE VIEW ─────────────────────────────────────────────── -->
-      <div id="pane-analyze" class="work-pane" hidden>
-        <div class="analyze-layout" id="analyze-panel-inner">
-          <!-- ── Meta bar: status + file info ───────────────────────── -->
-          <div class="analyze-meta-bar">
-            <span class="analyze-status-msg" id="analyze-status">Load a PDF to inspect its structure.</span>
-            <div class="analyze-meta" id="analyze-meta"></div>
-            <div class="analyze-toolbar-nav">
-              <button class="atb-btn" id="analyze-page-prev" disabled title="Previous page">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <polyline points="15 18 9 12 15 6" />
+        <!-- ── ANALYZE VIEW ─────────────────────────────────────────────── -->
+        <div id="pane-analyze" class="work-pane" hidden>
+          <div class="analyze-layout" id="analyze-panel-inner">
+            <!-- ── Meta bar: status + file info ───────────────────────── -->
+            <div class="analyze-meta-bar">
+              <span class="analyze-status-msg" id="analyze-status"
+                >Load a PDF to inspect its structure.</span
+              >
+              <div class="analyze-meta" id="analyze-meta"></div>
+              <!-- Stats / controls toggle (desktop FAB + mobile drawer) -->
+              <button
+                class="atb-btn atb-btn--label"
+                id="analyze-stats-toggle"
+                title="Pipeline controls &amp; stats"
+                aria-expanded="false"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
                 </svg>
+                Controls
               </button>
-              <span id="analyze-page-counter" class="atb-page-counter">—</span>
-              <button class="atb-btn" id="analyze-page-next" disabled title="Next page">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <polyline points="9 18 15 12 9 6" />
+              <!-- Original-PDF reference toggle -->
+              <button
+                class="atb-btn atb-btn--label pdf-mirror-toggle"
+                id="analyze-pdf-mirror-toggle"
+                title="Show the original PDF alongside the canvas, for reference while tuning"
+                aria-expanded="false"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                  />
+                  <polyline points="14 2 14 8 20 8" />
                 </svg>
+                Original PDF
               </button>
-            </div>
-            <!-- Stats / controls toggle (desktop FAB + mobile drawer) -->
-            <button class="atb-btn atb-btn--label" id="analyze-stats-toggle" title="Pipeline controls &amp; stats"
-              aria-expanded="false">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-              Controls
-            </button>
-            <!-- Original-PDF reference toggle -->
-            <button class="atb-btn atb-btn--label pdf-mirror-toggle" id="analyze-pdf-mirror-toggle"
-              title="Show the original PDF alongside the canvas, for reference while tuning" aria-expanded="false">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-              Original PDF
-            </button>
-            <!-- Extracted-HTML reference toggle. Independent of the Original
+              <!-- Extracted-HTML reference toggle. Independent of the Original
                  toggle: either, both or neither can share the canvas. -->
-            <button class="atb-btn atb-btn--label doc-mirror-toggle" id="analyze-doc-mirror-toggle"
-              title="Show the extracted HTML alongside the canvas" aria-expanded="false">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M4 4h16v16H4z" />
-                <path d="M4 9h16M9 9v11" />
-              </svg>
-              Extracted
-            </button>
-            <!-- User guide toggle -->
-            <button class="atb-btn atb-btn--label" id="analyze-guide-btn" title="User guide" aria-expanded="false"
-              aria-controls="analyze-guide-panel">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-              Guide
-            </button>
+              <button
+                class="atb-btn atb-btn--label doc-mirror-toggle"
+                id="analyze-doc-mirror-toggle"
+                title="Show the extracted HTML alongside the canvas"
+                aria-expanded="false"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M4 4h16v16H4z" />
+                  <path d="M4 9h16M9 9v11" />
+                </svg>
+                Extracted
+              </button>
+              <!-- User guide toggle -->
+              <button
+                class="atb-btn atb-btn--label"
+                id="analyze-guide-btn"
+                title="User guide"
+                aria-expanded="false"
+                aria-controls="analyze-guide-panel"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                Guide
+              </button>
+            </div>
 
-          </div>
+            <!-- ── Format toolbar: actions ────────────────────────────── -->
+            <div class="analyze-toolbar">
+              <button
+                class="atb-btn"
+                id="analyze-undo"
+                title="Undo (Ctrl/Cmd+Z)"
+                disabled
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                </svg>
+              </button>
+              <button
+                class="atb-btn"
+                id="analyze-redo"
+                title="Redo (Ctrl/Cmd+Shift+Z)"
+                disabled
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"
+                  />
+                  <path d="M21 3v5h-5" />
+                </svg>
+              </button>
+              <button
+                class="atb-btn"
+                id="analyze-merge"
+                title="Merge selected regions into one (M)"
+                disabled
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M10 18H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h5" />
+                  <path d="M14 6h5a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-5" />
+                  <path d="M18 12h-4a2 2 0 0 1-2-2V6" />
+                </svg>
+              </button>
+              <button
+                class="atb-btn atb-btn--label"
+                id="analyze-col-split-tool"
+                title="Click on the canvas to place a column split line. Drag to reposition, click ✕ to remove."
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <line x1="12" y1="3" x2="12" y2="21" />
+                  <polyline points="8 7 12 3 16 7" />
+                  <polyline points="8 17 12 21 16 17" />
+                </svg>
+                Col split
+              </button>
+              <button
+                class="atb-btn atb-btn--label"
+                id="analyze-select-tool"
+                title="Select a region to inspect, resize, drag or reclassify"
+                disabled
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M5 3l14 9-7 2-2 7z" />
+                </svg>
+                Select
+              </button>
+              <button
+                class="atb-btn atb-btn--label atb-btn--primary"
+                id="analyze-reextract"
+                title="Re-extract current page with current layer and threshold settings"
+                disabled
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
+                <span class="atb-label-full">Re-extract page</span>
+                <span class="atb-label-short">Re-extract</span>
+              </button>
+              <button
+                class="atb-btn atb-btn--label atb-btn--pro"
+                id="analyze-ai-tune"
+                title="AI proposes extraction parameters; the deterministic pipeline re-runs and the verifier scores the result (Pro)"
+                disabled
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"
+                  />
+                  <path
+                    d="M19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9z"
+                  />
+                </svg>
+                <span class="atb-label-full">AI tune</span>
+                <span class="atb-label-short">AI tune</span>
+                <span class="atb-pro-badge">PRO</span>
+              </button>
+              <button
+                class="atb-btn atb-btn--label atb-btn--pro atb-desktop-only"
+                id="analyze-bulk-extract"
+                title="Re-extract all pages (Pro)"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <rect x="2" y="3" width="20" height="14" rx="2" />
+                  <line x1="8" y1="21" x2="16" y2="21" />
+                  <line x1="12" y1="17" x2="12" y2="21" />
+                </svg>
+                Bulk extract
+                <span class="atb-pro-badge">PRO</span>
+              </button>
+            </div>
 
-          <!-- ── Format toolbar: actions ────────────────────────────── -->
-          <div class="analyze-toolbar">
-            <button class="atb-btn" id="analyze-undo" title="Undo (Ctrl/Cmd+Z)" disabled>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                <path d="M3 3v5h5" />
-              </svg>
-            </button>
-            <button class="atb-btn" id="analyze-redo" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-                <path d="M21 3v5h-5" />
-              </svg>
-            </button>
-            <button class="atb-btn" id="analyze-merge" title="Merge selected regions into one (M)" disabled>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M10 18H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h5" />
-                <path d="M14 6h5a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-5" />
-                <path d="M18 12h-4a2 2 0 0 1-2-2V6" />
-              </svg>
-            </button>
-            <button class="atb-btn atb-btn--label" id="analyze-col-split-tool"
-              title="Click on the canvas to place a column split line. Drag to reposition, click ✕ to remove.">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="3" x2="12" y2="21" />
-                <polyline points="8 7 12 3 16 7" />
-                <polyline points="8 17 12 21 16 17" />
-              </svg>
-              Col split
-            </button>
-            <button class="atb-btn atb-btn--label" id="analyze-select-tool"
-              title="Select a region to inspect, resize, drag or reclassify" disabled>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M5 3l14 9-7 2-2 7z" />
-              </svg>
-              Select
-            </button>
-            <button class="atb-btn atb-btn--label atb-btn--primary" id="analyze-reextract"
-              title="Re-extract current page with current layer and threshold settings" disabled>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="23 4 23 10 17 10" />
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-              </svg>
-              <span class="atb-label-full">Re-extract page</span>
-              <span class="atb-label-short">Re-extract</span>
-            </button>
-            <button class="atb-btn atb-btn--label atb-btn--pro" id="analyze-ai-tune"
-              title="AI proposes extraction parameters; the deterministic pipeline re-runs and the verifier scores the result (Pro)"
-              disabled>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z" />
-                <path d="M19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9z" />
-              </svg>
-              <span class="atb-label-full">AI tune</span>
-              <span class="atb-label-short">AI tune</span>
-              <span class="atb-pro-badge">PRO</span>
-            </button>
-            <button class="atb-btn atb-btn--label atb-btn--pro atb-desktop-only" id="analyze-bulk-extract"
-              title="Re-extract all pages (Pro)">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="3" width="20" height="14" rx="2" />
-                <line x1="8" y1="21" x2="16" y2="21" />
-                <line x1="12" y1="17" x2="12" y2="21" />
-              </svg>
-              Bulk extract
-              <span class="atb-pro-badge">PRO</span>
-            </button>
-          </div>
+            <!-- ── User guide panel (hidden by default) ───────────────── -->
+            <div class="analyze-guide-panel" id="analyze-guide-panel" hidden>
+              <button
+                class="analyze-guide-close"
+                id="analyze-guide-close"
+                aria-label="Close guide"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+              <h3 class="agd-title">Quick Guide</h3>
 
-          <!-- ── User guide panel (hidden by default) ───────────────── -->
-          <div class="analyze-guide-panel" id="analyze-guide-panel" hidden>
-            <button class="analyze-guide-close" id="analyze-guide-close" aria-label="Close guide">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-            <h3 class="agd-title">Quick Guide</h3>
-
-            <!-- Tools -->
-            <div class="agd-section">
-              <div class="agd-section-title">Tools</div>
-              <div class="agd-tool-card">
-                <div class="agd-tool-icon">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="12" y1="3" x2="12" y2="21" />
-                    <polyline points="8 7 12 3 16 7" />
-                    <polyline points="8 17 12 21 16 17" />
-                  </svg>
+              <!-- Tools -->
+              <div class="agd-section">
+                <div class="agd-section-title">Tools</div>
+                <div class="agd-tool-card">
+                  <div class="agd-tool-icon">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <line x1="12" y1="3" x2="12" y2="21" />
+                      <polyline points="8 7 12 3 16 7" />
+                      <polyline points="8 17 12 21 16 17" />
+                    </svg>
+                  </div>
+                  <div class="agd-tool-body">
+                    <span class="agd-tool-name">Col split</span>
+                    <span class="agd-tool-desc"
+                      >Click canvas → drop a column boundary. Drag to move,
+                      double-click to remove. Forces splits the auto-detector
+                      missed.</span
+                    >
+                  </div>
                 </div>
-                <div class="agd-tool-body">
-                  <span class="agd-tool-name">Col split</span>
-                  <span class="agd-tool-desc">Click canvas → drop a column boundary. Drag to move,
-                    double-click to remove. Forces splits the auto-detector
-                    missed.</span>
+                <div class="agd-tool-card">
+                  <div class="agd-tool-icon">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path d="M5 3l14 9-7 2-2 7z" />
+                    </svg>
+                  </div>
+                  <div class="agd-tool-body">
+                    <span class="agd-tool-name">Select</span>
+                    <span class="agd-tool-desc"
+                      >Click a region to select. Drag to move, drag handles to
+                      resize. Double-click empty space to create a new
+                      region.</span
+                    >
+                    <div class="agd-kbd-row">
+                      <span class="agd-kbd">L</span
+                      ><span class="agd-kbd-label">Lattice</span>
+                      <span class="agd-kbd">S</span
+                      ><span class="agd-kbd-label">Stream</span>
+                      <span class="agd-kbd">P</span
+                      ><span class="agd-kbd-label">Para</span>
+                      <span class="agd-kbd">H</span
+                      ><span class="agd-kbd-label">Heading</span>
+                      <span class="agd-kbd">B</span
+                      ><span class="agd-kbd-label">Box</span>
+                      <span class="agd-kbd">E</span
+                      ><span class="agd-kbd-label">Math</span>
+                      <span class="agd-kbd">⌫</span
+                      ><span class="agd-kbd-label">Skip</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div class="agd-tool-card">
-                <div class="agd-tool-icon">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M5 3l14 9-7 2-2 7z" />
-                  </svg>
-                </div>
-                <div class="agd-tool-body">
-                  <span class="agd-tool-name">Select</span>
-                  <span class="agd-tool-desc">Click a region to select. Drag to move, drag handles to
-                    resize. Double-click empty space to create a new
-                    region.</span>
-                  <div class="agd-kbd-row">
-                    <span class="agd-kbd">L</span><span class="agd-kbd-label">Lattice</span>
-                    <span class="agd-kbd">S</span><span class="agd-kbd-label">Stream</span>
-                    <span class="agd-kbd">P</span><span class="agd-kbd-label">Para</span>
-                    <span class="agd-kbd">H</span><span class="agd-kbd-label">Heading</span>
-                    <span class="agd-kbd">B</span><span class="agd-kbd-label">Box</span>
-                    <span class="agd-kbd">E</span><span class="agd-kbd-label">Math</span>
-                    <span class="agd-kbd">⌫</span><span class="agd-kbd-label">Skip</span>
+                <div class="agd-tool-card">
+                  <div class="agd-tool-icon">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <polyline points="23 4 23 10 17 10" />
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                    </svg>
+                  </div>
+                  <div class="agd-tool-body">
+                    <span class="agd-tool-name">Re-extract page</span>
+                    <span class="agd-tool-desc"
+                      >Reruns the pipeline with current slider values and
+                      visible regions. Result updates the Extract tab
+                      immediately.</span
+                    >
                   </div>
                 </div>
               </div>
-              <div class="agd-tool-card">
-                <div class="agd-tool-icon">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="23 4 23 10 17 10" />
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                  </svg>
+
+              <!-- Legend toggles -->
+              <div class="agd-section">
+                <div class="agd-section-title">Legend toggles</div>
+                <p class="agd-p">
+                  Click any chip to hide that layer or region type. Hidden
+                  regions are also skipped on the next re-extraction.
+                </p>
+                <div class="agd-chips">
+                  <span class="agd-chip" style="--cc: #3b82f6">H segs</span>
+                  <span class="agd-chip" style="--cc: #10b981">V segs</span>
+                  <span class="agd-chip" style="--cc: #f97316">Rects</span>
+                  <span class="agd-chip" style="--cc: #ef4444">Images</span>
+                  <span class="agd-chip" style="--cc: #e879f9">Text</span>
+                  <span class="agd-chip" style="--cc: #2563eb">Lattice</span>
+                  <span class="agd-chip" style="--cc: #06b6d4">Stream</span>
+                  <span class="agd-chip" style="--cc: #8b5cf6">Heading</span>
+                  <span class="agd-chip" style="--cc: #6b7280">Para</span>
                 </div>
-                <div class="agd-tool-body">
-                  <span class="agd-tool-name">Re-extract page</span>
-                  <span class="agd-tool-desc">Reruns the pipeline with current slider values and
-                    visible regions. Result updates the Extract tab
-                    immediately.</span>
+              </div>
+
+              <!-- Sliders -->
+              <div class="agd-section">
+                <div class="agd-section-title">Sliders</div>
+                <p class="agd-p agd-tip">
+                  Drag any slider — a ghost overlay appears on the canvas
+                  showing exactly what changes.
+                </p>
+                <div class="agd-slider-guide">
+                  <div class="agd-sg-row">
+                    <span class="agd-sg-key">Y-band</span
+                    ><span class="agd-sg-val"
+                      >Vertical tolerance for grouping text into the same line.
+                      ↑ for skewed PDFs.</span
+                    >
+                  </div>
+                  <div class="agd-sg-row">
+                    <span class="agd-sg-key">Para gap</span
+                    ><span class="agd-sg-val"
+                      >Gap needed to split paragraphs. ↑ if paragraphs merge, ↓
+                      if lines split.</span
+                    >
+                  </div>
+                  <div class="agd-sg-row">
+                    <span class="agd-sg-key">Col gap</span
+                    ><span class="agd-sg-val"
+                      >Whitespace width to detect a column split. ↑ for dense
+                      multi-column layouts.</span
+                    >
+                  </div>
+                  <div class="agd-sg-row">
+                    <span class="agd-sg-key">Stream conf</span
+                    ><span class="agd-sg-val"
+                      >Threshold for whitespace-detected tables. ↓ catches more
+                      tables, may add false positives.</span
+                    >
+                  </div>
                 </div>
               </div>
             </div>
 
-            <!-- Legend toggles -->
-            <div class="agd-section">
-              <div class="agd-section-title">Legend toggles</div>
-              <p class="agd-p">
-                Click any chip to hide that layer or region type. Hidden
-                regions are also skipped on the next re-extraction.
-              </p>
-              <div class="agd-chips">
-                <span class="agd-chip" style="--cc: #3b82f6">H segs</span>
-                <span class="agd-chip" style="--cc: #10b981">V segs</span>
-                <span class="agd-chip" style="--cc: #f97316">Rects</span>
-                <span class="agd-chip" style="--cc: #ef4444">Images</span>
-                <span class="agd-chip" style="--cc: #e879f9">Text</span>
-                <span class="agd-chip" style="--cc: #2563eb">Lattice</span>
-                <span class="agd-chip" style="--cc: #06b6d4">Stream</span>
-                <span class="agd-chip" style="--cc: #8b5cf6">Heading</span>
-                <span class="agd-chip" style="--cc: #6b7280">Para</span>
-              </div>
-            </div>
+            <!-- ── Body: canvas left, stats right ─────────────────────── -->
+            <div class="analyze-body">
+              <div class="analyze-canvas-wrap">
+                <div id="analyze-canvas-header-bar" class="vd-pane-header">
+                  <span class="vd-label vd-label--html">Canvas</span>
+                  <span class="vd-hint"
+                    >Detection layers &amp; region overlays</span
+                  >
+                </div>
+                <canvas class="analyze-canvas" id="analyze-canvas"></canvas>
 
-            <!-- Sliders -->
-            <div class="agd-section">
-              <div class="agd-section-title">Sliders</div>
-              <p class="agd-p agd-tip">
-                Drag any slider — a ghost overlay appears on the canvas
-                showing exactly what changes.
-              </p>
-              <div class="agd-slider-guide">
-                <div class="agd-sg-row">
-                  <span class="agd-sg-key">Y-band</span><span class="agd-sg-val">Vertical tolerance for grouping text
-                    into the same line.
-                    ↑ for skewed PDFs.</span>
+                <!-- Geometry layer toggles -->
+                <div class="analyze-legend" id="analyze-legend">
+                  <button
+                    class="legend-toggle active"
+                    data-layer="hSegs"
+                    style="--lc: #3b82f6"
+                  >
+                    H segs
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-layer="vSegs"
+                    style="--lc: #10b981"
+                  >
+                    V segs
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-layer="diagSegs"
+                    style="--lc: #9ca3af"
+                  >
+                    Diag
+                  </button>
+                  <button
+                    class="legend-toggle"
+                    data-layer="rects"
+                    style="--lc: #f97316"
+                  >
+                    Rects
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-layer="images"
+                    style="--lc: #ef4444"
+                  >
+                    Images
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-layer="text"
+                    style="--lc: #e879f9"
+                  >
+                    Text
+                  </button>
                 </div>
-                <div class="agd-sg-row">
-                  <span class="agd-sg-key">Para gap</span><span class="agd-sg-val">Gap needed to split paragraphs. ↑ if
-                    paragraphs merge, ↓
-                    if lines split.</span>
-                </div>
-                <div class="agd-sg-row">
-                  <span class="agd-sg-key">Col gap</span><span class="agd-sg-val">Whitespace width to detect a column
-                    split. ↑ for dense
-                    multi-column layouts.</span>
-                </div>
-                <div class="agd-sg-row">
-                  <span class="agd-sg-key">Stream conf</span><span class="agd-sg-val">Threshold for whitespace-detected
-                    tables. ↓ catches more
-                    tables, may add false positives.</span>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          <!-- ── Body: canvas left, stats right ─────────────────────── -->
-          <div class="analyze-body">
-            <div class="analyze-canvas-wrap">
-              <div id="analyze-canvas-header-bar" class="vd-pane-header">
-                <span class="vd-label vd-label--html">Canvas</span>
-                <span class="vd-hint">Detection layers &amp; region overlays</span>
-              </div>
-              <canvas class="analyze-canvas" id="analyze-canvas"></canvas>
-
-              <!-- Geometry layer toggles -->
-              <div class="analyze-legend" id="analyze-legend">
-                <button class="legend-toggle active" data-layer="hSegs" style="--lc: #3b82f6">
-                  H segs
-                </button>
-                <button class="legend-toggle active" data-layer="vSegs" style="--lc: #10b981">
-                  V segs
-                </button>
-                <button class="legend-toggle active" data-layer="diagSegs" style="--lc: #9ca3af">
-                  Diag
-                </button>
-                <button class="legend-toggle" data-layer="rects" style="--lc: #f97316">
-                  Rects
-                </button>
-                <button class="legend-toggle active" data-layer="images" style="--lc: #ef4444">
-                  Images
-                </button>
-                <button class="legend-toggle active" data-layer="text" style="--lc: #e879f9">
-                  Text
-                </button>
-              </div>
-
-              <!-- Region type toggles -->
-              <div class="analyze-legend analyze-region-legend" id="analyze-region-legend">
-                <span class="analyze-section-title" style="width: 100%; margin-bottom: 2px">Regions</span>
-                <button class="legend-toggle active" data-region="LATTICE_TABLE" style="--lc: #2563eb">
-                  Lattice
-                </button>
-                <button class="legend-toggle active" data-region="STREAM_TABLE" style="--lc: #06b6d4">
-                  Stream
-                </button>
-                <button class="legend-toggle active" data-region="BOX" style="--lc: #f97316">
-                  Box
-                </button>
-                <button class="legend-toggle active" data-region="HEADING" style="--lc: #8b5cf6">
-                  Heading
-                </button>
-                <button class="legend-toggle active" data-region="PARAGRAPH" style="--lc: #6b7280">
-                  Para
-                </button>
-                <button class="legend-toggle active" data-region="MATH" style="--lc: #d946ef">
-                  Math
-                </button>
-                <button class="legend-toggle active" data-region="LIST" style="--lc: #14b8a6">
-                  List
-                </button>
-                <button class="legend-toggle active" data-region="REFERENCE" style="--lc: #0ea5e9">
-                  Refs
-                </button>
-                <button class="legend-toggle active" data-region="IMAGE" style="--lc: #ef4444">
-                  Image
-                </button>
-                <button class="legend-toggle active" data-region="DIVIDER" style="--lc: #94a3b8">
-                  Divider
-                </button>
-                <button class="legend-toggle active" data-region="HEADER" style="--lc: #f59e0b">
-                  Header
-                </button>
-                <button class="legend-toggle active" data-region="FOOTER" style="--lc: #f59e0b">
-                  Footer
-                </button>
-              </div>
-            </div>
-
-            <!-- ── Right panel: stats + sliders ───────────────────── -->
-            <div class="analyze-stats-wrap">
-              <div class="analyze-section-title">Page stats</div>
-              <div id="analyze-stats"></div>
-
-              <div class="analyze-section-title" style="margin-top: 14px">
-                Regions
-              </div>
-              <div id="analyze-region-stats"></div>
-
-              <!-- Confidence threshold -->
-              <div class="analyze-section-title" style="margin-top: 14px">
-                Pipeline thresholds
-              </div>
-              <div class="analyze-slider-group">
-                <div class="analyze-slider-row">
-                  <label class="aslider-label" for="analyze-conf-slider">Min confidence</label>
-                  <span id="analyze-conf-val" class="aslider-val">0.00</span>
-                  <input type="range" id="analyze-conf-slider" min="0" max="1" step="0.05" value="0" class="aslider"
-                    data-ghost="conf" />
-                </div>
-                <div class="analyze-slider-row">
-                  <label class="aslider-label" for="analyze-yband-slider">Y-band tol (R_Y_BAND)</label>
-                  <span id="analyze-yband-val" class="aslider-val">0.45</span>
-                  <input type="range" id="analyze-yband-slider" min="0.15" max="1.20" step="0.05" value="0.45"
-                    class="aslider" data-ghost="yband" />
-                </div>
-                <div class="analyze-slider-row">
-                  <label class="aslider-label" for="analyze-paragap-slider">Para gap (R_PARA_GAP)</label>
-                  <span id="analyze-paragap-val" class="aslider-val">1.80</span>
-                  <input type="range" id="analyze-paragap-slider" min="0.80" max="4.00" step="0.10" value="1.80"
-                    class="aslider" data-ghost="paragap" />
-                </div>
-                <div class="analyze-slider-row">
-                  <label class="aslider-label" for="analyze-colgap-slider">Col gap (R_COL_GAP_MIN)</label>
-                  <span id="analyze-colgap-val" class="aslider-val">1.50</span>
-                  <input type="range" id="analyze-colgap-slider" min="0.50" max="4.00" step="0.10" value="1.50"
-                    class="aslider" data-ghost="colgap" />
-                </div>
-                <div class="analyze-slider-row">
-                  <label class="aslider-label" for="analyze-streamconf-slider">Stream conf (STREAM_CONFIDENCE)</label>
-                  <span id="analyze-streamconf-val" class="aslider-val">0.60</span>
-                  <input type="range" id="analyze-streamconf-slider" min="0.10" max="0.95" step="0.05" value="0.60"
-                    class="aslider" data-ghost="streamconf" />
+                <!-- Region type toggles -->
+                <div
+                  class="analyze-legend analyze-region-legend"
+                  id="analyze-region-legend"
+                >
+                  <span
+                    class="analyze-section-title"
+                    style="width: 100%; margin-bottom: 2px"
+                    >Regions</span
+                  >
+                  <button
+                    class="legend-toggle active"
+                    data-region="LATTICE_TABLE"
+                    style="--lc: #2563eb"
+                  >
+                    Lattice
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-region="STREAM_TABLE"
+                    style="--lc: #06b6d4"
+                  >
+                    Stream
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-region="BOX"
+                    style="--lc: #f97316"
+                  >
+                    Box
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-region="HEADING"
+                    style="--lc: #8b5cf6"
+                  >
+                    Heading
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-region="PARAGRAPH"
+                    style="--lc: #6b7280"
+                  >
+                    Para
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-region="MATH"
+                    style="--lc: #d946ef"
+                  >
+                    Math
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-region="LIST"
+                    style="--lc: #14b8a6"
+                  >
+                    List
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-region="REFERENCE"
+                    style="--lc: #0ea5e9"
+                  >
+                    Refs
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-region="IMAGE"
+                    style="--lc: #ef4444"
+                  >
+                    Image
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-region="DIVIDER"
+                    style="--lc: #94a3b8"
+                  >
+                    Divider
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-region="HEADER"
+                    style="--lc: #f59e0b"
+                  >
+                    Header
+                  </button>
+                  <button
+                    class="legend-toggle active"
+                    data-region="FOOTER"
+                    style="--lc: #f59e0b"
+                  >
+                    Footer
+                  </button>
                 </div>
               </div>
 
-              <!-- PageScale readout (live, populated by JS) -->
-              <div class="analyze-scale-readout" id="analyze-scale-row" style="display: none">
+              <!-- ── Right panel: stats + sliders ───────────────────── -->
+              <div class="analyze-stats-wrap">
+                <div class="analyze-section-title">Page stats</div>
+                <div id="analyze-stats"></div>
+
                 <div class="analyze-section-title" style="margin-top: 14px">
-                  Calibration (px)
+                  Regions
                 </div>
-                <table class="astat-table">
-                  <tbody>
-                    <tr>
-                      <td class="astat-key">Body S</td>
-                      <td class="astat-val" id="analyze-scale-s">—</td>
-                    </tr>
-                    <tr>
-                      <td class="astat-key">Col gap min</td>
-                      <td class="astat-val" id="analyze-scale-colgap">—</td>
-                    </tr>
-                    <tr>
-                      <td class="astat-key">Y band tol</td>
-                      <td class="astat-val" id="analyze-scale-yband">—</td>
-                    </tr>
-                    <tr>
-                      <td class="astat-key">Para gap</td>
-                      <td class="astat-val" id="analyze-scale-paragap">—</td>
-                    </tr>
-                  </tbody>
-                </table>
+                <div id="analyze-region-stats"></div>
+
+                <!-- Confidence threshold -->
+                <div class="analyze-section-title" style="margin-top: 14px">
+                  Pipeline thresholds
+                </div>
+                <div class="analyze-slider-group">
+                  <div class="analyze-slider-row">
+                    <label class="aslider-label" for="analyze-conf-slider"
+                      >Min confidence</label
+                    >
+                    <span id="analyze-conf-val" class="aslider-val">0.00</span>
+                    <input
+                      type="range"
+                      id="analyze-conf-slider"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value="0"
+                      class="aslider"
+                      data-ghost="conf"
+                    />
+                  </div>
+                  <div class="analyze-slider-row">
+                    <label class="aslider-label" for="analyze-yband-slider"
+                      >Y-band tol (R_Y_BAND)</label
+                    >
+                    <span id="analyze-yband-val" class="aslider-val">0.45</span>
+                    <input
+                      type="range"
+                      id="analyze-yband-slider"
+                      min="0.15"
+                      max="1.20"
+                      step="0.05"
+                      value="0.45"
+                      class="aslider"
+                      data-ghost="yband"
+                    />
+                  </div>
+                  <div class="analyze-slider-row">
+                    <label class="aslider-label" for="analyze-paragap-slider"
+                      >Para gap (R_PARA_GAP)</label
+                    >
+                    <span id="analyze-paragap-val" class="aslider-val"
+                      >1.80</span
+                    >
+                    <input
+                      type="range"
+                      id="analyze-paragap-slider"
+                      min="0.80"
+                      max="4.00"
+                      step="0.10"
+                      value="1.80"
+                      class="aslider"
+                      data-ghost="paragap"
+                    />
+                  </div>
+                  <div class="analyze-slider-row">
+                    <label class="aslider-label" for="analyze-colgap-slider"
+                      >Col gap (R_COL_GAP_MIN)</label
+                    >
+                    <span id="analyze-colgap-val" class="aslider-val"
+                      >1.50</span
+                    >
+                    <input
+                      type="range"
+                      id="analyze-colgap-slider"
+                      min="0.50"
+                      max="4.00"
+                      step="0.10"
+                      value="1.50"
+                      class="aslider"
+                      data-ghost="colgap"
+                    />
+                  </div>
+                  <div class="analyze-slider-row">
+                    <label class="aslider-label" for="analyze-streamconf-slider"
+                      >Stream conf (STREAM_CONFIDENCE)</label
+                    >
+                    <span id="analyze-streamconf-val" class="aslider-val"
+                      >0.60</span
+                    >
+                    <input
+                      type="range"
+                      id="analyze-streamconf-slider"
+                      min="0.10"
+                      max="0.95"
+                      step="0.05"
+                      value="0.60"
+                      class="aslider"
+                      data-ghost="streamconf"
+                    />
+                  </div>
+                </div>
+
+                <!-- PageScale readout (live, populated by JS) -->
+                <div
+                  class="analyze-scale-readout"
+                  id="analyze-scale-row"
+                  style="display: none"
+                >
+                  <div class="analyze-section-title" style="margin-top: 14px">
+                    Calibration (px)
+                  </div>
+                  <table class="astat-table">
+                    <tbody>
+                      <tr>
+                        <td class="astat-key">Body S</td>
+                        <td class="astat-val" id="analyze-scale-s">—</td>
+                      </tr>
+                      <tr>
+                        <td class="astat-key">Col gap min</td>
+                        <td class="astat-val" id="analyze-scale-colgap">—</td>
+                      </tr>
+                      <tr>
+                        <td class="astat-key">Y band tol</td>
+                        <td class="astat-val" id="analyze-scale-yband">—</td>
+                      </tr>
+                      <tr>
+                        <td class="astat-key">Para gap</td>
+                        <td class="astat-val" id="analyze-scale-paragap">—</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+      <!-- /#workspace-split -->
     </div>
-    <!-- /#workspace-split -->
-  </div>
 
-  <!-- ── TOAST ──────────────────────────────────────────────────────── -->
-  <div id="toast" class="toast" hidden></div>
+    <!-- ── TOAST ──────────────────────────────────────────────────────── -->
+    <div id="toast" class="toast" hidden></div>
 
-  <!-- OS Bridge (no-op when standalone, connects to kernel when in iframe) -->
-  <script src="/assets/os/contracts.js"></script>
-  <script src="/assets/os/mcp.js"></script>
-  <script src="/assets/os/bridge.js"></script>
-  <!-- GxPointer bootstrap. Every tool wires its buttons with
+    <!-- OS Bridge (no-op when standalone, connects to kernel when in iframe) -->
+    <script src="/assets/os/contracts.js"></script>
+    <script src="/assets/os/mcp.js"></script>
+    <script src="/assets/os/bridge.js"></script>
+    <!-- GxPointer bootstrap. Every tool wires its buttons with
        GxPointer.onPress(...) and does not guard the call, so if
        /assets/os/pointer.js 404s or arrives late (file:// open, a tool served
        from its own directory, a webview whose asset root differs) the first
@@ -1400,276 +2472,292 @@
        after it — the toolbar goes dead with no error naming the button.
        This inline shim guarantees window.GxPointer exists with identical
        onPress/onCanvasDrag semantics; pointer.js upgrades it in place. -->
-  <script>
-  (function () {
-      if (window.GxPointer) return;
-      function primary(e) { return e.button === 0 && e.isPrimary !== false; }
-      function onPress(el, fn) {
+    <script>
+      (function () {
+        if (window.GxPointer) return;
+        function primary(e) {
+          return e.button === 0 && e.isPrimary !== false;
+        }
+        function onPress(el, fn) {
           if (!el) return;
-          el.addEventListener('pointerdown', function (e) { if (primary(e)) fn(e); });
-          el.addEventListener('click', function (e) { if (e.detail === 0) fn(e); });
-      }
-      function onCanvasDrag(el, h) {
+          el.addEventListener("pointerdown", function (e) {
+            if (primary(e)) fn(e);
+          });
+          el.addEventListener("click", function (e) {
+            if (e.detail === 0) fn(e);
+          });
+        }
+        function onCanvasDrag(el, h) {
           if (!el) return;
           var active = false;
-          el.addEventListener('pointerdown', function (e) {
-              if (!primary(e)) return;
-              active = true;
-              try { el.setPointerCapture(e.pointerId); } catch (err) {}
-              if (h && h.onDown) h.onDown(e);
+          el.addEventListener("pointerdown", function (e) {
+            if (!primary(e)) return;
+            active = true;
+            try {
+              el.setPointerCapture(e.pointerId);
+            } catch (err) {}
+            if (h && h.onDown) h.onDown(e);
           });
-          el.addEventListener('pointermove', function (e) {
-              if (active && e.isPrimary !== false && h && h.onMove) h.onMove(e);
+          el.addEventListener("pointermove", function (e) {
+            if (active && e.isPrimary !== false && h && h.onMove) h.onMove(e);
           });
           function end(e) {
-              if (!active) return;
-              active = false;
-              try { el.releasePointerCapture(e.pointerId); } catch (err) {}
-              if (h && h.onUp) h.onUp(e);
+            if (!active) return;
+            active = false;
+            try {
+              el.releasePointerCapture(e.pointerId);
+            } catch (err) {}
+            if (h && h.onUp) h.onUp(e);
           }
-          el.addEventListener('pointerup', end);
-          el.addEventListener('pointercancel', end);
-      }
-      window.GxPointer = { onPress: onPress, onCanvasDrag: onCanvasDrag, __gxShim: true };
-  })();
-  </script>
-  <script src="/assets/os/pointer.js"></script>
-  <!-- "Open in Ginexys" on a published artifact page lands here with
+          el.addEventListener("pointerup", end);
+          el.addEventListener("pointercancel", end);
+        }
+        window.GxPointer = {
+          onPress: onPress,
+          onCanvasDrag: onCanvasDrag,
+          __gxShim: true,
+        };
+      })();
+    </script>
+    <script src="/assets/os/pointer.js"></script>
+    <!-- "Open in Ginexys" on a published artifact page lands here with
          ?artifact=<id>[&region=<r>]. Loads the content from the public API —
          the source PDF is never stored, so there is nothing else to open. -->
-  <script src="/assets/js/ginexys-artifact-open.js" defer></script>
-  <script src="/assets/js/gx-track.js"></script>
+    <script src="/assets/js/ginexys-artifact-open.js" defer></script>
+    <script src="/assets/js/gx-track.js"></script>
 
-  <script type="module" src="./src/app.js"></script>
-  <script>
-    // Mode routing — path-based activation + URL sync on switch
-    document.addEventListener("DOMContentLoaded", function () {
-      var p = location.pathname;
+    <script type="module" src="./src/app.js"></script>
+    <script>
+      // Mode routing — path-based activation + URL sync on switch
+      document.addEventListener("DOMContentLoaded", function () {
+        var p = location.pathname;
 
-      // On load: activate view matching the current path, OR ?view= query param.
-      // Query param wins (used by OS shell deep links: /tools/pdf-processor/?view=editor).
-      var viewMap = {
-        "visual-diff": "visual-diff",
-        compare: "diff",
-        diff: "diff",
-        editor: "editor",
-        analyze: "analyze",
-        doc: "html",
-        html: "html",
-        pdf: "pdf",
-      };
-      // /visual-diff/ is a PUBLISHED route (sitemap, OS-shell deep links),
-      // kept working even though the standalone view is gone. It now means
-      // "Doc tab with the original PDF beside it" — the Doc tab plus the
-      // PDF pane. There is no visual-diff tab button to click, so it is
-      // expressed as tab + toggle.
-      var queryView = new URLSearchParams(location.search).get("view");
-      var targetView = null;
-      if (queryView) {
-        targetView = viewMap[queryView] || queryView;
-      } else {
-        var matched = Object.keys(viewMap).find(function (k) {
-          return p.includes("/" + k + "/");
-        });
-        if (matched) targetView = viewMap[matched];
-      }
-      // Clicking a tab does nothing until the app has bound its tab
-      // handlers, and that happens inside an async init that is not finished
-      // at DOMContentLoaded. The click here is fire-and-hope: it lands on a
-      // button with no listener, silently, and the deep link opens the
-      // default view instead. Whether it worked came down to which of the
-      // two won the race on the day.
-      //
-      // So the route is retried until the view it asked for is actually the
-      // active one, and then given up on rather than retried forever.
-      function _clickWhenLive(activate, isDone, tries) {
-        if (isDone()) return;
-        activate();
-        if (tries <= 0) return;
-        setTimeout(function () {
-          _clickWhenLive(activate, isDone, tries - 1);
-        }, 100);
-      }
-      var _isActive = function (view) {
-        return function () {
-          var b = document.querySelector('.tab-btn[data-view="' + view + '"]');
-          return !!b && b.classList.contains("active");
+        // On load: activate view matching the current path, OR ?view= query param.
+        // Query param wins (used by OS shell deep links: /tools/pdf-processor/?view=editor).
+        var viewMap = {
+          "visual-diff": "visual-diff",
+          compare: "diff",
+          diff: "diff",
+          editor: "editor",
+          analyze: "analyze",
+          doc: "html",
+          html: "html",
+          pdf: "pdf",
         };
-      };
-      if (targetView === "visual-diff") {
-        // /visual-diff/ is the Doc tab with the PDF mirrored beside it.
-        _clickWhenLive(
-          function () {
-            var docTab = document.querySelector('.tab-btn[data-view="html"]');
-            if (docTab) docTab.click();
-          },
-          _isActive("html"),
-          20,
-        );
-        _clickWhenLive(
-          function () {
-            var m = document.getElementById("doc-pdf-mirror-toggle");
-            if (m) m.click();
-          },
-          function () {
-            var m = document.getElementById("doc-pdf-mirror-toggle");
-            return !!m && m.classList.contains("active");
-          },
-          20,
-        );
-      } else if (targetView) {
-        _clickWhenLive(
-          function () {
-            var btn = document.querySelector(
-              '.tab-btn[data-view="' + targetView + '"]',
-            );
-            if (btn) {
-              btn.disabled = false;
-              btn.click();
-            }
-          },
-          _isActive(targetView),
-          20,
-        );
-      }
-
-      // On switch: keep URL in sync
-      var urlMap = {
-        editor: "/tools/pdf-processor/editor/",
-        "visual-diff": "/tools/pdf-processor/visual-diff/",
-        diff: "/tools/pdf-processor/compare/",
-        pdf: "/tools/pdf-processor/",
-        html: "/tools/pdf-processor/",
-      };
-      document.addEventListener("click", function (e) {
-        var btn = e.target.closest(".tab-btn");
-        if (btn && urlMap[btn.dataset.view]) {
-          history.replaceState({}, "", urlMap[btn.dataset.view]);
-          return;
+        // /visual-diff/ is a PUBLISHED route (sitemap, OS-shell deep links),
+        // kept working even though the standalone view is gone. It now means
+        // "Doc tab with the original PDF beside it" — the Doc tab plus the
+        // PDF pane. There is no visual-diff tab button to click, so it is
+        // expressed as tab + toggle.
+        var queryView = new URLSearchParams(location.search).get("view");
+        var targetView = null;
+        if (queryView) {
+          targetView = viewMap[queryView] || queryView;
+        } else {
+          var matched = Object.keys(viewMap).find(function (k) {
+            return p.includes("/" + k + "/");
+          });
+          if (matched) targetView = viewMap[matched];
         }
-        if (e.target.closest("#doc-pdf-mirror-toggle")) {
-          // aria-expanded is flipped by workspaceLayout.applyLayout(), from
-          // a separate listener on this same click — read it a tick later
-          // so this sees the post-toggle value.
+        // Clicking a tab does nothing until the app has bound its tab
+        // handlers, and that happens inside an async init that is not finished
+        // at DOMContentLoaded. The click here is fire-and-hope: it lands on a
+        // button with no listener, silently, and the deep link opens the
+        // default view instead. Whether it worked came down to which of the
+        // two won the race on the day.
+        //
+        // So the route is retried until the view it asked for is actually the
+        // active one, and then given up on rather than retried forever.
+        function _clickWhenLive(activate, isDone, tries) {
+          if (isDone()) return;
+          activate();
+          if (tries <= 0) return;
           setTimeout(function () {
-            var expanded =
-              document
-                .getElementById("doc-pdf-mirror-toggle")
-                ?.getAttribute("aria-expanded") === "true";
-            history.replaceState(
-              {},
-              "",
-              expanded ? urlMap["visual-diff"] : urlMap.html,
-            );
-          }, 0);
+            _clickWhenLive(activate, isDone, tries - 1);
+          }, 100);
         }
-      });
-    });
-  </script>
+        var _isActive = function (view) {
+          return function () {
+            var b = document.querySelector(
+              '.tab-btn[data-view="' + view + '"]',
+            );
+            return !!b && b.classList.contains("active");
+          };
+        };
+        if (targetView === "visual-diff") {
+          // /visual-diff/ is the Doc tab with the PDF mirrored beside it.
+          _clickWhenLive(
+            function () {
+              var docTab = document.querySelector('.tab-btn[data-view="html"]');
+              if (docTab) docTab.click();
+            },
+            _isActive("html"),
+            20,
+          );
+          _clickWhenLive(
+            function () {
+              var m = document.getElementById("doc-pdf-mirror-toggle");
+              if (m) m.click();
+            },
+            function () {
+              var m = document.getElementById("doc-pdf-mirror-toggle");
+              return !!m && m.classList.contains("active");
+            },
+            20,
+          );
+        } else if (targetView) {
+          _clickWhenLive(
+            function () {
+              var btn = document.querySelector(
+                '.tab-btn[data-view="' + targetView + '"]',
+              );
+              if (btn) {
+                btn.disabled = false;
+                btn.click();
+              }
+            },
+            _isActive(targetView),
+            20,
+          );
+        }
 
-  <script>
-    var PDF_PRO_COPY = {
-      "pdf-export-notion":
-        "Export directly to Notion pages. Join the waitlist to get early access when it ships.",
-      "pdf-export-sheets":
-        "Export structured tables directly to Google Sheets. Join the waitlist to get early access.",
-      "pdf-diff-export":
-        "Export a full diff report comparing two PDFs. Join the waitlist to get early access.",
-      "pdf-analyze-pro":
-        "Per-region confidence scores, tolerance controls, and per-page re-extraction. Join the waitlist to get early access.",
-      "pdf-ai-extract":
-        "Smart OCR reads scanned documents with Docling layout analysis and re-tunes low-confidence pages on vector PDFs. Join the waitlist to get early access.",
-    };
-
-    // Pro waitlist trigger: emit IPC when embedded in the OS, open local modal when standalone.
-    // Embedded path lets the parent OS shell render the modal in its full viewport and apply
-    // any tier-aware logic. Standalone path uses the bundled GxModals (loaded above).
-    function openProWaitlist(featureSlug, subtitle) {
-      var copy =
-        subtitle ||
-        PDF_PRO_COPY[featureSlug] ||
-        "This is a Pro feature. Join the waitlist to get early access when Pro launches.";
-      if (window.parent !== window) {
-        window.parent.postMessage(
-          {
-            type: "gx:pro-gate-click",
-            featureSlug: featureSlug,
-            subtitle: copy,
-          },
-          window.location.origin,
-        );
-      } else if (window.GxModals) {
-        window.GxModals.open("pro_waitlist", {
-          featureSlug: featureSlug,
-          subtitle: copy,
+        // On switch: keep URL in sync
+        var urlMap = {
+          editor: "/tools/pdf-processor/editor/",
+          "visual-diff": "/tools/pdf-processor/visual-diff/",
+          diff: "/tools/pdf-processor/compare/",
+          pdf: "/tools/pdf-processor/",
+          html: "/tools/pdf-processor/",
+        };
+        document.addEventListener("click", function (e) {
+          var btn = e.target.closest(".tab-btn");
+          if (btn && urlMap[btn.dataset.view]) {
+            history.replaceState({}, "", urlMap[btn.dataset.view]);
+            return;
+          }
+          if (e.target.closest("#doc-pdf-mirror-toggle")) {
+            // aria-expanded is flipped by workspaceLayout.applyLayout(), from
+            // a separate listener on this same click — read it a tick later
+            // so this sees the post-toggle value.
+            setTimeout(function () {
+              var expanded =
+                document
+                  .getElementById("doc-pdf-mirror-toggle")
+                  ?.getAttribute("aria-expanded") === "true";
+              history.replaceState(
+                {},
+                "",
+                expanded ? urlMap["visual-diff"] : urlMap.html,
+              );
+            }, 0);
+          }
         });
-      }
-    }
-
-    // Delegated interceptor — handles all Pro-gated items in this tool
-    document.addEventListener("click", function (e) {
-      var interceptor = e.target.closest(".gx-pro-interceptor");
-      if (!interceptor) return;
-      openProWaitlist(interceptor.dataset.proFeature);
-    });
-
-    // Analyze paywall waitlist button
-    (function () {
-      var btn = document.getElementById("analyzeProWaitlist");
-      if (!btn) return;
-      btn.addEventListener("click", function () {
-        openProWaitlist("pdf-analyze-pro");
       });
-    })();
+    </script>
 
-    // Ginexys Send button — opens IPC panel in OS or waitlist when standalone
-    (function () {
-      var sendBtn = document.getElementById("pdfSendBtn");
-      if (!sendBtn) return;
-      sendBtn.addEventListener("click", function () {
+    <script>
+      var PDF_PRO_COPY = {
+        "pdf-export-notion":
+          "Export directly to Notion pages. Join the waitlist to get early access when it ships.",
+        "pdf-export-sheets":
+          "Export structured tables directly to Google Sheets. Join the waitlist to get early access.",
+        "pdf-diff-export":
+          "Export a full diff report comparing two PDFs. Join the waitlist to get early access.",
+        "pdf-analyze-pro":
+          "Per-region confidence scores, tolerance controls, and per-page re-extraction. Join the waitlist to get early access.",
+        "pdf-ai-extract":
+          "Smart OCR reads scanned documents with Docling layout analysis and re-tunes low-confidence pages on vector PDFs. Join the waitlist to get early access.",
+      };
+
+      // Pro waitlist trigger: emit IPC when embedded in the OS, open local modal when standalone.
+      // Embedded path lets the parent OS shell render the modal in its full viewport and apply
+      // any tier-aware logic. Standalone path uses the bundled GxModals (loaded above).
+      function openProWaitlist(featureSlug, subtitle) {
+        var copy =
+          subtitle ||
+          PDF_PRO_COPY[featureSlug] ||
+          "This is a Pro feature. Join the waitlist to get early access when Pro launches.";
         if (window.parent !== window) {
           window.parent.postMessage(
-            { type: "gx:open-ipc-panel" },
+            {
+              type: "gx:pro-gate-click",
+              featureSlug: featureSlug,
+              subtitle: copy,
+            },
             window.location.origin,
           );
-        } else {
-          openProWaitlist(
-            "ipc-cross-tool",
-            "Send extracted tables to TAFNE or vector regions to Schema Editor. Cross-tool flow is a Pro feature.",
-          );
+        } else if (window.GxModals) {
+          window.GxModals.open("pro_waitlist", {
+            featureSlug: featureSlug,
+            subtitle: copy,
+          });
+        }
+      }
+
+      // Delegated interceptor — handles all Pro-gated items in this tool
+      document.addEventListener("click", function (e) {
+        var interceptor = e.target.closest(".gx-pro-interceptor");
+        if (!interceptor) return;
+        openProWaitlist(interceptor.dataset.proFeature);
+      });
+
+      // Analyze paywall waitlist button
+      (function () {
+        var btn = document.getElementById("analyzeProWaitlist");
+        if (!btn) return;
+        btn.addEventListener("click", function () {
+          openProWaitlist("pdf-analyze-pro");
+        });
+      })();
+
+      // Ginexys Send button — opens IPC panel in OS or waitlist when standalone
+      (function () {
+        var sendBtn = document.getElementById("pdfSendBtn");
+        if (!sendBtn) return;
+        sendBtn.addEventListener("click", function () {
+          if (window.parent !== window) {
+            window.parent.postMessage(
+              { type: "gx:open-ipc-panel" },
+              window.location.origin,
+            );
+          } else {
+            openProWaitlist(
+              "ipc-cross-tool",
+              "Send extracted tables to TAFNE or vector regions to Schema Editor. Cross-tool flow is a Pro feature.",
+            );
+          }
+        });
+      })();
+
+      // Export auth gate — fires on the main export button
+      document.addEventListener("DOMContentLoaded", function () {
+        if (window.GxGate) {
+          GxGate.init({
+            toolKey: "pdf_export_count",
+            triggerIds: ["btn-export-main"],
+            tip: {
+              text: "Tables, references, and equations were tagged in this export — send them straight to TAFNE instead of re-uploading.",
+              cta: "Send to TAFNE →",
+              featureSlug: "cross-tool-send",
+              subtitle:
+                "Send extracted tables to TAFNE or vector regions to Schema Editor — with lineage intact. Cross-tool flow is a Pro feature.",
+            },
+          });
         }
       });
-    })();
+    </script>
 
-    // Export auth gate — fires on the main export button
-    document.addEventListener("DOMContentLoaded", function () {
-      if (window.GxGate) {
-        GxGate.init({
-          toolKey: "pdf_export_count",
-          triggerIds: ["btn-export-main"],
-          tip: {
-            text: "Tables, references, and equations were tagged in this export — send them straight to TAFNE instead of re-uploading.",
-            cta: "Send to TAFNE →",
-            featureSlug: "cross-tool-send",
-            subtitle: "Send extracted tables to TAFNE or vector regions to Schema Editor — with lineage intact. Cross-tool flow is a Pro feature.",
-          },
-        });
-      }
-    });
-  </script>
-
-  <!-- ── VIEW CODE DIALOG ──────────────────────────────────────────────── -->
-  <dialog id="view-code-dialog">
-    <div class="vc-header">
-      <span id="vc-element-label" class="vc-label"></span>
-      <button id="vc-close" class="vc-btn-icon" title="Close">✕</button>
-    </div>
-    <div id="vc-monaco-container"></div>
-    <div class="vc-footer">
-      <button id="vc-cancel" class="tool-btn">Cancel</button>
-      <button id="vc-apply" class="tool-btn tool-btn--primary">Apply</button>
-    </div>
-  </dialog>
-</body>
-
+    <!-- ── VIEW CODE DIALOG ──────────────────────────────────────────────── -->
+    <dialog id="view-code-dialog">
+      <div class="vc-header">
+        <span id="vc-element-label" class="vc-label"></span>
+        <button id="vc-close" class="vc-btn-icon" title="Close">✕</button>
+      </div>
+      <div id="vc-monaco-container"></div>
+      <div class="vc-footer">
+        <button id="vc-cancel" class="tool-btn">Cancel</button>
+        <button id="vc-apply" class="tool-btn tool-btn--primary">Apply</button>
+      </div>
+    </dialog>
+  </body>
 </html>

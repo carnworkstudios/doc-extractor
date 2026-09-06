@@ -46,7 +46,7 @@ export function fitPDFWidth() {
     const firstPage = container?.querySelector('.page-wrapper');
     if (!container || !firstPage) return;
     // A hidden pane has clientWidth 0, which would compute a zoom of 0 and
-    // clamp to the 0.5 floor — leaving the document tiny once the pane is
+    // clamp to the 0.1 floor — leaving the document tiny once the pane is
     // shown. Callers that fire on load or on a toggle can land here before
     // layout, so bail rather than fit against nothing.
     if (!container.clientWidth) return;
@@ -54,7 +54,7 @@ export function fitPDFWidth() {
     const padX = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
     const usable = container.clientWidth - padX - 8;
     const intrinsic = parseFloat(firstPage.style.width) || firstPage.offsetWidth / _zoom;
-    if (intrinsic > 0) setPDFZoom(Math.max(0.5, Math.min(3.0, usable / intrinsic)));
+    if (intrinsic > 0) setPDFZoom(Math.max(0.1, Math.min(3.0, usable / intrinsic)));
 }
 
 

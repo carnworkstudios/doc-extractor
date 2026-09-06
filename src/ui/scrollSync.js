@@ -60,6 +60,7 @@ let _rafPending = false;
 const _anchorCache = new Map();
 
 const _surfaces = [];      // extra surfaces registered by the host (analyze canvas)
+const _positionSurfaces = []; // scrolling surfaces such as Monaco
 
 // ── Geometry helpers ─────────────────────────────────────────────────────────
 
@@ -315,16 +316,19 @@ function _apply(fromEl, pos) {
         s._lastPage = page;
         try { s.followPage(page); } catch (_) { /* a surface must not break the scroll */ }
     }
+    for (const s of _positionSurfaces) {
+        if (fromEl === s || (s.isLive && !s.isLive())) continue;
+        try { s.followPosition(pos); } catch (_) { /* one surface must not break the rest */ }
+    }
 }
 
-function _onScroll(e) {
+function _drive(source, readPosition) {
     if (!_enabled) return;
-    const el = e.currentTarget;
     // Whoever moved first owns the gesture until it stops. Without this, the
     // pane we just scrolled programmatically scrolls us back, and the two panes
     // walk each other down the document.
-    if (_driver && _driver !== el) return;
-    _driver = el;
+    if (_driver && _driver !== source) return;
+    _driver = source;
     clearTimeout(_releaseTimer);
     _releaseTimer = setTimeout(() => { _driver = null; }, 120);
 
@@ -332,10 +336,15 @@ function _onScroll(e) {
     _rafPending = true;
     requestAnimationFrame(() => {
         _rafPending = false;
-        if (!_enabled || !_driver) return;
-        const pos = _driver === _docEl() ? _docToPos(_driver) : _pdfToPos(_driver);
-        if (pos != null) _apply(_driver, pos);
+        if (!_enabled || _driver !== source) return;
+        const pos = readPosition();
+        if (pos != null) _apply(source, pos);
     });
+}
+
+function _onScroll(e) {
+    const el = e.currentTarget;
+    _drive(el, () => el === _docEl() ? _docToPos(el) : _pdfToPos(el));
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -373,6 +382,26 @@ export function isScrollSyncEnabled() { return _enabled; }
  */
 export function registerPageSurface(followPage) {
     if (typeof followPage === 'function') _surfaces.push({ followPage, _lastPage: null });
+}
+
+/**
+ * Register a scrolling surface against the same document-position coordinate
+ * used by PDF and Doc. `subscribe` wires its native scroll event and returns
+ * an optional disposer; the adapter owns all pixel/line conversion.
+ */
+export function registerPositionSurface({ readPosition, followPosition, subscribe, isLive }) {
+    if (typeof readPosition !== 'function' || typeof followPosition !== 'function') return () => {};
+    const surface = { readPosition, followPosition, isLive };
+    _positionSurfaces.push(surface);
+    const nativeDispose = typeof subscribe === 'function'
+        ? subscribe(() => _drive(surface, readPosition))
+        : null;
+    return () => {
+        const i = _positionSurfaces.indexOf(surface);
+        if (i >= 0) _positionSurfaces.splice(i, 1);
+        nativeDispose?.dispose?.();
+        if (typeof nativeDispose === 'function') nativeDispose();
+    };
 }
 
 /** Where the panes currently agree they are. Exposed for verbs and tests. */
@@ -414,7 +443,7 @@ export function _debugPositions() {
         doc: _live(doc) ? _docToPos(doc) : null,
         pdf: _live(pdf) ? _pdfToPos(pdf) : null,
         cachedPages: _anchorCache.size,
-        surfaces: _surfaces.length,
+        surfaces: _surfaces.length + _positionSurfaces.length,
         hasDocument: !!state.pdf1.extractedHTML,
     };
 }

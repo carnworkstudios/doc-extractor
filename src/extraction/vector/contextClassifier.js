@@ -397,6 +397,58 @@ function _ensureRegionIds(regions) {
     return regions;
 }
 
+/**
+ * Last-resort content invariant: every non-empty source run must have a region.
+ *
+ * Detectors are allowed to be wrong about structure, but they are not allowed
+ * to delete evidence. This catches items pre-claimed by an optimistic detector
+ * whose region is later rejected or replaced (for example, a tagged-structure
+ * table candidate that loses overlap arbitration). The recovered runs re-enter
+ * the ordinary prose/heading/list classifier and are marked for diagnostics.
+ */
+function _recoverUnownedText(regions, textMeta, scale, scaleY, columnSplits, skip, excluded = new Set()) {
+    const owned = new Set();
+    const visit = region => {
+        for (const idx of region?.textItemIndices || []) owned.add(idx);
+        for (const child of region?.children || []) visit(child);
+        for (const children of Object.values(region?.cellChildren || {})) {
+            for (const child of children) visit(child);
+        }
+    };
+    for (const region of regions) visit(region);
+
+    const missing = textMeta.filter(tm => tm.str.trim() && !owned.has(tm.idx) && !excluded.has(tm.idx));
+    if (!missing.length || skip.has('PARAGRAPH')) return;
+
+    const splits = [...(columnSplits || [])].sort((a, b) => a - b);
+    const buckets = Array.from({ length: splits.length + 1 }, () => []);
+    const fullWidth = [];
+    for (const tm of missing) {
+        const end = tm.vx + (tm.vWidth || 0);
+        if (splits.some(x => tm.vx < x && end > x)) {
+            fullWidth.push(tm);
+            continue;
+        }
+        let ci = 0;
+        while (ci < splits.length && tm.vx >= splits[ci]) ci++;
+        buckets[ci].push(tm);
+    }
+
+    const added = [];
+    const bodyFontSizePt = scale.S / scaleY;
+    for (let ci = 0; ci < buckets.length; ci++) {
+        if (!buckets[ci].length) continue;
+        _classifyBucket(added, _groupByYBand(buckets[ci], scale.yBandTolPx), bodyFontSizePt, scale, ci, skip);
+    }
+    if (fullWidth.length) {
+        _classifyBucket(added, _groupByYBand(fullWidth, scale.yBandTolPx), bodyFontSizePt, scale, -1, skip);
+    }
+    for (const region of added) {
+        region.algorithm = 'lossless-recovery';
+        regions.push(region);
+    }
+}
+
 export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMeta = [], opts = {}) {
     const filledRects  = opts.filledRects  ?? [];
     const fontStyleMap = opts.fontStyleMap ?? {};
@@ -533,6 +585,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     const customRegions = opts.pipeline?.customRegions || [];
     const customInjectedRegions = [];
     const customClaimedTextIndices = new Set();
+    const deliberatelyDeletedTextIndices = new Set();
 
     // ── Deleted region exclusion ──────────────────────────────────────────────
     // skip:true means the user deleted this specific region. Pre-claim its text
@@ -553,7 +606,10 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
             const hit = deleted.some(cr => _TABLE_TYPES.has(cr.type)
                 ? insideBBox(tm.vx, tm.vy, cr.bbox, tablePad)
                 : insideBBox(cx, tm.vy, cr.bbox, 0));
-            if (hit) customClaimedTextIndices.add(tm.idx);
+            if (hit) {
+                customClaimedTextIndices.add(tm.idx);
+                deliberatelyDeletedTextIndices.add(tm.idx);
+            }
         }
         // Remove segments inside deleted bboxes from tableSegs so lattice/stream
         // detectors can't reconstruct a region over the deleted area.
@@ -981,6 +1037,7 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
             _assignColumnIndex(customInjectedRegions, columnSplitsEarly, viewport);
             for (const cr of customInjectedRegions) finalRegions2.push(cr);
         }
+        _recoverUnownedText(finalRegions2, textMeta, scale, scaleY, columnSplitsEarly, skip, deliberatelyDeletedTextIndices);
         finalRegions2.sort((a, b) => a.yCenter - b.yCenter);
         return { regions: _ensureRegionIds(finalRegions2), textMeta, columnSplits: columnSplitsEarly, rawSplits, scale };
     }
@@ -1150,6 +1207,9 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
             finalRegions.push(cr);
         }
     }
+
+    // ── 12.8. Lossless ownership recovery ──────────────────────────────────
+    _recoverUnownedText(finalRegions, textMeta, scale, scaleY, columnSplits, skip, deliberatelyDeletedTextIndices);
 
     // ── 13. Sort all regions top→bottom ─────────────────────────────────────
     finalRegions.sort((a, b) => a.yCenter - b.yCenter);
@@ -1323,19 +1383,23 @@ function _classifyBoxInteriors(boxRegions, regions, textMeta, scale, scaleY, ski
     for (const box of boxRegions) {
         if (!box.bbox) continue;
         const children = [];
+        const adoptedText = new Set();
 
         for (let i = regions.length - 1; i >= 0; i--) {
             const r = regions[i];
             if (r === box || !r.bbox) continue;
-            if (r.type !== RegionType.LATTICE_TABLE && r.type !== RegionType.STREAM_TABLE) continue;
+            if (r.type !== RegionType.LATTICE_TABLE && r.type !== RegionType.STREAM_TABLE &&
+                r.type !== RegionType.BOX) continue;
             if (!_bboxWithin(r.bbox, box.bbox, pad)) continue;
             children.push(r);
+            for (const idx of (r.textItemIndices || [])) adoptedText.add(idx);
             regions.splice(i, 1);
         }
 
         _liftBoxBanner(box, textMeta);
 
         const items = (box.textItemIndices || [])
+            .filter(i => !adoptedText.has(i))
             .map(i => textMeta[i])
             .filter(tm => tm && tm.str.trim());
         if (items.length) {

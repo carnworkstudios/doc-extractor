@@ -1,5 +1,6 @@
 /* ── BASE ────────────────────────────────────────────────────────────────── */
 :root {
+  color-scheme: light;
   --accent: #4facfe;
   --accent-dark: #0066cc;
   --accent-dim: rgba(79, 172, 254, 0.12);
@@ -12,10 +13,74 @@
   --text-muted: rgba(0, 0, 0, 0.5);
   --bg: #f4f5f7;
   --surface: #fff;
+  --surface-raised: #ffffff;
+  --surface-soft: #f0f1f3;
+  --surface-sunken: #e5e7eb;
+  --surface-hover: #f3f4f6;
+  --workspace-bg: #e5e7eb;
+  --input-bg: #ffffff;
+  --tab-track: #495057;
+  --tab-text: rgba(255, 255, 255, 0.55);
+  --tab-text-hover: rgba(255, 255, 255, 0.9);
+  --button-border: rgba(57, 56, 56, 1);
+  --shadow: rgba(0, 0, 0, 0.15);
+  --overlay: rgba(17, 17, 17, 0.92);
+  --danger: #ef4444;
+  --danger-bg: #fef2f2;
+  --success: #22c55e;
+  --success-bg: #dcfce7;
+  --warning: #d97706;
+  --warning-bg: #fffbeb;
+  --info-bg: #eff6ff;
+  --code-bg: #1e1e1e;
+  --code-border: #333333;
+  --code-text: #e5e7eb;
+  --selection-bg: rgba(79, 172, 254, 0.16);
+  --on-accent: #ffffff;
   --header-h: 48px;
   --toolbar-h: 38px;
   --status-h: 28px;
   --pdf-zoom: 1;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --accent: #4facfe;
+  --accent-dark: #79c2ff;
+  --accent-dim: rgba(79, 172, 254, 0.16);
+  --accent-mid: rgba(79, 172, 254, 0.32);
+  --header-bg: #0b111a;
+  --toolbar-bg: #151e2a;
+  --border: rgba(177, 203, 226, 0.1);
+  --border-dark: rgba(177, 203, 226, 0.2);
+  --text: #d8eaf8;
+  --text-muted: rgba(196, 216, 233, 0.62);
+  --bg: #0b111a;
+  --surface: #111b27;
+  --surface-raised: #182534;
+  --surface-soft: #151e2a;
+  --surface-sunken: #0a121c;
+  --surface-hover: #203044;
+  --workspace-bg: #080f17;
+  --input-bg: #0d1722;
+  --tab-track: #202d3b;
+  --tab-text: rgba(216, 234, 248, 0.58);
+  --tab-text-hover: rgba(216, 234, 248, 0.94);
+  --button-border: rgba(177, 203, 226, 0.25);
+  --shadow: rgba(0, 0, 0, 0.5);
+  --overlay: rgba(5, 9, 14, 0.94);
+  --danger: #ff7373;
+  --danger-bg: rgba(239, 68, 68, 0.13);
+  --success: #55d98a;
+  --success-bg: rgba(34, 197, 94, 0.13);
+  --warning: #f2b95f;
+  --warning-bg: rgba(217, 119, 6, 0.15);
+  --info-bg: rgba(79, 172, 254, 0.12);
+  --code-bg: #090e14;
+  --code-border: #26384a;
+  --code-text: #d8eaf8;
+  --selection-bg: rgba(79, 172, 254, 0.2);
+  --on-accent: #ffffff;
 }
 
 *,
@@ -130,7 +195,7 @@ body {
   margin-left: auto;
   padding: 3px;
   border-radius: 10px;
-  background: #495057;
+  background: var(--tab-track);
   /* #616161 */
   box-shadow:
     inset 2px 2px 5px rgba(0, 0, 0, 0.12),
@@ -143,7 +208,7 @@ body {
   border-radius: 20px;
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--tab-text);
   font-family: inherit;
   font-size: 12px;
   font-weight: 500;
@@ -156,12 +221,12 @@ body {
 
 .tab-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.09);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--tab-text-hover);
 }
 
 .tab-btn.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--accent);
 }
 
@@ -177,9 +242,9 @@ body {
   gap: 5px;
   padding: 5px 11px;
   border-radius: 20px;
-  border: 1px solid rgb(57 56 56);
-  background: rgba(255, 255, 255, 0.07);
-  color: rgb(0 0 0 / 80%);
+  border: 1px solid var(--button-border);
+  background: color-mix(in srgb, var(--surface-raised) 55%, transparent);
+  color: var(--text);
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -210,10 +275,10 @@ body {
 .dropdown-menu {
   display: none;
   position: fixed;
-  background: #fff;
+  background: var(--surface-raised);
   min-width: 240px;
   border-radius: 8px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 10px 25px var(--shadow);
   border: 1px solid var(--border-dark);
   z-index: 1000;
   padding: 6px 0;
@@ -567,7 +632,7 @@ body {
 
 .ribbon-group-buttons--wrap {
   flex-wrap: wrap;
-  /* max-width: 220px; */
+  max-width: 119px;
   /* justify-content: center; */
 }
 
@@ -2276,6 +2341,8 @@ mark.diff-inline-add {
 }
 
 .pdf-mirror-toggle[aria-expanded="true"],
+.doc-mirror-toggle[aria-expanded="true"],
+.editor-mirror-toggle[aria-expanded="true"],
 .notes-mirror-toggle[aria-expanded="true"] {
   background: var(--accent-dim);
   border-color: var(--accent);
@@ -4090,6 +4157,21 @@ mark.diff-inline-add {
   display: contents;
 }
 
+/* When Doc exposes Editor, keep PDF/Doc in their existing stack and use the
+   outer divider for the Monaco pane. No pane is cloned or reparented. */
+#workspace-split.editor-split > #pane-stack {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#workspace-split.editor-split > #pane-editor {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 #workspace-split.t-split>#pane-stack {
   display: flex;
   flex-direction: column;
@@ -4430,4 +4512,558 @@ mark.diff-inline-add {
 .batch-error-text {
   color: #ef4444;
   font-size: 12px;
+}
+
+/* ── Document-first workspace shell ────────────────────────────────────────
+   Structural redesign only: the established palette and component tokens stay
+   untouched. On wide screens the context-sensitive ribbon becomes a compact
+   inspector, trading horizontal room for the vertical room document pages use
+   most. The original DOM and control ids remain intact so every tool keeps its
+   existing wiring. */
+@media (min-width: 1101px) {
+  :root {
+    --header-h: 40px;
+    --inspector-w: 190px;
+  }
+
+  .app-header {
+    position: relative;
+    height: var(--header-h);
+    min-height: var(--header-h);
+    gap: 8px;
+    padding: 0 10px;
+    overflow: visible;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border-dark);
+  }
+
+  .header-center,
+  .header-right {
+    gap: 5px;
+  }
+
+  .file-btn,
+  .icon-btn,
+  .gx-tool-send-btn {
+    min-height: 30px;
+  }
+
+  .file-btn {
+    padding: 4px 9px;
+  }
+
+  .gx-checkbox-label {
+    min-height: 30px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  /* .tab-bar {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0;
+    padding: 2px;
+    gap: 1px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg);
+    box-shadow: none;
+  } */
+
+  /* .tab-btn {
+    min-height: 26px;
+    padding: 4px 11px;
+    border-radius: 5px;
+    color: var(--text-muted);
+  } */
+
+  /* .tab-btn:hover:not(:disabled) {
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .tab-btn.active {
+    color: #fff;
+  } */
+
+  .toolbar-bar {
+    position: static;
+    z-index: auto;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    padding: 10px 8px 18px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    overflow-x: hidden;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 0;
+    background: var(--surface);
+  }
+
+  .toolbar-bar--hidden {
+    display: none !important;
+  }
+
+  .toolbar-bar .toolbar-sep {
+    width: auto;
+    height: 1px;
+    min-height: 1px;
+    margin: 4px 0;
+    align-self: stretch;
+  }
+
+  .toolbar-bar .ribbon-group,
+  .toolbar-bar .toolbar-group {
+    width: 100%;
+    max-width: none;
+    padding: 0 0 6px;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .toolbar-bar .ribbon-group-label {
+    order: -1;
+    padding: 2px 3px 0;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: left;
+  }
+
+  .toolbar-bar .ribbon-group-buttons {
+    justify-content: flex-start;
+    gap: 3px;
+  }
+
+  .toolbar-bar .ribbon-group-buttons--wrap {
+    align-content: flex-start;
+    row-gap: 4px;
+    border: 1px solid var(--border-dark);
+    border-radius: 10px;
+    padding: 5px;
+  }
+
+  .toolbar-bar .tool-select--font {
+    max-width: 108px;
+    flex: 1 1 96px;
+  }
+
+  .toolbar-bar .tool-select--size {
+    max-width: 52px;
+  }
+
+  .toolbar-bar .tool-btn {
+    min-width: 28px;
+    min-height: 28px;
+  }
+
+  .toolbar-bar .page-nav,
+  .toolbar-bar .zone-chips {
+    flex-wrap: wrap;
+  }
+
+  #app-workspace {
+    padding-left: 0;
+  }
+
+  #app-workspace .nav-panel {
+    position: relative;
+    height: 100%;
+  }
+
+  #app-workspace.nav-panel-open .nav-panel {
+    width: 280px;
+    box-shadow: none;
+  }
+
+  #app-workspace.nav-panel-open.nav-panel-tools .nav-panel {
+    width: 320px;
+  }
+
+  #app-workspace.nav-panel-tools .nav-panel-body {
+    width: 280px;
+    min-width: 280px;
+  }
+
+  #nav-view-tools {
+    padding: 0;
+  }
+
+  #nav-view-tools.active {
+    overflow-y: auto;
+  }
+
+  #nav-view-tools > .header-center {
+    width: 100%;
+    padding: 10px 8px 6px;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #nav-view-tools > .header-center .file-btn,
+  #nav-view-tools > .header-center .gx-checkbox-label {
+    flex: 1 1 auto;
+    justify-content: center;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .vd-pane-header {
+    min-height: 32px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .canvas-scroll {
+    padding-top: 14px;
+  }
+
+  .analyze-meta-bar {
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+}
+
+/* Document Tools stays a navigation inspector at every viewport size. Its
+   geometry must not change into a wide ribbon when crossing a breakpoint. */
+@media (max-width: 1100px) {
+  #app-workspace.nav-panel-open.nav-panel-tools .nav-panel {
+    width: min(320px, 100%);
+  }
+
+  #app-workspace.nav-panel-tools .nav-panel-body {
+    width: min(280px, calc(100vw - 40px));
+    min-width: min(280px, calc(100vw - 40px));
+  }
+
+  #nav-view-tools {
+    padding: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  #nav-view-tools > .header-center {
+    display: flex;
+    width: 100%;
+    max-width: none;
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 8px 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #nav-view-tools > .header-center .file-btn,
+  #nav-view-tools > .header-center .gx-checkbox-label {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .toolbar-bar {
+    width: 100%;
+    min-height: 0;
+    padding: 10px 8px 18px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    overflow: visible;
+    border-bottom: 0;
+  }
+
+  .toolbar-bar .toolbar-sep {
+    width: auto;
+    height: 1px;
+    min-height: 1px;
+    margin: 4px 0;
+    align-self: stretch;
+  }
+
+  .toolbar-bar .ribbon-group,
+  .toolbar-bar .toolbar-group {
+    width: 100%;
+    max-width: none;
+    padding: 0 0 6px;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .toolbar-bar .ribbon-group-label {
+    order: -1;
+    padding: 2px 3px 0;
+    text-align: left;
+  }
+
+  .toolbar-bar .ribbon-group-buttons {
+    justify-content: flex-start;
+  }
+
+  .toolbar-bar .ribbon-group-buttons--wrap {
+    align-content: flex-start;
+    row-gap: 4px;
+    border: 1px solid var(--border-dark);
+    border-radius: 10px;
+    padding: 5px;
+  }
+
+  .toolbar-bar .tool-select--font {
+    max-width: 108px;
+    flex: 1 1 96px;
+  }
+
+  .toolbar-bar .tool-select--size {
+    max-width: 52px;
+  }
+
+  .toolbar-bar .tool-btn {
+    min-width: 28px;
+    min-height: 28px;
+  }
+
+  .toolbar-bar .page-nav,
+  .toolbar-bar .zone-chips {
+    flex-wrap: wrap;
+  }
+}
+
+/* Keep the Tools view close to the ribbon wrap's natural 119px width. The
+   complete inspector is 190px: a 40px rail plus a 150px working surface. */
+#app-workspace.nav-panel-open.nav-panel-tools .nav-panel {
+  width: min(190px, 100%);
+}
+
+#app-workspace.nav-panel-tools .nav-panel-body {
+  width: calc(100% - 40px);
+  min-width: 0;
+}
+
+/* PDF, Doc, and Editor are document surfaces, so their existing tab buttons
+   live together in the Tools inspector instead of competing with Analyze and
+   Compare Diff in the application header. */
+.document-views-group {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.document-views-label {
+  display: block;
+  margin: 0 2px 7px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.document-view-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.document-view-buttons .document-view-btn {
+  min-width: 0;
+  min-height: 58px;
+  padding: 6px 2px;
+  border: 1px solid var(--border-dark);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.document-view-buttons .document-view-btn iconify-icon {
+  font-size: 20px;
+}
+
+.document-view-buttons .document-view-btn:hover:not(:disabled) {
+  background: var(--accent-dim);
+  color: var(--accent-dark);
+}
+
+.document-view-buttons .document-view-btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
+/* Analyze keeps its own workspace, but its controls use the same contextual
+   ribbon grammar as PDF and Doc. */
+#analyze-meta-ribbon-buttons .analyze-meta-bar,
+#analyze-actions-ribbon-buttons .analyze-toolbar {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+#analyze-meta-ribbon-buttons .analyze-meta-bar {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+#analyze-meta-ribbon-buttons .analyze-status-msg {
+  margin: 0;
+  line-height: 1.35;
+}
+
+#analyze-meta-ribbon-buttons .analyze-meta {
+  flex-basis: auto;
+}
+
+#analyze-meta-ribbon-buttons .analyze-toolbar-nav,
+#analyze-actions-ribbon-buttons .analyze-toolbar {
+  flex-wrap: wrap;
+}
+
+#analyze-actions-ribbon-buttons .atb-btn {
+  padding: 4px 6px;
+}
+
+/* ── THEME SURFACES ───────────────────────────────────────────────────────
+   Legacy component rules above retain the established light appearance. New
+   work should consume the semantic tokens declared at the top of this file. */
+.theme-toggle-btn { width: 30px; height: 30px; padding: 0; justify-content: center; border-radius: 50%; }
+.theme-toggle-btn .theme-icon-light,
+:root[data-theme="dark"] .theme-toggle-btn .theme-icon-dark { display: none; }
+:root[data-theme="dark"] .theme-toggle-btn .theme-icon-light { display: inline-flex; }
+
+:root[data-theme="dark"] .app-header,
+:root[data-theme="dark"] .toolbar-bar,
+:root[data-theme="dark"] .status-bar,
+:root[data-theme="dark"] .nav-panel,
+:root[data-theme="dark"] .nav-panel-body,
+:root[data-theme="dark"] .nav-panel-header,
+:root[data-theme="dark"] .nav-panel-view,
+:root[data-theme="dark"] .vd-pane-header,
+:root[data-theme="dark"] .diff-bar,
+:root[data-theme="dark"] .diff-pane-label,
+:root[data-theme="dark"] .analyze-meta-bar,
+:root[data-theme="dark"] .analyze-toolbar,
+:root[data-theme="dark"] .ribbon-group,
+:root[data-theme="dark"] .pdf-context-popover,
+:root[data-theme="dark"] #view-code-dialog,
+:root[data-theme="dark"] .gx-mcp-popover {
+  background-color: var(--surface);
+  color: var(--text);
+  border-color: var(--border-dark);
+}
+
+:root[data-theme="dark"] #workspace-split,
+:root[data-theme="dark"] .workspace,
+:root[data-theme="dark"] .analyze-body,
+:root[data-theme="dark"] .analyze-canvas-wrap,
+:root[data-theme="dark"] #pane-diff,
+:root[data-theme="dark"] .diff-workspace,
+:root[data-theme="dark"] .canvas-scroll { background-color: var(--workspace-bg); }
+
+:root[data-theme="dark"] #html-preview,
+:root[data-theme="dark"] #visual-diff-html,
+:root[data-theme="dark"] .prose-area,
+:root[data-theme="dark"] .pdf-page-content {
+  background-color: var(--surface-raised);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] .tool-btn,
+:root[data-theme="dark"] .atb-btn,
+:root[data-theme="dark"] .nav-action-btn,
+:root[data-theme="dark"] .nav-close-btn,
+:root[data-theme="dark"] .pdf-ctx-btn,
+:root[data-theme="dark"] .ctx-item,
+:root[data-theme="dark"] .batch-action-btn,
+:root[data-theme="dark"] .document-view-buttons .document-view-btn {
+  background-color: var(--input-bg);
+  color: var(--text);
+  border-color: var(--border-dark);
+}
+
+:root[data-theme="dark"] .tool-btn:hover:not(:disabled),
+:root[data-theme="dark"] .atb-btn:hover:not(:disabled),
+:root[data-theme="dark"] .nav-action-btn:hover,
+:root[data-theme="dark"] .nav-close-btn:hover,
+:root[data-theme="dark"] .pdf-ctx-btn:hover,
+:root[data-theme="dark"] .ctx-item:hover,
+:root[data-theme="dark"] .dropdown-item:hover:not(:disabled),
+:root[data-theme="dark"] .nav-tree-item:hover,
+:root[data-theme="dark"] .nav-bm-item:hover,
+:root[data-theme="dark"] .nav-ann-item:hover,
+:root[data-theme="dark"] .nav-link-item:hover { background-color: var(--surface-hover); }
+
+:root[data-theme="dark"] .dropdown-menu,
+:root[data-theme="dark"] .nav-bm-item,
+:root[data-theme="dark"] .nav-ann-item,
+:root[data-theme="dark"] .nav-link-item,
+:root[data-theme="dark"] .analyze-guide-panel,
+:root[data-theme="dark"] .agd-tool-card,
+:root[data-theme="dark"] .gx-file-chip {
+  background-color: var(--surface-raised);
+  color: var(--text);
+  border-color: var(--border-dark);
+}
+
+:root[data-theme="dark"] table,
+:root[data-theme="dark"] th,
+:root[data-theme="dark"] td,
+:root[data-theme="dark"] .table-ruler-corner,
+:root[data-theme="dark"] .table-col-ruler,
+:root[data-theme="dark"] .table-row-ruler { border-color: var(--border-dark); }
+
+:root[data-theme="dark"] th,
+:root[data-theme="dark"] .table-ruler-corner,
+:root[data-theme="dark"] .table-col-ruler,
+:root[data-theme="dark"] .table-row-ruler,
+:root[data-theme="dark"] .diff-row--empty,
+:root[data-theme="dark"] .gx-checkbox-label,
+:root[data-theme="dark"] .batch-format-pill,
+:root[data-theme="dark"] .batch-progress-bar {
+  background-color: var(--surface-soft);
+  color: var(--text-muted);
+}
+
+:root[data-theme="dark"] .nav-bm-del:hover,
+:root[data-theme="dark"] .nav-ann-del:hover,
+:root[data-theme="dark"] .nav-link-act-btn.del:hover,
+:root[data-theme="dark"] .gx-file-x:hover,
+:root[data-theme="dark"] .pdf-ctx-btn.del:hover { background-color: var(--danger-bg); color: var(--danger); }
+
+:root[data-theme="dark"] .batch-badge--success { background: var(--success-bg); color: var(--success); }
+:root[data-theme="dark"] .batch-badge--error { background: var(--danger-bg); color: var(--danger); }
+:root[data-theme="dark"] .batch-badge--pending { background: var(--surface-soft); color: var(--text-muted); }
+:root[data-theme="dark"] .batch-badge--active { background: var(--accent-dim); color: var(--accent-dark); }
+
+@media print {
+  :root[data-theme="dark"] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --text: #1a1a1a;
+    --text-muted: rgba(0, 0, 0, 0.5);
+    --border: rgba(0, 0, 0, 0.08);
+    --border-dark: rgba(0, 0, 0, 0.14);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-panel,
+  .toolbar-bar,
+  .tab-btn {
+    transition: none !important;
+  }
 }

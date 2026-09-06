@@ -15,8 +15,8 @@ import { setView, getFocusedPane, isSplit } from './workspaceLayout.js';
 
 const VIEWS = ['analyze', 'pdf', 'html', 'editor', 'diff'];
 
-// Views where the toolbar is completely hidden
-const TOOLBAR_HIDDEN_VIEWS = new Set(['editor', 'analyze', 'diff']);
+// Views where the shared contextual toolbar is completely hidden.
+const TOOLBAR_HIDDEN_VIEWS = new Set(['editor', 'diff']);
 
 export function initViewTabs() {
     $('.tab-btn[data-view]').on('click', function() {
@@ -38,16 +38,8 @@ export async function switchView(viewName) {
 
     $('.tab-btn[data-view]').each(function() {
         $(this).toggleClass('active', $(this).data('view') === viewName);
+        $(this).attr('aria-pressed', String($(this).data('view') === viewName));
     });
-
-    // Monaco needs layout() when made visible, and it is also where the
-    // deferred document sync lands: edits mark the cache stale rather than
-    // pushing a 16 MB setValue per keystroke (see htmlSync.js).
-    if (viewName === 'editor' && state.monacoEditor) {
-        const { syncMonacoFromState } = await import('./htmlSync.js');
-        syncMonacoFromState();
-        state.monacoEditor.layout();
-    }
 
     if (viewName === 'diff') {
         const { refreshCompareDiff } = await import('./diffViewController.js');
@@ -80,7 +72,12 @@ export async function switchView(viewName) {
  */
 export function getEffectiveActiveView() {
     const view = state.activeView || 'pdf';
-    if (isSplit() && getFocusedPane() === 'pdf') return 'pdf';
+    if (isSplit()) {
+        const focused = getFocusedPane();
+        if (focused === 'pdf') return 'pdf';
+        if (focused === 'doc') return 'html';
+        if (focused === 'editor') return 'editor';
+    }
     return view;
 }
 
@@ -95,7 +92,11 @@ export function syncToolbarToView(viewName) {
     if (!$bar.length) return;
 
     const requested = viewName || state.activeView || 'pdf';
-    const currentView = (isSplit() && getFocusedPane() === 'pdf') ? 'pdf' : requested;
+    let currentView = requested;
+    if (isSplit()) {
+        const focused = getFocusedPane();
+        currentView = focused === 'doc' ? 'html' : focused;
+    }
 
     if (TOOLBAR_HIDDEN_VIEWS.has(currentView)) {
         $bar.addClass('toolbar-bar--hidden');

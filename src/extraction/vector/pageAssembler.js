@@ -19,7 +19,7 @@
 
 import { buildTable } from './tableBuilder.js';
 import { rebuildText } from './textRebuilder.js';
-import { buildDisplayMath } from './mathBuilder.js';
+import { buildDisplayMath, classifyMathStatement } from './mathBuilder.js';
 import { RegionType } from './classifiers/regionTypes.js';
 import { linkFlows } from './classifiers/flowLinker.js';
 import { entryOffsets } from './classifiers/referenceDetector.js';
@@ -105,6 +105,28 @@ export function createFontRegistry() {
     const reg = new Map();
     reg._counter = 0;
     return reg;
+}
+
+/**
+ * Mark equation regions whose reconstructed TeX cannot be rendered. The worker
+ * consumes these marks before assembly and stores a raster crop through the
+ * regular image pipeline, so the document keeps the original equation instead
+ * of showing a broken text-glyph fallback.
+ */
+export function markUnrenderableMathCrops(regions, textMeta, textItems) {
+    for (const region of regions || []) {
+        if (!region?.bbox || (region.type !== RegionType.PARAGRAPH && region.type !== RegionType.MATH)) continue;
+        const scoped = _scopeItems(region, textItems, textMeta);
+        let latex = null;
+        try { latex = buildDisplayMath(scoped, { force: region.type === RegionType.MATH }); } catch (_) { continue; }
+        if (!latex || renderMath(latex)) continue;
+        const pad = Math.max(5, (region.fontSize || 10) * 0.6);
+        region.mathFallbackCropId = `math-${region.id}`;
+        region.mathFallbackCrop = {
+            x: Math.max(0, region.bbox.x - pad), y: Math.max(0, region.bbox.y - pad),
+            w: region.bbox.w + pad * 2, h: region.bbox.h + pad * 2,
+        };
+    }
 }
 
 function _registerFont(fontRegistry, family, sizePt, bold, italic) {
@@ -951,9 +973,17 @@ function _scopeItems(region, textItems, textMeta, linkByIndex = null) {
         const meta = textMeta[i];
         const hit  = linkByIndex ? linkByIndex.get(i) : null;
         if (!meta && !hit) { out.push(raw); continue; }
-        const merged = (meta && (meta.bold || meta.italic || meta.underlined))
-            ? { ...raw, bold: meta.bold, italic: meta.italic, underlined: meta.underlined }
+        // Math reconstruction must use viewport geometry (top-left origin),
+        // not the raw PDF text matrix (bottom-left origin). Mixing those two
+        // flipped fraction numerators/denominators in real PDFs. Keep the
+        // normal PDF.js fields untouched for all other renderers.
+        const positioned = meta && Number.isFinite(meta.vx) && Number.isFinite(meta.vy) &&
+            Number.isFinite(meta.vWidth) && Number.isFinite(meta.vFont)
+            ? { ...raw, _gxMath: { x: meta.vx, y: meta.vy, width: meta.vWidth, size: meta.vFont } }
             : raw;
+        const merged = (meta && (meta.bold || meta.italic || meta.underlined))
+            ? { ...positioned, bold: meta.bold, italic: meta.italic, underlined: meta.underlined }
+            : positioned;
         if (!hit) { out.push(merged); continue; }
         const gxLink = { href: hit.link.href, source: 'pdf', page: hit.link.page };
         for (const piece of _splitItemAtSpan(merged, hit.start, hit.end, gxLink)) out.push(piece);
@@ -991,6 +1021,11 @@ function _splitItemAtSpan(item, start, end, gxLink) {
         if (item.transform) {
             piece.transform = [...item.transform];
             piece.transform[4] = x0 + perChar * from;
+        }
+        if (item._gxMath) {
+            piece._gxMath = { ...item._gxMath };
+            piece._gxMath.x += (item._gxMath.width || 0) * from / Math.max(str.length, 1);
+            piece._gxMath.width *= (to - from) / Math.max(str.length, 1);
         }
         if (link) piece._gxLink = link;
         else delete piece._gxLink;
@@ -1235,8 +1270,13 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                                 (a.bbox?.x ?? 0) - (b.bbox?.x ?? 0));
         const parts = [];
         for (const child of children) {
+            // Table cells are data-layout territory. A short value such as
+            // "n=1" is not permission to replace the cell with a display
+            // equation. Explicit user-tagged MATH regions still take the math
+            // path; only automatic promotion is suppressed here.
             const rendered = _renderRegion(child, textMeta, textItems, viewport, pageWidthPt,
-                fontRegistry, extractedImages, _pageScaleOpts, containers, linkByIndex, renderOpts);
+                fontRegistry, extractedImages, _pageScaleOpts, containers, linkByIndex,
+                { ...renderOpts, allowAutoMath: false });
             tables += rendered.tables;
             if (rendered.html) {
                 const childAddr = child.id != null
@@ -1258,6 +1298,11 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             if (tableHtml) {
                 html = `<div class="pdf-table-wrap pdf-table--lattice" data-region-id="${region.id}">${tableHtml}</div>`;
                 tables = 1;
+            } else if (scopedItems.length) {
+                // Structural failure must degrade to source text, never empty
+                // output. The detector can be wrong; the PDF evidence remains.
+                html = rebuildText(scopedItems, pageWidthPt, { format: 'html', ..._pageScaleOpts });
+                text = rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
             }
             break;
         }
@@ -1269,6 +1314,9 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             if (tableHtml) {
                 html = `<div class="pdf-table-wrap pdf-table--borderless" data-region-id="${region.id}">${tableHtml}</div>`;
                 tables = 1;
+            } else if (scopedItems.length) {
+                html = rebuildText(scopedItems, pageWidthPt, { format: 'html', ..._pageScaleOpts });
+                text = rebuildText(scopedItems, pageWidthPt, { format: 'text', ..._pageScaleOpts });
             }
             break;
         }
@@ -1431,7 +1479,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             // core.applyRegionLatex, which is what `data-math` now marks.
             let mathLatex = null;
             try {
-                if (renderOpts.skipMath) mathLatex = null;
+                if (renderOpts.skipMath || (!forceMath && renderOpts.allowAutoMath === false)) mathLatex = null;
                 else mathLatex = buildDisplayMath(scopedItems, { force: forceMath });
             } catch { /* any failure degrades to the plain-text path */ }
 
@@ -1478,6 +1526,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                 // are one attribute away, so a wrong reconstruction is visible
                 // and recoverable rather than invisible and lossy.
                 const texAttr = String(mathLatex).replace(/"/g, '&quot;');
+                const mathKind = classifyMathStatement(scopedItems);
                 // rebuildText emits one <p> per line. Those cannot be nested
                 // inside this one: the parser auto-closes the outer <p> at the
                 // first inner one and the glyphs end up as SIBLINGS of an empty
@@ -1492,13 +1541,24 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                 // because its reconstruction was malformed is the one failure
                 // worse than an ugly one.
                 const typeset = renderMath(mathLatex);
+                const fallbackImage = !typeset ? extractedImages[region.mathFallbackCropId] : null;
                 const marker = ' ' + mathMarker({ typeset: !!typeset });
                 const srcAttr = typeset
                     ? ` data-math-source="${_escAttr(glyphText)}"`
                     : '';
-                html = `<p class="${fontClass} ${alignClass} pdf-paragraph pdf-math-block"` +
-                       `${firstFlowAttrs}${marker} data-latex="${texAttr}"${srcAttr}>` +
-                       `${typeset || glyphBody}</p>`;
+                if (fallbackImage?.key) {
+                    const cropScale = fallbackImage.scale || 4;
+                    const width = Math.round(fallbackImage.pw / cropScale);
+                    const height = Math.round(fallbackImage.ph / cropScale);
+                    html = `<figure class="pdf-math-image" data-math-unrendered="" data-latex="${texAttr}" ` +
+                        `data-math-kind="${mathKind}"${srcAttr}><img class="extracted-pdf-image" ` +
+                        `data-img-id="${fallbackImage.key}" width="${width}" height="${height}" ` +
+                        `alt="Original PDF equation" style="max-width:100%;height:auto;display:block;"></figure>`;
+                } else {
+                    html = `<p class="${fontClass} ${alignClass} pdf-paragraph pdf-math-block"` +
+                        `${firstFlowAttrs}${marker} data-latex="${texAttr}" data-math-kind="${mathKind}"${srcAttr}>` +
+                        `${typeset || glyphBody}</p>`;
+                }
                 // `text` is what this block MEANS in plain text, and the page's
                 // own glyphs are a better answer than a guess at their TeX.
                 text = glyphText || mathLatex;

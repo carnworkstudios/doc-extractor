@@ -1,9 +1,6 @@
 /**
  * navPanel.js
- * Unified left-aligned navigation panel with 3 tabs:
- *   1. Outline: Document heading hierarchy & page jump tree
- *   2. Bookmarks: User-pinned page / scroll locations
- *   3. Annotations: List of all vector & text annotations
+ * Unified left-aligned navigation panel for document tools and navigation.
  */
 
 import $ from 'jquery';
@@ -15,12 +12,22 @@ import { getEffectiveActiveView } from './viewController.js';
 import { updateBatchUI } from './batchViewController.js';
 import { promptDialog } from './promptDialog.js';
 
-let _activeTab = 'outline'; // 'outline' | 'bookmarks' | 'annotations' | 'links' | 'batch'
-let _isOpen = false;
+let _activeTab = 'tools'; // 'tools' | 'outline' | 'bookmarks' | 'annotations' | 'links' | 'batch'
+let _isOpen = true;
 
 export function initNavPanel() {
+    // Document entry points and the toolbar share one panel and one toggle
+    // state. Moving the existing nodes preserves all input/event bindings.
+    $('.header-center').prependTo('#nav-view-tools');
+    $('.tab-btn[data-view="pdf"], .tab-btn[data-view="html"], .tab-btn[data-view="editor"]')
+        .addClass('document-view-btn')
+        .appendTo('#document-view-buttons');
+    $('.analyze-meta-bar').appendTo('#analyze-meta-ribbon-buttons');
+    $('.analyze-toolbar').appendTo('#analyze-actions-ribbon-buttons');
+    $('#format-toolbar').appendTo('#nav-view-tools');
     _bindEvents();
     _subscribeToEngine();
+    toggleNavPanel(true);
 }
 
 export function toggleNavPanel(open) {
@@ -30,6 +37,7 @@ export function toggleNavPanel(open) {
         _isOpen = !_isOpen;
     }
     $('#app-workspace').toggleClass('nav-panel-open', _isOpen);
+    $('#app-workspace').toggleClass('nav-panel-tools', _isOpen && _activeTab === 'tools');
     $('#btn-toggle-nav').toggleClass('active', _isOpen);
 
     renderNavPanel();
@@ -40,6 +48,7 @@ export function renderNavPanel() {
     const isPdf = activeView === 'pdf';
 
     // Context-aware tooltips
+    $('.nav-tab-btn[data-tab="tools"]').attr('title', 'Document Tools');
     $('.nav-tab-btn[data-tab="outline"]').attr('title', isPdf ? 'PDF Outline & Pages' : 'Doc Structure & Headings');
     $('.nav-tab-btn[data-tab="bookmarks"]').attr('title', 'Bookmarks');
     $('.nav-tab-btn[data-tab="annotations"]').attr('title', isPdf ? 'PDF Annotations' : 'Doc Notes');
@@ -60,7 +69,9 @@ export function renderNavPanel() {
     if (!_isOpen) return;
 
     // Header title update based on context & active tab
-    if (_activeTab === 'outline') {
+    if (_activeTab === 'tools') {
+        $('#nav-panel-title').text('Document Tools');
+    } else if (_activeTab === 'outline') {
         $('#nav-panel-title').text(isPdf ? 'PDF Outline' : 'Doc Structure');
     } else if (_activeTab === 'bookmarks') {
         $('#nav-panel-title').text('Bookmarks');
@@ -77,6 +88,8 @@ export function renderNavPanel() {
     $(`#nav-view-${_activeTab}`).addClass('active');
 
     switch (_activeTab) {
+        case 'tools':
+            break;
         case 'outline':
             renderOutlineTab();
             break;
@@ -263,15 +276,10 @@ function renderOutlineTab() {
         $row.on('click', () => {
             if (isPdf) {
                 jumpToPage(item.page);
-            } else if (activeView === 'editor' && state.monacoEditor) {
-                const query = item.text;
-                const matches = state.monacoEditor.getModel()?.findMatches(query, true, false, false, null, true);
-                if (matches && matches.length) {
-                    const line = matches[0].range.startLineNumber;
-                    state.monacoEditor.revealLineInCenter(line);
-                    state.monacoEditor.setPosition({ lineNumber: line, column: 1 });
-                    state.monacoEditor.focus();
-                }
+            } else if (activeView === 'editor') {
+                // Page/outline navigation uses the shared document coordinate;
+                // Monaco's registered adapter resolves the matching source line.
+                jumpToPage(item.page);
             } else {
                 let targetEl = item.element;
                 if (!targetEl || !document.body.contains(targetEl)) {

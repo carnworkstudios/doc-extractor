@@ -40,3 +40,5 @@ scripts
 # Multi-GB derived dataset for the layout+forensics model. Reproducible from
 # .training/scripts/, so it is regenerable and must not enter git history.
 .training/
+:memory:*
+/eng.traineddata

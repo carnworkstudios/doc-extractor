@@ -29,8 +29,9 @@ const LATEX_SYMBOL = {
     'σ': '\\sigma ',  'τ': '\\tau ',    'χ': '\\chi ',    'ψ': '\\psi ',
     'ω': '\\omega ',  'φ': '\\phi ',    'ϕ': '\\phi ',
     'Γ': '\\Gamma ',  'Δ': '\\Delta ',  'Θ': '\\Theta ',  'Λ': '\\Lambda ',
-    'Π': '\\Pi ',     'Σ': '\\Sigma ',  'Φ': '\\Phi ',    'Ψ': '\\Psi ',
-    'Ω': '\\Omega ',
+    'Ξ': '\\Xi ',     'Π': '\\Pi ',     'Σ': '\\Sigma ',  'Υ': '\\Upsilon ',
+    'Φ': '\\Phi ',    'Ψ': '\\Psi ',    'Ω': '\\Omega ',
+    'υ': '\\upsilon ', 'ϑ': '\\vartheta ', 'ϖ': '\\varpi ', 'ϱ': '\\varrho ',
     '√': '\\surd ',   '∞': '\\infty ',  '∑': '\\sum ',    '∏': '\\prod ',
     '∫': '\\int ',    '∂': '\\partial ', '∇': '\\nabla ', '∈': '\\in ',
     '∉': '\\notin ',  '×': '\\times ',  '·': '\\cdot ',   '⋅': '\\cdot ',
@@ -93,10 +94,14 @@ export function atomsFromItems(items) {
     for (const item of items) {
         const str = item.str || '';
         if (!str.trim()) continue;
-        const size = Math.abs(item.transform?.[3] || item.height || 10);
-        const x = item.transform[4];
-        const y = item.transform[5];
-        const w = item.width || 0;
+        // Page assembly supplies viewport-space geometry where y increases
+        // downward. Raw PDF text matrices use the opposite y direction; using
+        // them here reverses fractions and scripts in actual PDFs.
+        const geometry = item._gxMath;
+        const size = Math.abs(geometry?.size || item.transform?.[3] || item.height || 10);
+        const x = geometry?.x ?? item.transform[4];
+        const y = geometry?.y ?? item.transform[5];
+        const w = geometry?.width ?? item.width ?? 0;
         const perChar = w / Math.max(str.length, 1);
         const name = (item.fontName || '').replace(/^[A-Z]{6}\+/, '');
         const bold   = item.bold   ?? /bold|heavy|black/i.test(name);
@@ -117,6 +122,34 @@ export function atomsFromItems(items) {
         }
     }
     return atoms;
+}
+
+/**
+ * Deterministic semantic class for an already-recognised mathematical line.
+ * This does not decide whether prose is math; `isDisplayMath` owns that gate.
+ * It makes downstream behavior inspectable rather than inferring meaning from
+ * a rendered TeX string.
+ */
+export function classifyMathStatement(items) {
+    const atoms = Array.isArray(items) && items[0]?.left != null ? items : atomsFromItems(items || []);
+    const glyphs = atoms.flatMap(a => [...String(a.str || '')]);
+    const equal = glyphs.filter(g => g === '=').length;
+    const leftArrow = glyphs.filter(g => g === '←').length;
+    const comparison = glyphs.filter(g => '<>≤≥'.includes(g)).length;
+
+    // `<`/`>` take precedence: PDFs often encode ≤/≥ as two adjacent glyphs,
+    // which otherwise looks like one equality plus one comparison.
+    if (comparison > 0) return 'inequality';
+    if (equal === 1 && leftArrow === 0) return 'equality';
+    if (leftArrow === 1 && equal === 0) return 'assignment';
+
+    const source = glyphs.join('');
+    const base = bodySize(atoms, _median(atoms.map(a => a.size)));
+    const axis = mathAxis(atoms);
+    const hasScript = atoms.some(a => a.size < 0.85 * base && Math.abs(a.y - axis) > 0.10 * base);
+    if (GREEK_RE.test(source) || MATH_SYMBOL_RE.test(source) ||
+        /[+\-*/^_()[\]{}]/.test(source) || hasScript) return 'expression';
+    return 'invalid';
 }
 
 // ── Math-line detection ───────────────────────────────────────────────────────

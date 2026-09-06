@@ -73,7 +73,7 @@ function makeRegion(items, type) {
 }
 
 (async () => {
-    const { buildDisplayMath } = await import('../extraction/vector/mathBuilder.js');
+    const { buildDisplayMath, classifyMathStatement } = await import('../extraction/vector/mathBuilder.js');
     const { assemblePage, createFontRegistry } = await import('../extraction/vector/pageAssembler.js');
 
     ok(buildDisplayMath(frac('1/2', 60, 100)), '\\frac{1}{2}', 'fraction 1/2');
@@ -161,6 +161,14 @@ function makeRegion(items, type) {
     ]), '\\frac{a}{b} + \\frac{c}{d}', 'two fractions separated by an operator');
     ok(buildDisplayMath([...run('y=mx+b', 30, 100, 12)]), 'y = mx + b',
        'a flat linear equation must NOT become a fraction');
+    okTrue(classifyMathStatement(run('y=mx+b', 30, 100, 12)) === 'equality',
+       'one equals sign is classified deterministically as equality');
+    okTrue(classifyMathStatement([item('x', 30, 100), item('←', 44, 100), item('x', 58, 100)]) === 'assignment',
+       'one left arrow is classified deterministically as assignment');
+    okTrue(classifyMathStatement([item('x', 30, 100), item('≤', 44, 100), item('y', 58, 100)]) === 'inequality',
+       'comparison signs are classified deterministically as inequalities');
+    okTrue(classifyMathStatement([item('x', 30, 100), item('2', 44, 89, 8)]) === 'expression',
+       'a scripted mathematical term is classified as an expression');
     ok(buildDisplayMath([
         item('\u221a', 60, 100, 16), item('a', 80, 94, 12, { italic: true }),
         item('b', 80, 106, 12, { italic: true }),

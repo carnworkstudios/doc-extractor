@@ -61,6 +61,7 @@ export function buildBoxRegion(bbox, textIndices, textMeta, filledRects) {
         columnIndex: -1,
         boxRole: classifyBoxRole(textIndices, textMeta),
         fillColor: findFillColor(bbox, filledRects),
+        algorithm: 'lattice-box-fallback',
     };
 }
 
@@ -209,6 +210,7 @@ export function detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale,
             const verdict = analyzeBlock(boxTextIndices, textMeta, bbox, scale);
             const admonition = boxRole !== 'generic';
             if (verdict.anchors > 0) continue;
+            if (!admonition && bbox.w > viewport.width * 0.65) continue;
             if (!isBanner && !admonition && !verdict.prose) continue;
 
             for (const idx of claimIndices) assignedTextIndices.add(idx);
@@ -222,6 +224,7 @@ export function detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale,
                 fillColor: boxFillColor,
                 isBanner,
                 bannerText: isBanner ? bannerText : null,
+                algorithm: 'closed-rectangle-container',
             });
             break;
         }

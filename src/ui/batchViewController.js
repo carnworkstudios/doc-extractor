@@ -21,7 +21,7 @@ import { mergeGxDocs } from '../ir/mergeGxDocs.js';
 import { renderGxDocAs, downloadRendered } from './exportController.js';
 import { buildAnnotatedPdf } from '../annotation/exportPdf.js';
 import { syncTextEditsToGxDoc } from './pdfTextEdit.js';
-import { requireSignIn, refreshGates } from './authGate.js';
+import { requireSignIn, refreshGates, getTier, getTierLimits } from './authGate.js';
 import { PDFDocument } from 'pdf-lib';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
@@ -39,6 +39,19 @@ function serialImageExtraction(job) {
     const run = _imageExtractionTail.then(job, job);
     _imageExtractionTail = run.catch(() => {});
     return run;
+}
+
+function allowedBatchFiles(fileList) {
+    const files = [...(fileList || [])];
+    const limit = getTierLimits().batchDocuments;
+    if (files.length <= limit) return files;
+    showToast(
+        getTier() === 'free'
+            ? `Free Batch includes ${limit} documents per run. Upgrade to Pro for larger verified batches.`
+            : `This batch is limited to ${limit} documents.`,
+        'warning', 6000,
+    );
+    return files.slice(0, limit);
 }
 
 async function decodeDocument({ bytes, format, name, file }) {
@@ -191,7 +204,7 @@ function _wireDropzoneEvents() {
             // The overlay is a picture; this is the check. Guard the ENTRY
             // POINT so a signed-out user cannot start work by any route.
             if (!requireSignIn('pdf-batch-signin')) { e.target.value = ''; return; }
-            const added = batchQueue.enqueueMany(e.target.files);
+            const added = batchQueue.enqueueMany(allowedBatchFiles(e.target.files));
             e.target.value = '';
             if (added.length > 0) {
                 // Focus first newly enqueued item
@@ -214,7 +227,7 @@ function _wireDropzoneEvents() {
         const dt = e.originalEvent.dataTransfer;
         if (dt && dt.files && dt.files.length > 0) {
             if (!requireSignIn('pdf-batch-signin')) return;
-            const added = batchQueue.enqueueMany(dt.files);
+            const added = batchQueue.enqueueMany(allowedBatchFiles(dt.files));
             if (added.length > 0) {
                 focusBatchItem(added[0].id, 1);
             }

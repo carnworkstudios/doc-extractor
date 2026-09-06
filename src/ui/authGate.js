@@ -1,6 +1,6 @@
 /**
  * authGate.js
- * Sign-in gate for the Analyze and Batch surfaces.
+ * Sign-in gate for identity-bearing PDF capabilities.
  *
  * Signing in is how someone joins the project rather than just uses it: they get
  * release notes, they can send feedback, and the maintainer learns which of
@@ -22,27 +22,24 @@
 
 import { showToast } from './toast.js';
 
-const GATED = [
-    // {
-    //     key: 'analyze',
-    //     tabSel: '.tab-btn[data-view="analyze"]',
-    //     panelSel: '#pane-analyze',
-    //     feature: 'pdf-analyze-signin',
-    //     title: 'Sign in to use Analyze',
-    //     blurb: 'Region inspection, per-page re-extraction and layout tuning. Free with a Ginexys account.',
-    // },
-    // {
-    //     key: 'batch',
-    //     tabSel: '.nav-tab-btn[data-tab="batch"]',
-    //     panelSel: '#nav-view-batch',
-    //     feature: 'pdf-batch-signin',
-    //     title: 'Sign in to use Batch',
-    //     blurb: 'Queue many documents, extract them off the main thread, and export them combined. Free with a Ginexys account.',
-    // },
-];
+const GATED = [{
+    key: 'batch',
+    tabSel: '.nav-tab-btn[data-tab="batch"]',
+    panelSel: '#nav-view-batch',
+    feature: 'pdf-batch-signin',
+    title: 'Sign in to use Batch',
+    blurb: 'A free account includes a 3-document batch trial. Pro runs larger verified batches.',
+}];
 
 let _signedIn = false;
 let _resolved = false;
+
+export const TIER_LIMITS = Object.freeze({
+    guest: Object.freeze({ artifacts: 0, batchDocuments: 0, scannedPages: 0, versions: 0 }),
+    free: Object.freeze({ artifacts: 5, batchDocuments: 3, scannedPages: 10, versions: 3 }),
+    pro: Object.freeze({ artifacts: Infinity, batchDocuments: 100, scannedPages: 500, versions: 100 }),
+    team: Object.freeze({ artifacts: Infinity, batchDocuments: 500, scannedPages: 2000, versions: 250 }),
+});
 
 // ── Auth resolution ──────────────────────────────────────────────────────────
 
@@ -87,6 +84,38 @@ export function isSignedIn() {
     return false;
 }
 
+/** Synchronous tier snapshot supplied by the current host. Unknown signed-in
+ * sessions are Free until the host resolves otherwise; unknown guests remain
+ * guest. Server endpoints always re-resolve the authoritative tier. */
+export function getTier() {
+    if (_isDevHost()) return 'pro';
+    try {
+        const bridgeState = window.CwsBridge?.getAuthState?.();
+        if (bridgeState?.status === 'signed-in') return bridgeState.user?.tier || bridgeState.tier || 'free';
+    } catch (_) {}
+    try {
+        const user = window.parent !== window ? window.parent.OsShell?.getUser?.() : null;
+        if (user) return user.tier || 'free';
+    } catch (_) {}
+    return isSignedIn() ? 'free' : 'guest';
+}
+
+export function getTierLimits() {
+    return TIER_LIMITS[getTier()] || TIER_LIMITS.guest;
+}
+
+export function promptUpgrade(feature, subtitle) {
+    if (window.parent !== window) {
+        window.parent.postMessage({ type: 'gx:pro-gate-click', featureSlug: feature, subtitle }, window.location.origin);
+        return;
+    }
+    if (typeof window.openProWaitlist === 'function') {
+        window.openProWaitlist(feature, subtitle);
+        return;
+    }
+    window.GxModals?.open?.('pro_waitlist', { featureSlug: feature, subtitle });
+}
+
 /**
  * Ask the shell for auth state. The shell OPENS ITS AUTH MODAL when the user is
  * anonymous, which is exactly the prompt we want, so this doubles as the
@@ -121,7 +150,7 @@ export async function promptSignIn(feature) {
         const ok = await _requestAuthFromShell();
         refreshGates();
         if (!ok) {
-            showToast('Sign in to unlock Analyze and Batch.', 'info', 5000);
+            showToast('Sign in to continue with this feature.', 'info', 5000);
         }
         return ok;
     }
@@ -194,7 +223,9 @@ export function refreshGates() {
  * returns false.
  */
 export function requireSignIn(feature = 'pdf-gated') {
-    return true;
+    if (isSignedIn()) return true;
+    promptSignIn(feature);
+    return false;
 }
 
 export function isGateResolved() { return _resolved; }

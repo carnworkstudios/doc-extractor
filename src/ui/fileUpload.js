@@ -42,6 +42,7 @@ import { ensureBlockIds } from '../ir/gxDoc.js';
 import { gxDocToRegions } from '../ir/gxDocToRegions.js';
 import * as annotationEngine from '../annotation/engine.js';
 import { mountLayers as mountAnnotationLayers, unmountLayers as unmountAnnotationLayers } from '../annotation/layer.js';
+import { requireSignIn, getTier, getTierLimits, promptUpgrade } from './authGate.js';
 // The analyze panel is an optional add-on loaded at runtime by the host.
 // All calls are proxied through window.__GX_PDF_CORE__ dispatchers set up in app.js.
 const _core = () => window.__GX_PDF_CORE__;
@@ -1523,6 +1524,18 @@ async function handleFile(file, pdfIndex) {
             isScannedDoc = pages.length > 0 && scannedCount > pages.length / 2;
 
             if (isScannedDoc) {
+                if (!requireSignIn('pdf-scanned-signin')) {
+                    hideStatus();
+                    return;
+                }
+                const scannedLimit = getTierLimits().scannedPages;
+                if (pages.length > scannedLimit) {
+                    const message = `Free OCR processes up to ${scannedLimit} pages per scanned document. Pro adds full verified OCR.`;
+                    showToast(message, 'warning', 7000);
+                    if (getTier() === 'free') promptUpgrade('pdf-ocr-verified', message);
+                    hideStatus();
+                    return;
+                }
                 showStatus('Scanned document — checking for backend OCR…');
                 if (!brokerReady) {
                     try {

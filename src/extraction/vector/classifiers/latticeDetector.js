@@ -146,12 +146,17 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
         // there is no interior column and no grid to build. It is a box.
         if ((lattice.cols?.length ?? 0) <= 2) {
             if (bbox.x < viewport.width * 0.04 && bbox.w > viewport.width * 0.65) continue;
-            if (bbox.w > viewport.width * 0.88) continue;
 
             const boxTextIndices = collect();
             if (!boxTextIndices.length) continue;
+            const boxRegion = buildBoxRegion(bbox, boxTextIndices, textMeta, filledRects);
+            // One-column rules spanning most of the content width are commonly
+            // the top/bottom rules of a headless table or financial statement,
+            // not a semantic callout. Only an explicit admonition keyword is
+            // strong enough to make that much page width a BOX.
+            if (bbox.w > viewport.width * 0.65 && boxRegion.boxRole === 'generic') continue;
             claim(boxTextIndices);
-            regions.push(buildBoxRegion(bbox, boxTextIndices, textMeta, filledRects));
+            regions.push(boxRegion);
             continue;
         }
 
@@ -163,13 +168,21 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
         // are bordered content boxes; sparse grids without text are dropped.
         const occ = _cellOccupancy(lattice, tableTextIndices, textMeta);
         if (occ < 0.5) {
+            // A rejected grid is not allowed to become a parent BOX around
+            // boxes the container pass already accepted. Doing so copies the
+            // child claims into the new wrapper while leaving the children at
+            // page level, so the assembler emits the same runs twice. It also
+            // turns a financial statement's outer rules into one giant box.
+            // Keep the specific containers and release everything else to the
+            // stream/prose passes.
+            if (containedBoxes.length) continue;
             // A page-width sparse pseudo-grid is usually a borderless table
             // whose zebra fills and short total/header rules happened to make
             // intersections. Do not turn it into a BOX and claim all of its
             // text: leaving it unclaimed lets the stream/alignment pass recover
             // the semantic rows and columns. Real prose callouts are narrower
             // and still take the bordered-container fallback below.
-            if (bbox.w > viewport.width * 0.80) continue;
+            if (bbox.w > viewport.width * 0.65) continue;
             if (tableTextIndices.length > 0) {
                 claim(tableTextIndices);
                 regions.push(buildBoxRegion(bbox, tableTextIndices, textMeta, filledRects));

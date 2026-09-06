@@ -11,6 +11,7 @@ import { getEffectiveActiveView } from './viewController.js';
 import { pushSnapshot, syncUndoRedoUI } from './historyController.js';
 import { markHtmlDirty } from './htmlSync.js';
 import { showToast } from './toast.js';
+import { scrollToPage as syncScrollToPage } from './scrollSync.js';
 
 let _totalPages = 0;
 let _currentPage = 1;
@@ -88,8 +89,8 @@ export function initToolbar() {
     $('#btn-add-page').on('click', addEditorPage);
     $('#btn-insert-box').on('click', insertBox);
 
-    $('#btn-zoom-in').on('click',  () => bumpZoom(+0.1));
-    $('#btn-zoom-out').on('click', () => bumpZoom(-0.1));
+    $('#btn-zoom-in').on('click',  () => bumpZoom(+0.05));
+    $('#btn-zoom-out').on('click', () => bumpZoom(-0.05));
     $('#btn-zoom-fit').on('click', () => { fitPDFWidth(); refreshZoomLabel(); });
     refreshZoomLabel();
 
@@ -1198,13 +1199,7 @@ export function jumpToPage(n) {
 }
 
 function scrollToPage(n) {
-    let wrapper = _pageWrappers[n - 1];
-    if (!wrapper || !document.body.contains(wrapper)) {
-        wrapper = document.querySelector(`.page-wrapper[data-page="${n}"], .pdf-page-content[data-page="${n}"]`);
-    }
-
-    if (wrapper) {
-        wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (syncScrollToPage(n)) {
         _currentPage = n;
         updateCounter(n, _totalPages);
         $('#page-jump').val(n);

@@ -32,6 +32,7 @@ import { analyzePDF } from './extraction/vector/pdfAnalyzer.js';
 import { cropPageBox } from './ui/pdfCanvas.js';
 import { armMarquee, disarmMarquee, isMarqueeArmed } from './annotation/layer.js';
 import { showToast } from './ui/toast.js';
+import { initTheme } from './ui/themeController.js';
 import { state } from './state.js';
 import { getImageBlob, clearImages } from './utils/imageStore.js';
 
@@ -556,6 +557,7 @@ function _tryInjectAnalyzePanel() {
 // }
 
 $(() => {
+    initTheme();
     // Start every session with an empty picture cache.
     //
     // Nothing persists an extracted document across a reload — `extractedHTML`
@@ -600,14 +602,19 @@ $(() => {
         toggleMirror(state.activeView, 'pdf');
         syncToolbarToView(state.activeView);
     });
-    // Analyze only: the extracted HTML is an independent second reference, so
-    // it gets its own toggle rather than riding on the Original one.
+    // PDF and Analyze can expose the extracted document as a second pane.
     $(document).on('click', '.doc-mirror-toggle', () => {
         if (!state.pdf1?.extractedHTML) {
             showToast('Extract a document first to show it as a reference.', 'error');
             return;
         }
         toggleMirror(state.activeView, 'doc');
+        syncToolbarToView(state.activeView);
+    });
+    // Doc can expose Monaco beside the rendered document without changing
+    // which document representation is primary.
+    $(document).on('click', '.editor-mirror-toggle', () => {
+        toggleMirror(state.activeView, 'editor');
         syncToolbarToView(state.activeView);
     });
     initBatchViewController();

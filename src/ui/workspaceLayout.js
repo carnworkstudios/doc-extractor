@@ -26,6 +26,7 @@
  * so Doc+PDF and Analyze+PDF share one divider.
  */
 import $ from 'jquery';
+import { state } from '../state.js';
 import { initPaneDivider, initPaneActiveTracking, clearPaneSizes, restorePaneSizes } from './paneDivider.js';
 
 // The flex/grid row that holds the panes. NOT #app-workspace — that also
@@ -36,8 +37,8 @@ const DIVIDER_SEL = '#pane-divider';
 const STACK_SEL = '#pane-stack';
 const STACK_DIVIDER_SEL = '#stack-divider';
 const NOTES_DIVIDER_SEL = '#notes-divider';
-const PANE_SEL = '#pane-pdf, #pane-doc, #pane-analyze';
-const PANE_SIZING_SEL = PANE_SEL + ', #pane-notes';
+const PANE_SEL = '#pane-pdf, #pane-doc, #pane-analyze, #pane-editor';
+const PANE_SIZING_SEL = PANE_SEL + ', #pane-notes, #pane-stack';
 
 /** Every pane a view can ask for, in DOM order. */
 const PANES = ['pdf', 'doc', 'analyze', 'editor', 'diff'];
@@ -60,8 +61,8 @@ const BASE_PANE = {
  * could not express that.
  */
 const MIRRORABLE = {
-    pdf: [],
-    html: ['pdf'],
+    pdf: ['doc'],
+    html: ['pdf', 'editor'],
     analyze: ['pdf', 'doc'],
 };
 
@@ -69,7 +70,9 @@ const MIRRORABLE = {
 const HEADER_SEL = '#pdf-header-bar, #doc-header-bar, #analyze-canvas-header-bar';
 
 /** view -> Set of extra pane names currently shown beside its base pane. */
-const _mirrorOn = new Map();
+const _mirrorOn = new Map([
+    ['analyze', new Set(['pdf', 'doc'])],
+]);
 let _view = 'pdf';
 let _focusedPane = 'doc';      // which pane owns the format toolbar
 
@@ -87,9 +90,9 @@ export function initWorkspaceLayout() {
         () => ($(LAYOUT_SEL).hasClass('t-split') ? STACK_SEL : LAYOUT_SEL),
         DIVIDER_SEL, PANE_SEL, 160,
     );
-    initPaneDivider(LAYOUT_SEL, STACK_DIVIDER_SEL, `${STACK_SEL}, #pane-analyze`, 160);
+    initPaneDivider(LAYOUT_SEL, STACK_DIVIDER_SEL, `${STACK_SEL}, #pane-analyze, #pane-editor`, 160);
     initPaneActiveTracking(PANE_SEL, (paneEl) => {
-        const pane = paneEl.id === 'pane-pdf' ? 'pdf' : 'doc';
+        const pane = paneEl.id.replace('pane-', '');
         if (_focusedPane === pane) return;
         _focusedPane = pane;
         import('./viewController.js').then(m => m.syncToolbarToView(_view));
@@ -100,7 +103,7 @@ export function initWorkspaceLayout() {
 
 /** Which pane the caret is in. Only meaningful while the PDF is shared. */
 export function getFocusedPane() {
-    return isSplit() ? _focusedPane : (BASE_PANE[_view] === 'pdf' ? 'pdf' : 'doc');
+    return isSplit() ? _focusedPane : BASE_PANE[_view];
 }
 
 function _extras(view = _view) {
@@ -112,22 +115,25 @@ export function isSplit() {
     return _extras().size > 0;
 }
 
-/** @param {'pdf'|'doc'} [pane] — omit to ask "is anything mirrored". */
+/** @param {'pdf'|'doc'|'editor'} [pane] — omit to ask "is anything mirrored". */
 export function isMirrorOn(view = _view, pane) {
     const set = _extras(view);
     return pane ? set.has(pane) : set.size > 0;
 }
 
 export function setView(viewName) {
+    const changedView = _view !== viewName;
     _view = viewName;
-    if (!isSplit()) _focusedPane = BASE_PANE[viewName] === 'pdf' ? 'pdf' : 'doc';
+    // Entering a multi-pane view starts from its own primary pane. After that,
+    // toggling reference panes preserves whichever pane the user focused.
+    if (changedView || !isSplit()) _focusedPane = BASE_PANE[viewName];
     applyLayout();
 }
 
 /**
  * Toggle ONE extra pane for a view.
  * @param {string} viewName
- * @param {'pdf'|'doc'|'notes'} [pane] — defaults to the view's first
+ * @param {'pdf'|'doc'|'editor'|'notes'} [pane] — defaults to the view's first
  *   mirrorable pane, which keeps the Doc tab's single "Show original PDF"
  *   button working.
  */
@@ -163,16 +169,18 @@ export function applyLayout() {
     for (const extra of _extras()) visible.add(extra);
 
     const tSplit = isTSplit();
+    const editorSplit = _view === 'html' && visible.has('editor');
     PANES.forEach(p => $(`#pane-${p}`).attr('hidden', !visible.has(p)));
     $(LAYOUT_SEL).toggleClass('t-split', tSplit);
+    $(LAYOUT_SEL).toggleClass('editor-split', editorSplit);
 
     // Divider visibility is computed from the NON-notes visible count, so
     // every pre-existing layout (Doc+PDF, the Analyze T) is bit-for-bit what
     // it was before the board existed. #notes-divider has its own rule:
     // visible exactly when the board shares the screen with a document pane,
     const split = visible.size > 1;
-    $(DIVIDER_SEL).attr('hidden', !split);
-    $(STACK_DIVIDER_SEL).attr('hidden', !tSplit);
+    $(DIVIDER_SEL).attr('hidden', !(visible.has('pdf') && visible.has('doc')));
+    $(STACK_DIVIDER_SEL).attr('hidden', !(tSplit || editorSplit));
     $(NOTES_DIVIDER_SEL).attr('hidden', true);
 
     // Headers stay up in every layout, not just the split. They carry the
@@ -183,16 +191,27 @@ export function applyLayout() {
     // The divider writes inline flex percentages onto the panes it sizes.
     // Those must not outlive the split, or the surviving pane stays pinned
     // to its dragged width with a dead strip beside it.
-    if (split) restorePaneSizes(LAYOUT_SEL, PANE_SIZING_SEL);
-    else clearPaneSizes(LAYOUT_SEL, PANE_SIZING_SEL);
+    clearPaneSizes(LAYOUT_SEL, PANE_SIZING_SEL);
+    if (tSplit) {
+        restorePaneSizes(STACK_SEL, '#pane-pdf, #pane-doc', DIVIDER_SEL);
+        restorePaneSizes(LAYOUT_SEL, `${STACK_SEL}, #pane-analyze`, STACK_DIVIDER_SEL);
+    } else if (editorSplit) {
+        if (visible.has('pdf')) {
+            restorePaneSizes(STACK_SEL, '#pane-pdf, #pane-doc', DIVIDER_SEL);
+        }
+        restorePaneSizes(LAYOUT_SEL, `${STACK_SEL}, #pane-editor`, STACK_DIVIDER_SEL);
+    } else if (split) {
+        restorePaneSizes(LAYOUT_SEL, PANE_SEL, DIVIDER_SEL);
+    }
 
-    // A reference view is not an editing surface. Analyze routes no toolbar
-    // to the PDF, so leaving it editable there would let edits land somewhere
-    // the toolbar never reflects.
+    // Analyze's Original pane remains a reference even though focusing it now
+    // exposes the PDF tool context. Keep direct content editing disabled there;
+    // navigation, inspection, and annotation controls still follow focus.
     applyPdfReadOnly();
 
     $('.pdf-mirror-toggle').attr('aria-expanded', String(isMirrorOn(_view, 'pdf')));
     $('.doc-mirror-toggle').attr('aria-expanded', String(isMirrorOn(_view, 'doc')));
+    $('.editor-mirror-toggle').attr('aria-expanded', String(isMirrorOn(_view, 'editor')));
 
     // Showing/hiding a pane changes the PDF pane's width, so the fitted zoom
     // is stale the moment the layout changes. Re-fit on the next frame —
@@ -209,6 +228,17 @@ export function applyLayout() {
     // docVirtualizer.js). Prod it here rather than guessing a timeout.
     if (visible.has('doc')) {
         import('./docVirtualizer.js').then(m => m.onDocSurfaceVisible());
+    }
+
+    // Monaco has the same deferred-content contract whether it is opened as
+    // the Editor view or revealed beside Doc. Keep that lifecycle here, where
+    // pane visibility is decided, so mirror buttons and tab changes cannot
+    // drift into separate implementations.
+    if (visible.has('editor')) {
+        import('./htmlSync.js').then(({ syncMonacoFromState }) => {
+            syncMonacoFromState();
+            requestAnimationFrame(() => state.monacoEditor?.layout());
+        });
     }
 }
 

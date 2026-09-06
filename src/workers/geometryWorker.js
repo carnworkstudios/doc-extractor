@@ -33,7 +33,7 @@ import { extractSubpaths, linkTextPaintOps, vectorPathsForRegion } from '../extr
 import { reconcile } from '../extraction/vector/pathReconciler.js';
 import { makeSyntheticViewport } from '../extraction/vector/rasterSynth.js';
 import { classifyPage } from '../extraction/vector/contextClassifier.js';
-import { assemblePage, createFontRegistry, generateDocumentStyles } from '../extraction/vector/pageAssembler.js';
+import { assemblePage, createFontRegistry, generateDocumentStyles, markUnrenderableMathCrops } from '../extraction/vector/pageAssembler.js';
 import { readStructTree } from '../extraction/vector/structTreeReader.js';
 import { DocScale } from '../extraction/vector/docScale.js';
 import { scoreExtraction } from '../extraction/vector/extractionScorer.js';
@@ -208,7 +208,8 @@ async function _extractPageImages(page, regions, srcScale = 2.0, pageNum = page?
     // slivers instead of the drawing. The classifier has already assembled each
     // picture into one region, and a region that is exactly one untouched
     // XObject keeps that XObject's id, so lookups by image id still resolve.
-    const pictureRegions = (regions || []).filter(r => r.type === 'IMAGE' && r.bbox && r.id);
+    const pictureRegions = (regions || []).filter(r =>
+        (r.type === 'IMAGE' && r.bbox && r.id) || (r.mathFallbackCropId && r.mathFallbackCrop));
     if (pictureRegions.length === 0 || typeof OffscreenCanvas === 'undefined') {
         return extractedImages;
     }
@@ -226,20 +227,22 @@ async function _extractPageImages(page, regions, srcScale = 2.0, pageNum = page?
     const direct = [], viaRender = [];
     const seen = new Set();
     for (const pic of pictureRegions) {
-        if (seen.has(pic.id)) continue;
-        seen.add(pic.id);
+        pic.cropId = pic.mathFallbackCropId || pic.id;
+        pic.cropBBox = pic.mathFallbackCrop || pic.bbox;
+        if (seen.has(pic.cropId)) continue;
+        seen.add(pic.cropId);
         const ids = pic.sourceImageIds || [];
         const canUseDecoded = ids.length === 1 && ids[0] === pic.id &&
-            !pic.composite && !pic.vectorFigure &&
+            !pic.mathFallbackCropId && !pic.composite && !pic.vectorFigure &&
             pic.axisAligned !== false && /^img_/.test(pic.id);
         (canUseDecoded ? direct : viaRender).push(pic);
     }
 
     for (const pic of direct) {
-        const entry = await _cropFromDecodedImage(page, pic.id, pic.bbox.w * upRatio);
+        const entry = await _cropFromDecodedImage(page, pic.id, pic.cropBBox.w * upRatio);
         // The decoded image is native-resolution and was fetched at ~4× the
         // placed size, so it sizes like the render crop: scale stays 4.
-        if (entry) _keep(pic.id, { ...entry, scale: 4 });
+        if (entry) _keep(pic.cropId, { ...entry, scale: 4 });
         else viaRender.push(pic);   // unresolved, unsupported, or lower-res
     }
 
@@ -255,7 +258,7 @@ async function _extractPageImages(page, regions, srcScale = 2.0, pageNum = page?
         const pageCanvas = new OffscreenCanvas(cw, ch);
         await page.render({ canvasContext: pageCanvas.getContext('2d'), viewport: imgViewport }).promise;
 
-        const crops = viaRender.map(pic => ({ id: pic.id, bbox: pic.bbox }));
+        const crops = viaRender.map(pic => ({ id: pic.cropId, bbox: pic.cropBBox }));
 
         for (const { id, bbox } of crops) {
             const { x, y, w, h } = bbox;
@@ -271,7 +274,7 @@ async function _extractPageImages(page, regions, srcScale = 2.0, pageNum = page?
                 // Same cover strategy as pdfTextEdit: preserve every non-text
                 // pixel, white out only PDF.js's painted glyph boxes, then let
                 // the semantic SVG layer above become the visible/editable text.
-                const pic = viaRender.find(r => r.id === id);
+                const pic = viaRender.find(r => r.cropId === id);
                 if (pic?.vectorFigure && pic.textItemIndices?.length) {
                     cropCtx.save();
                     cropCtx.fillStyle = '#ffffff';
@@ -337,18 +340,21 @@ async function _saveCrops(blobs) {
 function _splitCarriedCrops(regions, carryImages) {
     const carried = {};
     const missing = [];
-    const pics = (regions || []).filter(r => r.type === 'IMAGE' && r.bbox && r.id);
+    const pics = (regions || []).filter(r =>
+        (r.type === 'IMAGE' && r.bbox && r.id) || (r.mathFallbackCropId && r.mathFallbackCrop));
     const same = (a, b) => Math.abs(a - b) <= 1;
     for (const r of pics) {
-        const c = carryImages?.[r.id];
+        const id = r.mathFallbackCropId || r.id;
+        const bbox = r.mathFallbackCrop || r.bbox;
+        const c = carryImages?.[id];
         if (c?.key && Array.isArray(c.crop) &&
-            same(c.crop[0], r.bbox.x) && same(c.crop[1], r.bbox.y) &&
-            same(c.crop[2], r.bbox.w) && same(c.crop[3], r.bbox.h)) {
+            same(c.crop[0], bbox.x) && same(c.crop[1], bbox.y) &&
+            same(c.crop[2], bbox.w) && same(c.crop[3], bbox.h)) {
             // Nothing but the key travels: the pixels never left the store, so
             // carrying a crop forward now costs one string instead of a
             // megabyte. `w`/`h` are already CSS px (the assembler divided by
             // the producing scale), so scale 1 reproduces identical markup.
-            carried[r.id] = { key: c.key, pw: c.w, ph: c.h, scale: 1 };
+            carried[id] = { key: c.key, pw: c.w, ph: c.h, scale: 1 };
         } else {
             missing.push(r);
         }
@@ -744,6 +750,8 @@ self.onmessage = async (e) => {
                 }
             }
 
+            markUnrenderableMathCrops(regions, textMeta, textContent.items);
+
             // ── Phase 2.5: Image + vector-figure extraction via 4× render ────
             // Runs AFTER classification so vector line-art figures (diagrams the
             // classifier detected from path segments) get cropped too, not just
@@ -923,6 +931,7 @@ async function _handleReprocess({ page: pageNum, pipeline = {}, carryImages = {}
                 region.vectorPaths = vectorPathsForRegion(subpaths, viewport, region.bbox, textMeta);
             }
         }
+        markUnrenderableMathCrops(regions, textMeta, textContent.items);
 
         // Image + vector-figure crops (after classification, same as process
         // path) — but only for pictures whose box actually changed. Everything
