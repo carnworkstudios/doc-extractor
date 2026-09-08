@@ -128,10 +128,10 @@ function wirePreview(id) {
 
 export function stripTableRulers(html) {
     if (!html || typeof html !== 'string') return html;
-    if (!html.includes('tafne-ruler-wrap')) return html;
+    if (!html.includes('table-ide-ruler-wrap')) return html;
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
-    doc.querySelectorAll('.tafne-ruler-wrap').forEach(wrap => {
+    doc.querySelectorAll('.table-ide-ruler-wrap').forEach(wrap => {
         const table = wrap.querySelector('table');
         if (table) {
             wrap.replaceWith(table);

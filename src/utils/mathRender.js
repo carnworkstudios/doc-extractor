@@ -7,7 +7,7 @@
 //   pageAssembler.js   extraction (both the worker and the synthetic path)
 //   gxDocToHtml.js     the IR render path (imports, exports, the Doc view)
 //   app.js             core.applyRegionLatex, when a human confirms a
-//                      correction in TAFNE
+//                      correction in Table IDE
 //
 // ── WHY throwOnError IS ON ───────────────────────────────────────────────────
 // KaTeX's default is to render an offending command in red inside otherwise

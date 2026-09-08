@@ -12,7 +12,7 @@
  * (h3, h4, div, p, aside, ul, ol, table-wrap, hr, img) inside a pdf-region/zone.
  * Falls back to the region/zone itself.
  *
- * Monaco deferred-setValue pattern (same as TAFNE multi-cell edit):
+ * Monaco deferred-setValue pattern (same as Table IDE multi-cell edit):
  *   store pending value → showModal() → dialog 'toggle' → layout() + setValue()
  */
 

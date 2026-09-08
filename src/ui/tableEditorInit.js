@@ -39,7 +39,7 @@ export function initTableEditing() {
         if (!_editModeActive) return;
         const insideFab = e.target.closest('.tbl-fab');
         const insidePop = e.target.closest('.tbl-fab-popover');
-        const insideRuler = e.target.closest('.tafne-ruler-wrap');
+        const insideRuler = e.target.closest('.table-ide-ruler-wrap');
         if (insideFab || insidePop || insideRuler) return;
         const inTable = _editor?.table?.contains(e.target);
         if (!inTable) _exitEditMode();

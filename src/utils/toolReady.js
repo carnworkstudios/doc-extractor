@@ -2,7 +2,7 @@
  * toolReady.js
  * Wait for another tool in the OS shell to acknowledge its launch.
  *
- * Cross-tool sends (PDF → TAFNE, PDF → Schema Editor) have to open the target
+ * Cross-tool sends (PDF → Table IDE, PDF → Schema Editor) have to open the target
  * tool first and then post data to it. Posting immediately loses the message,
  * because the target's listener is not registered until its own boot finishes.
  *

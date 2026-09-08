@@ -139,7 +139,7 @@ function tableToGrid(tableEl) {
 }
 
 // Same walk as tableToGrid, but keeps colSpan/rowSpan/header per cell instead
-// of flattening to a plain string — what sendTablesToTafne needs so a merged
+// of flattening to a plain string — what sendTablesToTableIde needs so a merged
 // header (common on a scanned invoice) survives into GxTables.createTable
 // instead of becoming the 'merged-header-inferred' FLAG gx-doc records today
 // (a note that a merge existed, not the geometry to rebuild it).
@@ -200,13 +200,13 @@ async function exportToIntegration(provider, html) {
 
 // ── Cross-tool send (Pro) — OS shell Send card → gx-tables-v1 envelope ────────
 
-// The shell's IPC panel relays a Send-card click as gx:ipc-send. TAFNE consumes
+// The shell's IPC panel relays a Send-card click as gx:ipc-send. Table IDE consumes
 // gx-tables-v1 envelopes via loadTablesAsSheets; the vector→Schema route lives
 // in the Analyze tab, so that card just points there.
 window.addEventListener('message', (e) => {
     if (e.origin !== window.location.origin || e.data?.type !== 'gx:ipc-send') return;
     if (e.data.target === 'tifany') {
-        sendTablesToTafne();
+        sendTablesToTableIde();
     } else if (e.data.target === 'svg_wiring') {
         showToast('Use the Analyze tab to send vector regions to Schema Editor.', 'info', 4000);
     }
@@ -242,7 +242,7 @@ function tableOriginOf(tableEl, docName) {
     return { tool: 'pdf-processor', doc: docName, page, regionId: String(regionId) };
 }
 
-async function sendTablesToTafne() {
+async function sendTablesToTableIde() {
     const html = state.pdf1.extractedHTML;
     if (!html) {
         showToast('No content to send. Load a file first.', 'error');
@@ -260,7 +260,7 @@ async function sendTablesToTafne() {
 
     // Candidate-artifact contract (tool-intelligence-spec.md §04.2): a table
     // extracted from a PDF is a CANDIDATE, not a finished fact. We attach its
-    // extraction confidence and mark candidate:true so TAFNE's trust stage
+    // extraction confidence and mark candidate:true so Table IDE's trust stage
     // treats it as "to verify", not "trusted" — the two-stage trust model
     // (extracted-uncertain → validated-trusted). The score is the region's own
     // classifier confidence when the table maps to an extracted region.
@@ -279,7 +279,7 @@ async function sendTablesToTafne() {
         const extractionScore = !isNaN(conf) ? conf : 0.7;
         // The return address rides along. It exists only here, at the moment the
         // table leaves the document it was extracted from — a receiver cannot
-        // reconstruct it later. Omitting it is what made TAFNE's (fully built)
+        // reconstruct it later. Omitting it is what made Table IDE's (fully built)
         // back-annotation to this tool unreachable for everything sent from this
         // button: no address, so nothing to return to, so the route was hidden.
         const origin = tableOriginOf(t, baseName());
@@ -315,7 +315,7 @@ async function sendTablesToTafne() {
         window.CwsBridge.send('cws:tool:launch', { toolId: 'tifany', focusAfterLaunch: true }, 'os');
         await waitForToolReady('tifany', 8000);
         // meta.candidate flags the whole handoff as extracted-uncertain, so the
-        // receiver (TAFNE) knows to route it through its validate/trust stage.
+        // receiver (Table IDE) knows to route it through its validate/trust stage.
         const payload = useGx
             ? window.GxTables.createEnvelope({ source: 'pdf-processor', title: baseName(), tables })
             : { schema: 'gx-tables-v1', tables, meta: { source: 'pdf-processor', title: baseName(), candidate: true } };
@@ -338,8 +338,8 @@ async function sendTablesToTafne() {
             pointer: pointerId,
             contentType: 'json-data',
             metadata: { source: 'pdf-processor', title: baseName(), tableCount: tables.length, candidate: true },
-            // action:'load-candidate-tables' tells TAFNE to route through verify,
-            // not treat as a finished table. TAFNE falls back to load-tables if it
+            // action:'load-candidate-tables' tells Table IDE to route through verify,
+            // not treat as a finished table. Table IDE falls back to load-tables if it
             // doesn't yet special-case candidates.
             hints: { suggestedTarget: 'tifany', action: 'load-candidate-tables' },
             provenance,
@@ -348,7 +348,7 @@ async function sendTablesToTafne() {
         // decided. Discovering it later — as a back-annotate route that simply
         // isn't offered in the other tool — reads as a missing feature.
         showToast(
-            `Sent ${tables.length} table${tables.length > 1 ? 's' : ''} to TAFNE` +
+            `Sent ${tables.length} table${tables.length > 1 ? 's' : ''} to Table IDE` +
             (unaddressed ? ` (${unaddressed} cannot be edited back — no source region)` : ''),
             'success');
     } catch (err) {

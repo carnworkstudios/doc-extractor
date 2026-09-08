@@ -215,7 +215,7 @@ Vite serves on `http://localhost:5173`. Plain static-host inspection is also sup
 **Financial analysts.** Pull tables from quarterly reports, prospectuses, and 10-Ks straight into Excel-ready CSV or JSON.  
 **Legal and compliance teams.** Visual Diff and Compare Diff catch redlines and amendments across contract versions.  
 **Technical writers.** Convert legacy PDF docs into Markdown or HTML for modern docs platforms.  
-**Data engineers.** Programmatic JSON output as the first stage of an ingest pipeline, combined with [TAFNE](https://ginexys.com/tools/table-formatter/) for downstream reshaping.
+**Data engineers.** Programmatic JSON output as the first stage of an ingest pipeline, combined with [Table IDE](https://ginexys.com/tools/table-formatter/) for downstream reshaping.
 
 ---
 
@@ -226,12 +226,12 @@ Document Workbench is the **Extract** step of the Ginexys engineering document p
 ```
 Extract  (PDF/image → structured data)   Document Workbench  (this tool)
    ↓
-Transform (reshape, edit, clean)         TAFNE
+Transform (reshape, edit, clean)         Table IDE
    ↓
 Engineer  (schematic / topology editor)  Schema Editor
 ```
 
-- **[TAFNE](https://github.com/carnworkstudios/TAFNE).** Table Formatter and Node Editor for downstream reshaping.
+- **[Table IDE](https://github.com/carnworkstudios/table-ide).** Table Formatter and Node Editor for downstream reshaping.
 - **[Schema Editor](https://github.com/canworkstudios/schema-editor).** Domain-specific schematic/topology editor.
 - Install all three: **[Ginexys Developer Tools](https://marketplace.visualstudio.com/items?itemName=ginexys.ginexys)** (VS Code extension pack).
 

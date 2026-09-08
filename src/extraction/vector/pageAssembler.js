@@ -35,7 +35,7 @@ import { createPdfMeasure } from './pdfMeasure.js';
 // the two silently emits unrendered equations.
 //
 // A render is not an assertion that the reconstruction is correct: the block
-// carries `data-math-suggested` until a human confirms it in TAFNE, and keeps
+// carries `data-math-suggested` until a human confirms it in Table IDE, and keeps
 // the page's own glyphs in `data-math-source`. See the MATH branch below.
 import { renderMath, mathMarker } from '../../utils/mathRender.js';
 
@@ -1523,7 +1523,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                 // A real math block. Three things go out together, and each one
                 // answers a different question:
                 //
-                //   data-latex        the TeX — the CONTENT, what TAFNE opens
+                //   data-latex        the TeX — the CONTENT, what Table IDE opens
                 //                     and what every exporter carries.
                 //   the body          the typeset equation, so an equation
                 //                     reads as an equation on the page.

@@ -14,7 +14,7 @@
 // resolves a table's return address with
 // `closest('[data-region-id]')` + `closest('section.pdf-page-content[data-page]')`,
 // and returns `null` when either is missing. A null origin means a table sent to
-// TAFNE or the Schema Editor is UNADDRESSED — it arrives, and nothing can ever
+// Table IDE or the Schema Editor is UNADDRESSED — it arrives, and nothing can ever
 // annotate back to the page and region it came from. The zone toolbar, the
 // annotation layer and interactive region re-extract read the same anchors.
 //

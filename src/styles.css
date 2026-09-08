@@ -1258,20 +1258,20 @@ body.format-painter-active .editable-text-layer {
    Ruler wrap around tables for inline editing (add/delete/reorder rows/cols).
    Activated by TableEditor with { ruler: true }. */
 
-.tafne-ruler-wrap {
+.table-ide-ruler-wrap {
   display: flex;
   flex-direction: column;
   margin: 1.2em 0;
   position: relative;
 }
 
-.tafne-ruler-header {
+.table-ide-ruler-header {
   display: flex;
   align-items: stretch;
   height: 28px;
 }
 
-.tafne-corner {
+.table-ide-corner {
   width: 32px;
   min-width: 32px;
   background: #f0f1f3;
@@ -1281,7 +1281,7 @@ body.format-painter-active .editable-text-layer {
   border-radius: 4px 0 0 0;
 }
 
-.tafne-col-ruler {
+.table-ide-col-ruler {
   display: flex;
   flex: 1;
   background: #f0f1f3;
@@ -1291,7 +1291,7 @@ body.format-painter-active .editable-text-layer {
   overflow: hidden;
 }
 
-.tafne-col-ruler .ruler-seg {
+.table-ide-col-ruler .ruler-seg {
   box-sizing: border-box;
   flex: 0 0 auto;
   min-width: 30px;
@@ -1308,11 +1308,11 @@ body.format-painter-active .editable-text-layer {
   user-select: none;
 }
 
-.tafne-col-ruler .ruler-seg:hover {
+.table-ide-col-ruler .ruler-seg:hover {
   background: #e5e7eb;
 }
 
-.tafne-col-ruler .ruler-seg .ruler-del {
+.table-ide-col-ruler .ruler-seg .ruler-del {
   display: none;
   position: absolute;
   right: 2px;
@@ -1328,11 +1328,11 @@ body.format-painter-active .editable-text-layer {
   background: rgba(255, 255, 255, 0.8);
 }
 
-.tafne-col-ruler .ruler-seg:hover .ruler-del {
+.table-ide-col-ruler .ruler-seg:hover .ruler-del {
   display: block;
 }
 
-.tafne-col-ruler .ruler-add {
+.table-ide-col-ruler .ruler-add {
   width: 24px;
   min-width: 24px;
   display: flex;
@@ -1346,16 +1346,16 @@ body.format-painter-active .editable-text-layer {
   user-select: none;
 }
 
-.tafne-col-ruler .ruler-add:hover {
+.table-ide-col-ruler .ruler-add:hover {
   background: #dcfce7;
 }
 
-.tafne-ruler-body {
+.table-ide-ruler-body {
   display: flex;
   align-items: flex-start;
 }
 
-.tafne-row-ruler {
+.table-ide-row-ruler {
   width: 32px;
   min-width: 32px;
   background: #f0f1f3;
@@ -1369,7 +1369,7 @@ body.format-painter-active .editable-text-layer {
   align-self: flex-start;
 }
 
-.tafne-row-ruler .ruler-seg {
+.table-ide-row-ruler .ruler-seg {
   box-sizing: border-box;
   flex: 0 0 auto;
   display: flex;
@@ -1386,11 +1386,11 @@ body.format-painter-active .editable-text-layer {
   min-height: 24px;
 }
 
-.tafne-row-ruler .ruler-seg:hover {
+.table-ide-row-ruler .ruler-seg:hover {
   background: #e5e7eb;
 }
 
-.tafne-row-ruler .ruler-seg .ruler-del {
+.table-ide-row-ruler .ruler-seg .ruler-del {
   display: none;
   position: absolute;
   right: 2px;
@@ -1406,11 +1406,11 @@ body.format-painter-active .editable-text-layer {
   background: rgba(255, 255, 255, 0.8);
 }
 
-.tafne-row-ruler .ruler-seg:hover .ruler-del {
+.table-ide-row-ruler .ruler-seg:hover .ruler-del {
   display: block;
 }
 
-.tafne-row-ruler .ruler-add {
+.table-ide-row-ruler .ruler-add {
   height: 28px;
   min-height: 28px;
   display: flex;
@@ -1425,29 +1425,29 @@ body.format-painter-active .editable-text-layer {
   border-bottom: none;
 }
 
-.tafne-row-ruler .ruler-add:hover {
+.table-ide-row-ruler .ruler-add:hover {
   background: #dcfce7;
 }
 
-.tafne-ruler-wrap table {
+.table-ide-ruler-wrap table {
   margin: 0 !important;
   border-radius: 0 4px 4px 0;
 }
 
-.tafne-ruler-wrap td.selected-cell,
-.tafne-ruler-wrap th.selected-cell {
+.table-ide-ruler-wrap td.selected-cell,
+.table-ide-ruler-wrap th.selected-cell {
   outline: 2px solid #4facfe;
   outline-offset: -1px;
   background: rgba(79, 172, 254, 0.08);
 }
 
-.tafne-ruler-wrap td.dragging,
-.tafne-ruler-wrap th.dragging {
+.table-ide-ruler-wrap td.dragging,
+.table-ide-ruler-wrap th.dragging {
   opacity: 0.4;
 }
 
-.tafne-ruler-wrap td.drag-over,
-.tafne-ruler-wrap th.drag-over {
+.table-ide-ruler-wrap td.drag-over,
+.table-ide-ruler-wrap th.drag-over {
   outline: 2px dashed #22c55e;
   outline-offset: -2px;
 }

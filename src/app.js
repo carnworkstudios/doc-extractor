@@ -362,7 +362,7 @@ window.__GX_PDF_CORE__ = {
      * Write corrected LaTeX back over the equation region it came from.
      *
      * The receiving half of the equation round trip: the extractor reconstructs
-     * display math into TeX, TAFNE edits the TeX, and it comes back addressed
+     * display math into TeX, Table IDE edits the TeX, and it comes back addressed
      * by the origin (page + regionId) it has carried the whole way.
      *
      * `data-latex` is the content and is written first; the KaTeX markup beside
@@ -379,7 +379,7 @@ window.__GX_PDF_CORE__ = {
      * emits `data-math-suggested` and leaves the page's own glyphs on screen,
      * because its LaTeX is inferred from glyph positions and is wrong often
      * enough that a clean typeset would just hide the errors. A human opening
-     * the equation in TAFNE and sending it back is the confirmation, and that
+     * the equation in Table IDE and sending it back is the confirmation, and that
      * is what promotes `data-math-suggested` to `data-math`.
      */
     applyRegionLatex(page, regionId, latex) {
@@ -437,7 +437,7 @@ window.__GX_PDF_CORE__ = {
 
     /**
      * Write an edited table back over the region it was extracted from, then
-     * re-render that page. This is the receiving half of a round trip: TAFNE
+     * re-render that page. This is the receiving half of a round trip: Table IDE
      * edits a sheet that came from here and sends it back, addressed by the
      * origin (page + regionId) the table has carried the whole way.
      */

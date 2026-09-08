@@ -16,7 +16,7 @@ The PDF Processor is a high-performance, browser-native tool for converting PDF 
 
 ### Primary Document
 
-Select the **Open PDF** button in the header to load your source file. TIFANY will immediately begin the layout analysis and text extraction process.
+Select the **Open PDF** button in the header to load your source file. TABLE_IDE will immediately begin the layout analysis and text extraction process.
 
 ### Multi-Page Support
 

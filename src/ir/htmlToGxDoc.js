@@ -294,7 +294,7 @@ function _emitLeaf(el, page, ctx = {}) {
     //
     // Both halves have to survive the round trip. Keeping only the TeX would
     // silently promote every guess to a fact on the way back out; keeping only
-    // the text would throw away work someone already did in TAFNE.
+    // the text would throw away work someone already did in Table IDE.
     if (el.hasAttribute?.('data-latex') || cls.includes('pdf-math-block')) {
         const latex = el.getAttribute('data-latex') || '';
         const confirmed = el.hasAttribute('data-math') || el.getAttribute('data-gx-annotated') === 'true';

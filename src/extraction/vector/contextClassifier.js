@@ -350,7 +350,7 @@ function _assignColumnIndex(regions, columnSplits, viewport) {
  */
 function _ensureRegionIds(regions) {
     // Children are regions too. A box's contents are addressable — you can
-    // send a table nested in a callout to TAFNE, jump to it, or cite it — and
+    // send a table nested in a callout to Table IDE, jump to it, or cite it — and
     // an id is what makes that possible, so both passes below walk the whole
     // tree flat, even though what is RETURNED stays the top-level list.
     const all = [];

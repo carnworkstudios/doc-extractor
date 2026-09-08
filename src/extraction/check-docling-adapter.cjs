@@ -6,7 +6,7 @@
 // ===================================================================================
 // The regression this guards: Docling's own `export_to_html()` carries no
 // `data-region-id` and no `section.pdf-page-content[data-page]`. A table taken
-// from it fails `tableOriginOf()` in `ui/exportController.js`, arrives in TAFNE
+// from it fails `tableOriginOf()` in `ui/exportController.js`, arrives in Table IDE
 // or the Schema Editor with no return address, and can never be annotated back
 // to the page it came from. The failure is silent — the send succeeds, the
 // document looks fine, and only the return path is gone.
