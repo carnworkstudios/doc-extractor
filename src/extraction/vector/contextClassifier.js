@@ -11,9 +11,11 @@
 // Safe to run inside a Web Worker.
 
 import { PageScale } from './pageScale.js';
+import { measureProseSpacing } from './classifiers/proseSpacing.js';
 import { readStructTree } from './structTreeReader.js';
 import { PageGraph } from './spatialGraph.js';
 import { detectPageColumns, splitByColumns } from './classifiers/columnSplitDetector.js';
+import { buildColumnBands } from './classifiers/columnBands.js';
 import { detectUnderlines } from './classifiers/underlineDetector.js';
 import { detectPictureRegions, filterTableSegs } from './classifiers/imageRegionDetector.js';
 import { detectLatticeTables } from './classifiers/latticeDetector.js';
@@ -410,6 +412,10 @@ function _recoverUnownedText(regions, textMeta, scale, scaleY, columnSplits, ski
     const owned = new Set();
     const visit = region => {
         for (const idx of region?.textItemIndices || []) owned.add(idx);
+        // A callout's header is rendered from `bannerText`, so its items are
+        // deliberately absent from `textItemIndices`. They are still OWNED —
+        // re-emitting them here prints the label a second time, outside the box.
+        for (const idx of region?.bannerTextIndices || []) owned.add(idx);
         for (const child of region?.children || []) visit(child);
         for (const children of Object.values(region?.cellChildren || {})) {
             for (const child of children) visit(child);
@@ -673,22 +679,57 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         const matchedItems = claimed.matchedItems;
         for (const idx of textIndices) customClaimedTextIndices.add(idx);
 
-        // Build specific structural properties for tables
+        // Build specific structural properties for tables.
+        //
+        // `cr.detector` is the user's EXPLICIT choice from the Analyze tab
+        // ('lattice' | 'stream'). When present it is an instruction, not a
+        // hint: someone looked at the page, decided the ruling is the truth
+        // (or is lying), and said so. Falling back past it silently is what
+        // made "assign LATTICE, re-extract" appear to do nothing.
+        //
+        // Absent a choice, the old adaptive behaviour stands: try the ruling,
+        // and fall back to the band/column grid when the reconstruction is
+        // unusable. That fallback exists because a ruled table whose outer
+        // rules the box clips reconstructs to nothing, and a single-cell
+        // "table" silently destroyed real ones (a 9-row, 30-cell architecture
+        // table came back as one row).
         let lattice = null;
-        if (type === RegionType.LATTICE_TABLE || type === RegionType.TABLE) {
-            lattice = customLattices.get(cr) || null;
-            // A reconstruction that yields a single cell is not a table, it is
-            // the whole region flattened into one box. That used to be the
-            // fallback and it silently destroyed real tables: a 9-row, 30-cell
-            // architecture table came back as one row with no cells. Ruled
-            // tables whose outer rules the box clips reconstruct to nothing;
-            // fall through to the same band/column grid a stream table gets,
-            // which reads structure off the text instead of the ink.
-            if (!_isUsableLattice(lattice)) {
+        let latticeSource = null;   // what actually produced the grid, for provenance
+        const wantsTable = type === RegionType.LATTICE_TABLE
+            || type === RegionType.TABLE
+            || type === RegionType.STREAM_TABLE;
+
+        if (wantsTable) {
+            const choice = cr.detector === 'lattice' || cr.detector === 'stream'
+                ? cr.detector
+                : null;
+
+            if (choice === 'stream') {
                 lattice = _streamLattice(bbox, matchedItems, scale, tableSegs);
+                latticeSource = 'stream';
+            } else if (choice === 'lattice') {
+                lattice = customLattices.get(cr) || null;
+                latticeSource = 'lattice';
+                // Honour the choice even when the ruling is thin, but do not
+                // hand the assembler an unusable grid — that renders as one
+                // flattened cell. Fall back and SAY SO, so the provenance
+                // records that the user's choice could not be satisfied
+                // rather than quietly reporting success.
+                if (!_isUsableLattice(lattice)) {
+                    lattice = _streamLattice(bbox, matchedItems, scale, tableSegs);
+                    latticeSource = 'stream-fallback';
+                }
+            } else if (type === RegionType.STREAM_TABLE) {
+                lattice = _streamLattice(bbox, matchedItems, scale, tableSegs);
+                latticeSource = 'stream';
+            } else {
+                lattice = customLattices.get(cr) || null;
+                latticeSource = 'lattice';
+                if (!_isUsableLattice(lattice)) {
+                    lattice = _streamLattice(bbox, matchedItems, scale, tableSegs);
+                    latticeSource = 'stream-fallback';
+                }
             }
-        } else if (type === RegionType.STREAM_TABLE) {
-            lattice = _streamLattice(bbox, matchedItems, scale, tableSegs);
         }
 
         // fontSize / proximityPx / bannerText / captionRegion are read by
@@ -731,7 +772,13 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
             boxRole: cr.boxRole ?? 'generic',
             fillColor: cr.fillColor ?? null,
             listOrdered: cr.listOrdered ?? false,
-            algorithm: 'custom-override'
+            algorithm: 'custom-override',
+            // What the user ASKED for and what actually ran. Kept separate on
+            // purpose: 'stream-fallback' means the lattice choice could not be
+            // satisfied, and a provenance record that cannot say so is worth
+            // less than no record. Undefined for non-table regions.
+            detector: cr.detector ?? null,
+            detectorApplied: latticeSource
         });
     }
 
@@ -810,6 +857,41 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
         }
     }
 
+    // ── 4.4. Column bands for the geometric detectors ────────────────────────
+    // The box and lattice passes below judge a rectangle by asking whether it
+    // is "wide". They were written before this file had any notion of columns,
+    // so they answer against `viewport.width` — and on a two-column page a
+    // panel filling ONE column measures ~0.42 of the page while being 1.00 of
+    // its actual measure, which walks straight through every `> 0.65` gate.
+    // (Measured on 59MN7C-03SI.pdf pp.16/22: columns x=36-297 and x=315-576,
+    // callout panels 0.42-0.43 of page width.)
+    //
+    // So give them the ruler. This is a cheap geometric pre-pass over ALL text
+    // — the later column stages still run on their own inputs (unclaimed text
+    // at step 7, remaining text at step 10) and are untouched by this.
+    //
+    // A page with no detected splits yields one band spanning the sheet, every
+    // measure resolves to `viewport.width`, and both detectors reduce exactly
+    // to their previous arithmetic. Single-column pages cannot change.
+    let detectorColumnBands = [];
+    if (!opts.pipeline?.manualSplits?.length) {
+        const bandMeta = textMeta.filter(tm => tm.str.trim());
+        if (bandMeta.length > 10) {
+            const { splits: bandSplits } = detectPageColumns(bandMeta, viewport, scale);
+            const bandXs = bandSplits
+                .map(sp => sp.x ?? sp)
+                .filter(x => x > viewport.width * 0.1 && x < viewport.width * 0.9);
+            if (bandXs.length) detectorColumnBands = buildColumnBands(bandXs, viewport);
+        }
+    } else {
+        // The user's own column splits outrank detection everywhere else in
+        // this file; they outrank it here too.
+        const manualXs = opts.pipeline.manualSplits
+            .map(sp => sp.x)
+            .filter(x => x > viewport.width * 0.05 && x < viewport.width * 0.95);
+        if (manualXs.length) detectorColumnBands = buildColumnBands(manualXs, viewport);
+    }
+
     // ── 4.5. Container boxes (notices, warnings, callout panels) ─────────────
     // Runs BEFORE the table detectors. A bordered admonition and a bordered
     // table are drawn with the same four segments, so whichever detector went
@@ -819,13 +901,13 @@ export function classifyPage(segments, textItems, viewport, pageWidthPt, imageMe
     // lattice pass reclaim any real grid nested within it.
     let boxRegions = [];
     if (!skip.has('BOX')) {
-        boxRegions = detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale, viewport, regions, filledRects, assignedTextIndices);
+        boxRegions = detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale, viewport, regions, filledRects, assignedTextIndices, detectorColumnBands);
         for (const r of boxRegions) regions.push(r);
     }
 
     // ── 5. Lattice table regions ─────────────────────────────────────────────
     if (!skip.has('LATTICE_TABLE')) {
-        const latticeRegions = detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts, boxRegions, keptImageRegions);
+        const latticeRegions = detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts, boxRegions, keptImageRegions, detectorColumnBands);
         for (const r of latticeRegions) regions.push(r);
     }
 
@@ -1304,7 +1386,10 @@ function _snapSplitToGutter(splitX, meta, viewport, scale) {
 //      centered author rows) and stays full-width with it. Clean column
 //      bands have no kept anchor, so every item is removed exactly as before.
 function _refineFullWidthByLine(remainingMeta, fullWidthIndices, columnSplits, scale) {
-    if (!columnSplits.length) return;
+    if (!columnSplits.length) {
+        fullWidthIndices.clear();
+        return;
+    }
     const tol = scale.proximityPx ?? 5;
     const boundaries = [-Infinity, ...columnSplits, Infinity];
 
@@ -1517,7 +1602,39 @@ function _bboxWithin(inner, outer, pad) {
  * it rejects every banner on the page.
  */
 function _liftBoxBanner(box, textMeta) {
-    if (box.bannerText) return;
+    // A box that already carries `bannerText` normally got it from the
+    // banner/body merge, which moves the label items out of the flow and
+    // records them on `bannerTextIndices`. Nothing left to lift.
+    //
+    // The exception is a banner bar whose body was never found — the merge
+    // needs a BODY BOX to merge into, and on p16/p22 of 59MN7C-03SI.pdf some
+    // bodies classify as prose, not boxes. The bar is then left standing alone
+    // holding `bannerText` AND the label items, so the assembler draws the
+    // styled header and prints the same word again beneath it. Move them onto
+    // `bannerTextIndices` where they belong: still owned, still rendered, but
+    // rendered ONCE, by the header.
+    if (box.bannerText) {
+        const label = box.bannerText.replace(/[^A-Z]/g, '');
+        const idxs0 = box.textItemIndices || [];
+        if (!label || !idxs0.length) return;
+        const isLabelPart = (i) => {
+            const tm = textMeta[i];
+            if (!tm) return false;
+            const w = tm.str.trim().toUpperCase().replace(/[^A-Z]/g, '');
+            // The label word itself, or the bare "!" that shares its band in
+            // this template. Never body prose that merely mentions the word
+            // ("failure to follow this caution ...").
+            if (w) return w.length >= 3 && label.includes(w);
+            return /^[!\s]+$/.test(tm.str.trim());
+        };
+        // Only when the box holds NOTHING BUT the header — an unmerged bar. A
+        // box with real body text beneath its label is already correct, and
+        // stripping there would risk eating content.
+        if (!idxs0.every(isLabelPart)) return;
+        box.bannerTextIndices = [...(box.bannerTextIndices || []), ...idxs0];
+        box.textItemIndices = [];
+        return;
+    }
     if (!box.boxRole || box.boxRole === 'generic') return;
     const idxs = box.textItemIndices || [];
     if (!idxs.length) return;
@@ -1543,6 +1660,10 @@ function _liftBoxBanner(box, textMeta) {
 
     box.bannerText = label;
     box.textItemIndices = idxs.filter(i => !bannerIdx.has(i));
+    // Same bookkeeping as the banner/body merge: these items ARE rendered, from
+    // `bannerText`, but they have just left `textItemIndices`. Without this the
+    // lossless-recovery net re-emits them as a heading beside the panel.
+    box.bannerTextIndices = [...bannerIdx];
 }
 
 function _classifyBucket(regions, lines, bodyFontSizePt, scale, columnIndex, skip = new Set()) {
@@ -1550,13 +1671,32 @@ function _classifyBucket(regions, lines, bodyFontSizePt, scale, columnIndex, ski
     let currentType = null;
     let lastMarkerX = null; // left edge of the most recent list-marker line
 
+    // The text measure for THIS bucket — a column on a multi-column page, the
+    // page body on a single-column one. Taken as the widest line present, which
+    // is what a full-measure paragraph line spans. Used by the heading detector
+    // for its "a heading does not fill the measure" signal; null when there is
+    // nothing to measure, and the detector then simply skips that signal.
+    let bodyWidthPx = null;
+    for (const l of lines) {
+        if (!l.items?.length) continue;
+        const x0 = Math.min(...l.items.map(t => t.vx));
+        const x1 = Math.max(...l.items.map(t => t.vx + (t.vWidth || 0)));
+        if (x1 - x0 > (bodyWidthPx ?? 0)) bodyWidthPx = x1 - x0;
+    }
+
+    const proseSpacing = measureProseSpacing(lines);
+
     for (let li = 0; li < lines.length; li++) {
         const line = lines[li];
+        const paraGapPx = proseSpacing.gapFor(line) ?? scale.paraGapPx;
         const lineStr = line.items.map(tm => tm.str.trim()).join(' ').trim();
         if (!lineStr) continue;
 
         let lineType;
-        const headingType = classifyHeading(line, bodyFontSizePt, scale);
+        // bodyWidthPx lets the detector use "a heading does not fill the
+        // measure" as a signal. Measured from the lines themselves rather than
+        // the page, so a two-column page compares against its column width.
+        const headingType = classifyHeading(line, bodyFontSizePt, scale, { bodyWidthPx });
         const listResult  = classifyList(line, bodyFontSizePt, scale);
 
         // When a type is skipped, demote it to PARAGRAPH so items stay in the
@@ -1578,14 +1718,14 @@ function _classifyBucket(regions, lines, bodyFontSizePt, scale, columnIndex, ski
             if (currentType === RegionType.LIST && !skip.has('LIST') &&
                 currentBlock.length && lastMarkerX !== null) {
                 const thisX = Math.min(...line.items.map(t => t.vx));
-                const closeGap = li > 0 && Math.abs(line.y - lines[li - 1].y) <= scale.paraGapPx;
+                const closeGap = li > 0 && Math.abs(line.y - lines[li - 1].y) <= paraGapPx;
                 if (closeGap && thisX > lastMarkerX + scale.S * 0.4) {
                     lineType = RegionType.LIST;
                 }
             }
         }
 
-        const hasGap = li > 0 && Math.abs(line.y - lines[li - 1].y) > scale.paraGapPx;
+        const hasGap = li > 0 && Math.abs(line.y - lines[li - 1].y) > paraGapPx;
 
         if (currentType !== null && (lineType !== currentType || hasGap)) {
             _flushBlock(regions, currentBlock, currentType, columnIndex);

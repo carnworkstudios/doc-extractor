@@ -16,6 +16,7 @@
 
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
+import { pdfWorkerSrc } from '../../utils/assetBase.js';
 import { extractSubpaths } from './ctmAdapter.js';
 import { reconcile } from './pathReconciler.js';
 
@@ -24,7 +25,7 @@ const { OPS } = pdfjsLib;
 // Set workerSrc globally — pdfjs-dist v4 requires this even when disableWorker is used.
 // For small files the analyzer uses disableWorker=true to avoid Vite HMR nested worker issues.
 // For large files it uses the real worker for performance.
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc(pdfWorkerUrl);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

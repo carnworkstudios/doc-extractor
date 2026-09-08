@@ -10,6 +10,7 @@
 import { LatticeReconstructor } from '../latticeReconstructor.js';
 import { RegionType } from './regionTypes.js';
 import { buildBoxRegion } from './boxDetector.js';
+import { measureOf } from './columnBands.js';
 
 function insideBBox(px, py, bbox, pad = 0) {
     return px >= bbox.x - pad && px <= bbox.x + bbox.w + pad &&
@@ -59,7 +60,11 @@ function fitsSingleCell(regionBBox, lattice, pad = 0) {
     return false;
 }
 
-export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts = {}, boxRegions = [], imageRegions = []) {
+export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filledRects, assignedTextIndices, opts = {}, boxRegions = [], imageRegions = [], columnBands = []) {
+    // Judge a rectangle's width against its own column where the page has
+    // columns, against the page where it does not. With no bands this returns
+    // viewport.width and every gate below is what it was before.
+    const _measure = (bbox) => measureOf(bbox, columnBands, viewport) || viewport.width;
     const reconstructor = new LatticeReconstructor(tableSegs, {
         eps: 5, scale, textMeta, pageHeight: viewport.height,
     });
@@ -116,6 +121,31 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
         const containedBoxes = boxRegions.filter(b => b.bbox &&
             bboxContains(bbox, b.bbox, pad) &&
             b.bbox.w * b.bbox.h < bbox.w * bbox.h * 0.9);
+        // …but a stack of ADMONITIONS is not cell content, and telling the two
+        // apart is what this guard is for. Restores the veto `cef8980` removed
+        // wholesale: on 59MN7C-03SI.pdf pp.11/16/22 that removal let 17/21/33
+        // wrappers survive per page, the worst swallowing 7 stacked callouts
+        // into one region — the reported "3-4 boxes grouped into one box".
+        //
+        // The discriminator is WIDTH, not containment. A description cell is
+        // one cell of a row, so it sits inside a single column span. A stacked
+        // callout is drawn between the grid's own left/right borders, so it
+        // spans the whole rectangle. Two or more full-span boxes stacked inside
+        // a candidate mean the "grid" is just their shared borders read as one
+        // lattice — the boxes are the real regions.
+        //
+        // `cef8980`'s prose-table case is preserved: those boxes are cell-sized,
+        // fail the span test, and still reach occupancy validation as before.
+        const spansGrid = (b) => b.bbox.w >= bbox.w - pad * 2 - 2;
+        const fullSpanStack = containedBoxes.filter(spansGrid);
+        if (fullSpanStack.length >= 2) {
+            const disjoint = fullSpanStack.some((a, i) =>
+                fullSpanStack.some((c, j) => j > i &&
+                    Math.min(a.bbox.y + a.bbox.h, c.bbox.y + c.bbox.h)
+                        - Math.max(a.bbox.y, c.bbox.y) <= 2));
+            if (disjoint) continue;
+        }
+
         const containedClaims = new Set(containedBoxes.flatMap(b => b.textItemIndices || []));
         const parentBox = enclosing?.relation === 'nested' ? enclosing.box : null;
         const parentClaimed = parentBox ? new Set(parentBox.textItemIndices) : null;
@@ -154,7 +184,7 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
             // the top/bottom rules of a headless table or financial statement,
             // not a semantic callout. Only an explicit admonition keyword is
             // strong enough to make that much page width a BOX.
-            if (bbox.w > viewport.width * 0.65 && boxRegion.boxRole === 'generic') continue;
+            if (bbox.w > _measure(bbox) * 0.65 && boxRegion.boxRole === 'generic') continue;
             claim(boxTextIndices);
             regions.push(boxRegion);
             continue;
@@ -182,7 +212,7 @@ export function detectLatticeTables(tableSegs, textMeta, scale, viewport, filled
             // text: leaving it unclaimed lets the stream/alignment pass recover
             // the semantic rows and columns. Real prose callouts are narrower
             // and still take the bordered-container fallback below.
-            if (bbox.w > viewport.width * 0.65) continue;
+            if (bbox.w > _measure(bbox) * 0.65) continue;
             if (tableTextIndices.length > 0) {
                 claim(tableTextIndices);
                 regions.push(buildBoxRegion(bbox, tableTextIndices, textMeta, filledRects));

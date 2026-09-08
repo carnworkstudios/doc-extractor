@@ -21,6 +21,7 @@ import { buildTable } from './tableBuilder.js';
 import { rebuildText } from './textRebuilder.js';
 import { buildDisplayMath, classifyMathStatement } from './mathBuilder.js';
 import { RegionType } from './classifiers/regionTypes.js';
+import { orderedListMarker } from './classifiers/listDetector.js';
 import { linkFlows } from './classifiers/flowLinker.js';
 import { entryOffsets } from './classifiers/referenceDetector.js';
 import { detectZoneColumns } from './contextClassifier.js';
@@ -671,19 +672,32 @@ export function assemblePage(regions, textMeta, textItems, viewport, pageWidthPt
                 if (!rb.node?.id || !rb.box) continue;
                 const region = regions.find(rr => rr.id === rb.node.id);
                 if (!region || !region.bbox) continue;
-                const cellFrame = rb.box;
+                let cellFrame = rb.box;
                 const actualBbox = region.bbox;
+                // A zone leaf repeats the source box; it supplies no alignment
+                // evidence. Compare with the containing page/column instead.
+                if (Math.abs(cellFrame.x - actualBbox.x) < 0.01 &&
+                    Math.abs(cellFrame.w - actualBbox.w) < 0.01) {
+                    const boundaries = [0, ...columnSplits, pageWidth];
+                    const ci = region.columnIndex;
+                    const fitsColumn = ci >= 0 && ci < boundaries.length - 1 &&
+                        actualBbox.x >= boundaries[ci] &&
+                        actualBbox.x + actualBbox.w <= boundaries[ci + 1];
+                    const lo = fitsColumn ? boundaries[ci] : 0;
+                    const hi = fitsColumn ? boundaries[ci + 1] : pageWidth;
+                    cellFrame = { ...cellFrame, x: lo, w: hi - lo };
+                }
                 const leftOffset = actualBbox.x - cellFrame.x;
                 const rightOffset = (cellFrame.x + cellFrame.w) - (actualBbox.x + actualBbox.w);
                 const topOffset = actualBbox.y - cellFrame.y;
                 const bottomOffset = (cellFrame.y + cellFrame.h) - (actualBbox.y + actualBbox.h);
                 const tol = pageScale ? pageScale.S * 2 : 10;
                 const styles = [];
-                if (Math.abs(leftOffset - rightOffset) < tol) {
+                if (leftOffset > tol && rightOffset > tol && Math.abs(leftOffset - rightOffset) < tol) {
                     styles.push('justify-self: center');
-                } else if (rightOffset < tol) {
+                } else if (leftOffset > tol && Math.abs(rightOffset) < tol) {
                     styles.push('justify-self: end');
-                } else if (leftOffset < tol) {
+                } else if (Math.abs(leftOffset) < tol) {
                     styles.push('justify-self: start');
                 }
                 if (Math.abs(topOffset - bottomOffset) < tol && cellFrame.h > actualBbox.h + tol) {
@@ -1448,7 +1462,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             const fontClass = _registerFont(fontRegistry, family, sizePt, bold, italic);
 
             // Parse the raw <ul>/<ol> into standalone list with correct semantics
-            html = _buildStandaloneList(rawList.html, fontClass, rawList.startNum);
+            html = _buildStandaloneList(rawList.html, fontClass, rawList.startNum, rawList.listType);
             text = scopedItems.map(i => i.str?.trim()).filter(Boolean).join('\n');
             break;
         }
@@ -1689,7 +1703,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
             // Safety admonitions (WARNING/CAUTION/NOTICE) carry a banner header
             // that the source draws as a black bar with an icon. Render it as a
             // styled header so the box reads like the PDF, not as inline text.
-            const roleIcon = { warning: '⚠', caution: '⚠', note: 'ℹ', tip: '💡' };
+            const roleIcon = { warning: '⚠', caution: '⚠', note: '⚠', tip: '💡' };
             let bannerHtml = '';
             if (bannerText) {
                 const icon = roleIcon[region.boxRole] || '';
@@ -1753,7 +1767,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
 
 const BULLET_STRIP_RE = /^[•‣◦▪▫–—―·○o◦◉▪▫-]\s*/;
 // (?!\d) prevents decimal values ("0.5 amp") from being read as marker "0."
-const ORDERED_STRIP_RE = /^(?:\d{1,3}[.)](?!\d)\s*|[a-zA-Z][.)](?:\s+|$)|[ivxIVX]+[.)](?:\s+|$))/;
+const ORDERED_STRIP_RE = /^(?:\d{1,3}[.)](?!\d)\s*|[a-zA-Z][.)](?:\s+|$)|[ivxlcdmIVXLCDM]+[.)](?:\s+|$))/;
 
 // Inline-style helpers (mirrors textRebuilder without the module dependency)
 function _itemStyle(item) {
@@ -1893,15 +1907,14 @@ function _buildList(textItems, pageWidthPt, isOrdered) {
     // stripped from the <li> text below, so capture it from the raw string here
     // and hand it to the standalone wrapper — detecting it afterwards can never
     // work because the prefix is already gone.
-    let startNum = 1;
+    const marker = orderedListMarker(itemGroups.map(group => group[0].items[0]?.str || ''));
+    const startNum = isOrdered ? marker.start : 1;
     const listItems = itemGroups
         .map((group, gi) => {
             const styled = group.flatMap((l, lineIdx) =>
                 l.items.map((item, idx) => {
                     let str = item.str.trim();
                     if (lineIdx === 0 && idx === 0) {
-                        const numMatch = /^(\d{1,3})[.)](?!\d)/.exec(str);
-                        if (gi === 0 && numMatch) startNum = parseInt(numMatch[1], 10);
                         str = str.replace(stripRe, '').trim();
                     }
                     return str ? _wrapStyle(str, _itemStyle(item)) : '';
@@ -1915,6 +1928,7 @@ function _buildList(textItems, pageWidthPt, isOrdered) {
     return {
         html: `<${tag}>\n${listItems.join('\n')}\n</${tag}>`,
         startNum,
+        listType: marker.type,
     };
 }
 
@@ -1931,7 +1945,7 @@ function _buildList(textItems, pageWidthPt, isOrdered) {
  *  - Wraps the whole thing in <div class="pdf-list-wrap"> so adjacent lists
  *    never merge in the DOM (contenteditable collapses adjacent same-type lists)
  */
-function _buildStandaloneList(rawHtml, fontClass, startNum = 1) {
+function _buildStandaloneList(rawHtml, fontClass, startNum = 1, listType = '1') {
     const isOrdered = rawHtml.trimStart().startsWith('<ol');
 
     // Parse via DOM (we're in a Worker — use a lightweight regex approach instead)
@@ -1977,7 +1991,7 @@ function _buildStandaloneList(rawHtml, fontClass, startNum = 1) {
     });
 
     const tag        = isOrdered ? 'ol' : 'ul';
-    const startAttr  = isOrdered ? ` start="${startNum}"` : '';
+    const startAttr  = isOrdered ? ` start="${startNum}" type="${listType}"` : '';
     const listHtml   = `<${tag} class="${fontClass}"${startAttr}>\n${liTags.join('\n')}\n</${tag}>`;
 
     return `<div class="pdf-list-wrap">${listHtml}</div>`;

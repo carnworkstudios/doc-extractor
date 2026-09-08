@@ -7,6 +7,7 @@
 
 import { RegionType } from './regionTypes.js';
 import { analyzeBlock } from './proseGate.js';
+import { measureOf } from './columnBands.js';
 
 function insideBBox(px, py, bbox, pad = 0) {
     return px >= bbox.x - pad && px <= bbox.x + bbox.w + pad &&
@@ -65,11 +66,19 @@ export function buildBoxRegion(bbox, textIndices, textMeta, filledRects) {
     };
 }
 
-export function detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale, viewport, regions, filledRects, assignedTextIndices) {
+export function detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale, viewport, regions, filledRects, assignedTextIndices, columnBands = []) {
     const eps6 = (scale.proximityPx ?? 6) * 1.5;
     const vpW  = viewport.width;
     const tablePad = scale.tablePadPx;
 
+    // The measure a rectangle is judged against: its own column on a
+    // multi-column page, the page itself otherwise. With no bands this is
+    // `vpW` and every gate below is arithmetically what it was before.
+    const _measure = (bbox) => measureOf(bbox, columnBands, viewport) || vpW;
+
+    // A page frame is the sheet's own border, so it is always judged against
+    // the SHEET — never a column. A rectangle that merely fills one column of
+    // a two-column page is a panel, and calling it a frame would drop it.
     const _isPageFrame = (bx, bw) =>
         (bx < vpW * 0.04 && bw > vpW * 0.65) ||
         bw > vpW * 0.88;
@@ -230,7 +239,7 @@ export function detectBoxRegions(hSegs, vSegs, underlineSegIds, textMeta, scale,
         }
     }
 
-    _mergeBannersIntoBodies(boxRegions, scale);
+    _mergeBannersIntoBodies(boxRegions, scale, assignedTextIndices);
     _dedupeOverlapping(boxRegions, assignedTextIndices);
     return boxRegions;
 }
@@ -278,7 +287,7 @@ function _dedupeOverlapping(boxRegions, assignedTextIndices) {
 // role, records bannerText for the styled header, and spans both bboxes. This
 // reunites the safety-admonition header with its content so it renders as one
 // unit instead of an orphaned bar over a role-less body.
-function _mergeBannersIntoBodies(boxRegions, scale) {
+function _mergeBannersIntoBodies(boxRegions, scale, assignedTextIndices) {
     const xTol = scale.S * 1.5;
     const yGapMax = scale.S * 2.5;
     for (let i = boxRegions.length - 1; i >= 0; i--) {
@@ -308,8 +317,26 @@ function _mergeBannersIntoBodies(boxRegions, scale) {
             h: (best.bbox.y + best.bbox.h) - Math.min(best.bbox.y, bx.y),
         };
         best.yCenter = best.bbox.y + best.bbox.h / 2;
-        // Do NOT fold the banner's text items into the body: the banner label is
-        // rendered from bannerText, not the body flow. Drop the banner region.
+        // Do NOT fold the banner's text items into the body: the banner label
+        // is rendered from `bannerText`, not from the body flow.
+        //
+        // They must stay CLAIMED, though. The banner region that held them is
+        // about to be dropped, and an unclaimed 18pt "! NOTICE" sitting on the
+        // page is exactly what the later prose pass promotes to a HEADING — on
+        // p11 of 59MN7C-03SI.pdf that printed the giant label ABOVE the panel
+        // that already draws its own styled header. Keeping the claim marks
+        // them as "someone renders this" (the banner does), which is true.
+        for (const idx of (banner.textItemIndices || [])) {
+            assignedTextIndices?.add(idx);
+        }
+        // Record WHICH items the header consumed. They are rendered — from
+        // `bannerText`, by this box — but they are deliberately not in
+        // `textItemIndices`, and anything that measures coverage by that field
+        // alone concludes nobody owns them. The lossless-recovery net does
+        // exactly that, and on p11 of 59MN7C-03SI.pdf it re-emitted the 18pt
+        // "! NOTICE" as a standalone HEADING above the panel that already
+        // draws its own styled header.
+        best.bannerTextIndices = [...(banner.textItemIndices || [])];
         boxRegions.splice(i, 1);
     }
 }

@@ -24,6 +24,7 @@ import { syncTextEditsToGxDoc } from './pdfTextEdit.js';
 import { requireSignIn, refreshGates, getTier, getTierLimits } from './authGate.js';
 import { PDFDocument } from 'pdf-lib';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
+import { pdfWorkerSrc } from '../utils/assetBase.js';
 
 export let batchQueue = null;
 export let workerPool = null;
@@ -74,7 +75,7 @@ export function initBatchViewController() {
             new URL('../workers/geometryWorker.js', import.meta.url),
             { type: 'module' },
         ),
-        pdfWorkerSrc: pdfWorkerUrl,
+        pdfWorkerSrc: pdfWorkerSrc(pdfWorkerUrl),
     });
 
     batchQueue = new BatchQueueManager({

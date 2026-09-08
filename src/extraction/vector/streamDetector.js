@@ -329,6 +329,73 @@ function _buildAnchors(tagged, colTol, edgeOf) {
     return { anchors, qualified };
 }
 
+/**
+ * Tokens that are a typographic decoration on the value beside them, never a
+ * cell of their own: a bare currency symbol or an opening paren.
+ *
+ * Deliberately EXCLUDES a lone "-"/"\u2212". In these documents a bare dash is
+ * overwhelmingly a real "no data" cell, not a prefix — N19-1423 alone has 16
+ * of them as genuine cells — and folding those would corrupt the very tables
+ * this change is meant to leave untouched. A currency symbol or an opening
+ * paren has no such reading.
+ */
+const _DECORATION_RE = /^[$£€¥(]$/;
+
+/**
+ * Count a band's cells, treating a lone decoration token as part of the value
+ * it prefixes rather than as a cell of its own.
+ *
+ * pdf.js splits a currency symbol into its own text item whenever the PDF
+ * positions it separately from its number — on the AMZN supplemental-metrics
+ * page it emits ['$', '64,959', '$', '47,747', ...] for some rows and
+ * ['$ 112,706', ...] for others, in the SAME table. Raw item counts therefore
+ * come out 14 on the split rows and 8 on the merged ones.
+ *
+ * That matters because `participating` (which is what row boundaries are
+ * built from) keeps only bands whose count EXACTLY equals the mode —
+ * `itemCountTol` is 0 by design, see the comment there. The split rows miss
+ * the mode, get no row boundary, and yet their items still occupy the grid:
+ * the AMZN table came out 12x19 for what is an 8-column table, with two
+ * logical rows crushed into single rows.
+ *
+ * `_mergeSparseAnchors` already exists for this same `$`-splitting case, but
+ * it folds COLUMN ANCHORS after this count has been taken, so it cannot
+ * repair the count that gates `participating`.
+ *
+ * Only a decoration IMMEDIATELY LEFT of another item on the same band and
+ * close enough to be its prefix is folded — a "$" alone in a column of its
+ * own (a currency-header cell) keeps its own count, and the gap bound stops
+ * this from silently merging across a real column boundary.
+ */
+function _cellCount(items) {
+    // The bound is the DECORATION'S OWN WIDTH, not colTol. Measured with
+    // pdf.js on the AMZN release (viewport scale 2.0), a lone "$" is 7.0px
+    // wide and the gap to the number it prefixes is 14.4px on p11 and 11.9px
+    // on p13 — 2.06x and 1.70x its width — while a genuine gap between two
+    // adjacent value columns is 23.1px on BOTH pages, a constant 3.30x. The
+    // separation is in the symbol's own type size, so measuring against it
+    // holds at any font size or zoom.
+    //
+    // A colTol-derived bound was tried first and is what a threshold overfit
+    // looks like: at p11's colTol it folded correctly, and on p13 the gap
+    // (11.9px) landed exactly ON the bound and folded nothing, leaving that
+    // table at 18 columns. 2.5x sits above both prefix gaps and well below
+    // the column gap, with the nearest failure a full 0.8x away on each side.
+    const sorted = [...items].sort((a, b) => a.vx - b.vx);
+    let n = 0;
+    for (let i = 0; i < sorted.length; i++) {
+        const it = sorted[i];
+        const next = sorted[i + 1];
+        if (next && _DECORATION_RE.test((it.str || '').trim())) {
+            const gap = next.vx - (it.vx + (it.vWidth || 0));
+            const glueTol = (it.vWidth || 0) * 2.5;
+            if (gap >= 0 && gap <= glueTol) continue; // rides on `next`
+        }
+        n++;
+    }
+    return n;
+}
+
 function _buildCandidate(bands, scale, segments = [], { zoneMode = false } = {}) {
     const colTol = scale.colTolPx;
     const eps = 4;
@@ -425,8 +492,10 @@ function _buildCandidate(bands, scale, segments = [], { zoneMode = false } = {})
         band.items.some(item => anchorXs.some(ax => Math.abs(item.vx - ax) <= colTol)),
     );
     const itemCounts = new Map();
+    const bandCellCount = new Map();
     for (const band of anchorAligned) {
-        const n = band.items.length;
+        const n = _cellCount(band.items);
+        bandCellCount.set(band, n);
         itemCounts.set(n, (itemCounts.get(n) || 0) + 1);
     }
     let modeCount = 0, modeFreq = 0;
@@ -444,7 +513,7 @@ function _buildCandidate(bands, scale, segments = [], { zoneMode = false } = {})
     // prose contamination.
     const itemCountTol = 0;
     const participating = anchorAligned.filter(band =>
-        Math.abs(band.items.length - modeCount) <= itemCountTol,
+        Math.abs(bandCellCount.get(band) - modeCount) <= itemCountTol,
     );
     // Every gate below measures the CANDIDATE TABLE, not the whole band group
     // that was passed in. Before this, fillRate/avgLen/avgItemsPerBand and the

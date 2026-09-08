@@ -228,7 +228,7 @@ function _blockToHtml(block) {
         }
         case 'callout': {
             const kind = block.kind || 'note';
-            const roleIcon = { warning: '⚠', caution: '⚠', note: 'ℹ', tip: '💡' };
+            const roleIcon = { warning: '⚠', caution: '⚠', note: '⚠', tip: '💡' };
             const banner = block.banner
                 ? `<div class="pdf-box-banner">` +
                   (roleIcon[kind] ? `<span class="pdf-box-icon">${roleIcon[kind]}</span>` : '') +

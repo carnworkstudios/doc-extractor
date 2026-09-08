@@ -7,6 +7,7 @@
 import $ from 'jquery';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
+import { pdfWorkerSrc } from '../utils/assetBase.js';
 import { state } from '../state.js';
 import { renderPDFToCanvas } from './pdfCanvas.js';
 import { showStatus, hideStatus, enableDiffTab, disableDiffTab, switchView } from './viewController.js';
@@ -887,7 +888,7 @@ async function _cropRegionsFromCanvas(pageCanvas, regions, viewport, renderScale
  * @returns {Promise<{html,text,tableCount,pages,source}>}
  */
 export async function extractViaScannedGeometry(bytes, onProgress, docId = null, onPage = null) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc(pdfWorkerUrl);
 
     const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
     const numPages = pdf.numPages;
@@ -1251,7 +1252,7 @@ function extractViaGeometryWorker(bytes, onProgress, docId = null) {
             type: 'process', 
             docId,
             bytes,
-            pdfWorkerSrc: pdfWorkerUrl
+            pdfWorkerSrc: pdfWorkerSrc(pdfWorkerUrl)
         });
     });
 }

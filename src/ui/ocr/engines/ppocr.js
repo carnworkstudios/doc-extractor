@@ -25,8 +25,11 @@
 
 import * as ort from 'onnxruntime-web/wasm';
 import { measureS, inkCoverage, capForCoverage, capForEvidence } from '../ocrScale.js';
+import { ASSET_BASE } from '../../../utils/assetBase.js';
 
-const BASE = (import.meta.env && import.meta.env.BASE_URL) || '/';
+// Host-aware: see utils/assetBase.js. The build-time base is an absolute site
+// path and does not resolve inside a VS Code webview.
+const BASE = ASSET_BASE;
 const MODEL_DIR = `${BASE}models/ppocr/`;
 const ORT_WASM_PATH = `${BASE}ort-wasm/`;
 const CACHE_NAME = 'darla-models-v1';   // shared with layoutWorker

@@ -29,6 +29,7 @@
 
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
+import { pdfWorkerSrc } from '../utils/assetBase.js';
 import { extractSubpaths, linkTextPaintOps, vectorPathsForRegion } from '../extraction/vector/ctmAdapter.js';
 import { reconcile } from '../extraction/vector/pathReconciler.js';
 import { makeSyntheticViewport } from '../extraction/vector/rasterSynth.js';
@@ -48,7 +49,7 @@ import { finalizeLinks, associateLinks } from '../extraction/vector/linkExtracto
 import { saveImages, cropKey, deleteDoc } from '../utils/imageStore.js';
 
 // pdfjs-dist v4 — point to the ESM worker bundle.
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc(pdfWorkerUrl);
 
 const { OPS } = pdfjsLib;
 
@@ -621,12 +622,17 @@ self.onmessage = async (e) => {
         return;
     }
     if (e.data.type !== 'process') return;
-    const { bytes, pdfWorkerSrc } = e.data;
+    // Renamed: `pdfWorkerSrc` is the imported resolver, and destructuring the
+    // message field under the same name shadowed it.
+    const { bytes, pdfWorkerSrc: msgWorkerSrc } = e.data;
 
-    // Always prefer the URL emitted with this build. Host-injected worker URLs
-    // can resolve through an SPA fallback as text/html, which module workers
-    // correctly reject under strict MIME checking.
-    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc || pdfWorkerUrl;
+    // The host's blob URL wins when there is one. The old comment here said to
+    // always prefer the build-time URL because a host URL could resolve through
+    // an SPA fallback as text/html — true for a plain http host, but in a
+    // webview the build-time path is absolute and unresolvable from a blob
+    // worker ("Failed to resolve module specifier"). The blob the extension
+    // pre-fetched is same-origin and carries the right MIME type.
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc(msgWorkerSrc || pdfWorkerUrl);
 
     // A full extraction replaces this document's pictures wholesale — a retry,
     // a re-add, or the same slot loaded again. Dropping the old crops first
@@ -657,7 +663,12 @@ self.onmessage = async (e) => {
         for (let p = 1; p <= numPages; p++) {
             const page = await pdf.getPage(p);
             const viewport = page.getViewport({ scale: 2.0 });
-            const textContent = await page.getTextContent();
+            // fontExtraProperties keeps the FONT OBJECT's real properties
+            // (name, bold, italic) reachable. Without it PDF.js reports only a
+            // generic family — "serif", "monospace" — and commonObjs holds
+            // nothing on a text-only pass, so `bold` was false for every item
+            // in every document and no style-based classification could work.
+            const textContent = await page.getTextContent({ fontExtraProperties: true });
             const textMeta = textContent.items
                 .filter(i => i.str?.trim())
                 .map((item, idx) => {
@@ -720,15 +731,25 @@ self.onmessage = async (e) => {
             const fontStyleMap = {};
             const uniqueFontNames = [...new Set(textContent.items.map(i => i.fontName).filter(Boolean))];
             for (const fn of uniqueFontNames) {
+                // commonObjs.get() THROWS (or returns nothing) for a font the
+                // worker has not resolved yet, and on this path it resolves
+                // none — the map came back {} for every document, so `bold` was
+                // false everywhere and no style-based classification could work.
+                // The item's own fontName still carries the style for the vast
+                // majority of real PDFs ("TimesNewRomanPS-BoldMT"), so parse it
+                // FIRST and let the font object refine when it happens to exist.
+                const cleanedName = fn.replace(/^[A-Z]{6}\+/, '');
+                let bold = /bold|heavy|black|semib|demib/i.test(cleanedName);
+                let italic = /italic|oblique|slanted/i.test(cleanedName);
                 try {
                     const obj = page.commonObjs.get(fn);
-                    if (!obj) continue;
-                    const cleaned = (obj.name || fn).replace(/^[A-Z]{6}\+/, '');
-                    fontStyleMap[fn] = {
-                        bold:   !!obj.bold || /bold|heavy|black/i.test(cleaned),
-                        italic: !!obj.italic || /italic|oblique|slanted/i.test(cleaned),
-                    };
-                } catch (_) { /* font not resolved — fall back to name parsing downstream */ }
+                    if (obj) {
+                        const cleaned = (obj.name || cleanedName).replace(/^[A-Z]{6}\+/, '');
+                        bold = !!obj.bold || /bold|heavy|black|semib|demib/i.test(cleaned);
+                        italic = !!obj.italic || /italic|oblique|slanted/i.test(cleaned);
+                    }
+                } catch (_) { /* unresolved — the name parse above stands */ }
+                fontStyleMap[fn] = { bold, italic };
             }
 
             // ── Phase 2: Region classification ───────────────────────────────

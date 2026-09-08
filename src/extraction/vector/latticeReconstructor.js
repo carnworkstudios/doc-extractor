@@ -117,7 +117,19 @@ export class LatticeReconstructor {
         }
         if (results.length) return results;
 
-        // Fallback: try full set
+        // Fallback: try the full set. This exists for pages whose clustering
+        // was too eager — a single table cut into pieces that individually
+        // reconstruct to nothing.
+        //
+        // It must NOT resurrect a structure that clustering deliberately took
+        // apart. On p7 of 59MN7C-03SI.pdf the gutter split correctly separates
+        // two side-by-side callout boxes, both halves correctly reconstruct to
+        // null (they are boxes, not grids) — and this fallback then rebuilt the
+        // very cross-gutter lattice the split existed to prevent, a 5x3 grid
+        // whose middle column was the gutter, swallowing both columns of the
+        // page. A validated split is a finding, not a hint.
+        if (this._splitClusterCount > 1) return [];
+
         const full = this._reconstructFromSegments(this.segments);
         if (full) return [this._extendTrailingUnruledRow(full)];
 
@@ -519,6 +531,7 @@ export class LatticeReconstructor {
             finalClusters.push(...xSubs);
         }
 
+        this._splitClusterCount = finalClusters.length;
         return finalClusters;
     }
 
@@ -551,6 +564,62 @@ export class LatticeReconstructor {
             }
         }
 
+        // Midpoint bucketing cannot see a gutter between two side-by-side
+        // boxes. A rule from x=35.8 to x=297.2 fills the left column, but it
+        // is recorded only at its midpoint 165 — so on p7 of 59MN7C-03SI.pdf
+        // the candidates came out at 102.5 / 230 / 380 / 510, every one of them
+        // interior to a column, and none at the real gutter near 306. Two
+        // separate callout boxes then reconstructed into one 5x3 lattice whose
+        // middle "column" WAS the gutter, swallowing both columns of the page.
+        //
+        // Add the candidate the midpoints structurally cannot produce: a
+        // position where many rules END just to its left and many START just to
+        // its right. That is what a gutter between two bordered boxes looks
+        // like in the ink, and it is invisible to any statistic over centres.
+        // The spanning-H test below still arbitrates, so a column boundary
+        // inside one wide table (where row rules cross) is rejected as before.
+        const _edgeSplits = (() => {
+            // Floor for "this is a gutter, not a cell join". Scaled to the
+            // page's own body font so it travels across documents; ~2 ems is
+            // far above per-cell rounding (sub-point) and far below any real
+            // inter-column channel (18pt on 59MN7C p7).
+            const minGutter = this.scale?.S ? this.scale.S * 1.2 : 10;
+            const iv = segments
+                .filter(s => Math.abs(s.y2 - s.y1) <= this.eps * 2 &&
+                             Math.abs(s.x2 - s.x1) > this.eps * 2)
+                .map(s => [Math.min(s.x1, s.x2), Math.max(s.x1, s.x2)]);
+            if (iv.length < 4) return [];
+            const ends = [...new Set(iv.map(v => v[1]))].sort((a, b) => a - b);
+            const starts = [...new Set(iv.map(v => v[0]))].sort((a, b) => a - b);
+            const out = [];
+            for (const e of ends) {
+                for (const st of starts) {
+                    const gap = st - e;
+                    // A real gutter is a WIDE empty channel. Many tables draw
+                    // their row rules per cell (sample-tables.pdf p1:
+                    // 84.8-232.0, 232.4-379.6, 380.0-527.2), so every cell
+                    // boundary is also an "ends here, starts there" pair — but
+                    // those gaps are sub-point, while the gutter between two
+                    // bordered boxes is tens of points. Without this floor the
+                    // edge rule shreds ruled tables at every column.
+                    if (gap < minGutter) continue;
+                    if (gap <= 0 || gap > gapThreshold) continue;
+                    const mid = (e + st) / 2;
+                    // Require real commitment on both sides: a stray rule end
+                    // is not a gutter, two boxes facing each other are.
+                    const endsLeft = iv.filter(v => v[1] <= e + this.eps).length;
+                    const startsRight = iv.filter(v => v[0] >= st - this.eps).length;
+                    if (endsLeft < 2 || startsRight < 2) continue;
+                    if (!out.some(x => Math.abs(x - mid) < this.eps)) out.push(mid);
+                }
+            }
+            return out;
+        })();
+        for (const sx of _edgeSplits) {
+            if (!rawSplits.some(x => Math.abs(x - sx) < this.eps)) rawSplits.push(sx);
+        }
+        rawSplits.sort((a, b) => a - b);
+
         if (!rawSplits.length) return [segments];
 
         // Reject splits where ≥3 H segments span across the gap.
@@ -581,7 +650,15 @@ export class LatticeReconstructor {
                 const xc = (s.x1 + s.x2) / 2;
                 return xc > lo && xc < hi;
             });
-            if (cluster.length >= 8) clusters.push(cluster);
+            // A VALIDATED gutter split has already proved these are separate
+            // structures — the spanning-H test rejected every candidate that
+            // was merely a column boundary. What remains on each side is a
+            // whole table or box, and a minimal bordered one is four segments,
+            // not eight. Requiring 8 here dropped BOTH halves of p7's two
+            // side-by-side callouts (7 segments each) and fell back to the
+            // unsplit set, which is exactly the cross-gutter lattice this
+            // split exists to prevent.
+            if (cluster.length >= 4) clusters.push(cluster);
         }
 
         return clusters.length ? clusters : [segments];

@@ -19,6 +19,7 @@
 // sitting at 97% of Cloudflare Pages' 25 MiB per-file limit, plus a 21.8 MB
 // asyncify build. Neither is ever loaded: wasmPaths is pinned below and the
 // session runs executionProviders:['wasm'].
+import { ASSET_BASE } from '../utils/assetBase.js';
 import * as ort from 'onnxruntime-web/wasm';
 // The model registry. Which model this worker loads, what its classes are, how
 // its input is normalised and whether it carries a forensic head are all read
@@ -29,7 +30,9 @@ import { MODELS, DEFAULT_MODEL_ID, manifestFor, assertSessionMatches } from './l
 // dist/tools/pdf-processor/ (build.sh), so /models and /ort-wasm live UNDER the
 // Vite base ('/tools/pdf-processor/'), not at the site root. import.meta.env
 // .BASE_URL resolves to that base in the build and '/' in dev.
-const BASE = (import.meta.env && import.meta.env.BASE_URL) || '/';
+// The host may override the base (VS Code webview); assetBase.js reads the
+// global the worker bootstrap forwards.
+const BASE = ASSET_BASE;
 const ORT_WASM_PATH = `${BASE}ort-wasm/`;
 const CACHE_NAME = 'darla-models-v1';
 const IOU_THRESHOLD = 0.45;

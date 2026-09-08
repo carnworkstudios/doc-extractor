@@ -208,7 +208,7 @@ body {
   padding: 5px 14px;
   border-radius: 8px;
   border: 1px solid transparent;
-  background: lightgray;
+  /* background: lightgray; */
   /* color: var(--tab-text); */
   font-family: inherit;
   font-size: 12px;
@@ -633,7 +633,7 @@ body {
 
 .ribbon-group-buttons--wrap {
   flex-wrap: wrap;
-  max-width: 119px;
+  max-width: 130px;
   /* justify-content: center; */
 }
 
