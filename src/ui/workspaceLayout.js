@@ -56,7 +56,7 @@ const BASE_PANE = {
  * Which extra panes each view can show beside its own.
  *
  * The Doc tab can borrow the Original; Analyze can borrow either document
- * pane, independently — showing the Extracted HTML next to the canvas is
+ * pane, independently — showing the DOC next to the canvas is
  * useful without the Original, and vice versa. One flag for "the mirror"
  * could not express that.
  */
@@ -152,7 +152,7 @@ export function toggleMirror(viewName, pane) {
 }
 
 /**
- * Analyze's split is a T, not a row: Original and Extracted HTML on one side,
+ * Analyze's split is a T, not a row: Original and DOC on one side,
  * the canvas on the other. Same panes as the Doc tab — the arrangement is the
  * only difference, and it lives entirely in CSS (`.t-split`).
  */

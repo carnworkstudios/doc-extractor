@@ -1567,7 +1567,7 @@ function _renderRegion(region, textMeta, textItems, viewport, pageWidthPt, fontR
                     html = `<figure class="pdf-math-image" data-math-unrendered="" data-latex="${texAttr}" ` +
                         `data-math-kind="${mathKind}"${srcAttr}><img class="extracted-pdf-image" ` +
                         `data-img-id="${fallbackImage.key}" width="${width}" height="${height}" ` +
-                        `alt="Original PDF equation" style="max-width:100%;height:auto;display:block;"></figure>`;
+                        `alt="Original File equation" style="max-width:100%;height:auto;display:block;"></figure>`;
                 } else {
                     html = `<p class="${fontClass} ${alignClass} pdf-paragraph pdf-math-block"` +
                         `${firstFlowAttrs}${marker} data-latex="${texAttr}" data-math-kind="${mathKind}"${srcAttr}>` +

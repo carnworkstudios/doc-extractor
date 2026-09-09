@@ -4132,7 +4132,7 @@ mark.diff-inline-add {
 }
 
 /* ── Analyze T-split ────────────────────────────────────────────────────── */
-/* Analyze can show the Original and/or the Extracted HTML alongside its
+/* Analyze can show the Original and/or the DOC alongside its
    canvas — the SAME #pane-pdf / #pane-doc the Doc tab uses. Nothing is cloned
    and nothing is re-rendered; only the flow changes.
 

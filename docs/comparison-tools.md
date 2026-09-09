@@ -8,7 +8,7 @@ PDF Processor provides specialized tools for verifying extraction accuracy and c
 
 The **Visual Diff** tab is essential for verifying that the extraction engine has captured the document layout accurately.
 
-*   **Side-by-Side Layout**: The screen is split into two panes (Left: Original PDF, Right: Extracted HTML).
+*   **Side-by-Side Layout**: The screen is split into two panes (Left: Original File, Right: DOC).
 *   **Synchronized Scrolling**: Move through the PDF and the HTML simultaneously to compare structures page-by-page.
 *   **Contextual Editing**: You can click into the HTML pane to fix typos or adjust formatting while looking directly at the source PDF.
 *   **Resizer Handle**: Drag the central divider to adjust the width of each pane for easier viewing on smaller screens.

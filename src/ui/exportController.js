@@ -2,7 +2,7 @@
  * exportController.js
  * Multi-format export dropdown: HTML, Markdown, PDF, XML.
  *
- * Extracted HTML structure (from pageAssembler.js / componentRender.js):
+ * DOC structure (from pageAssembler.js / componentRender.js):
  *   <section class="pdf-page-content" data-page="N">
  *     <h3|h4>           — headings
  *     <div class="fN ta-x"> — paragraphs (font+align classes, may contain <span>)

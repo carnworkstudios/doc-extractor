@@ -2112,7 +2112,7 @@ export function unloadSlot(slot = 1) {
     $('#html-preview').html(
         '<p class="empty-hint">Open a PDF to see the extracted HTML or Add Blank Page to Edit.</p>'
     );
-    $('#content-left').html('<div class="empty-state">Load Original PDF</div>');
+    $('#content-left').html('<div class="empty-state">Load Original File</div>');
 
     _onSlotLoaded(1);
     showToast(`${name} closed`, 'info');
