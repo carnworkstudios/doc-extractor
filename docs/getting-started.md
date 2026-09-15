@@ -6,7 +6,7 @@ The PDF Processor is a high-performance, browser-native tool for converting PDF 
 
 1.  **Load Document**: Import a PDF file for processing.
 2.  **Verify Layout**: Use the **PDF View** to inspect the source document.
-3.  **Review Extraction**: Switch to **HTML** or **Editor** views to see the parsed results.
+3.  **Review Extraction**: Switch to **Doc** or **Editor** views to see the parsed results.
 4.  **Edit and Refine**: Adjust formatting, fix OCR errors, and modify the grid layout.
 5.  **Export**: Download the final result as clean HTML or a regenerated PDF.
 
@@ -35,7 +35,7 @@ The top tab bar allows you to switch between different representations of the do
 | View            | Description                                                                          |
 | :-------------- | :----------------------------------------------------------------------------------- |
 | **PDF**         | Renders the original PDF file using `pdf.js`.                                        |
-| **HTML**        | A live, editable preview of the extracted HTML structure.                            |
+| **Doc**         | A live, editable preview of the extracted document structure.                        |
 | **Editor**      | A technical code view using the Monaco Editor for direct HTML/Markdown manipulation. |
 | **Visual Diff** | A side-by-side view for comparing the original PDF against the extracted output.     |
 
@@ -45,7 +45,7 @@ The top tab bar allows you to switch between different representations of the do
 
 ### Rich Text UI
 
-When in the **HTML** or **Visual Diff** views, use the formatting toolbar to refine the extracted text:
+When in the **Doc** or **Visual Diff** views, use the formatting toolbar to refine the extracted text:
 
 - **Text Styles**: Bold, Italics, and Underline.
 - **Headings**: Convert blocks to H1, H2, H3, or standard Body text.

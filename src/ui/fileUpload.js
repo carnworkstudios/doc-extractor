@@ -14,7 +14,7 @@ import { showStatus, hideStatus, enableDiffTab, disableDiffTab, switchView } fro
 import { registerPages } from './pageNav.js';
 import { registerPDFLayers, resetPDFLayers } from './pdfEditMode.js';
 import { initTableFeatures } from '../utils/tableLogic.js';
-import { applyHtmlEverywhere, hydrateImages, resetImageHydration } from './htmlSync.js';
+import { applyHtmlEverywhere, hydrateImages, resetImageHydration, noteHostText } from './htmlSync.js';
 import { setDocumentStyles, getDocumentStyles, splitLeadingStyles } from './docStyles.js';
 import { showToast } from './toast.js';
 import { cwsBroker } from '@os/worker-broker.js';
@@ -1323,7 +1323,6 @@ export function initFileInputs() {
             requestWorker: _requestWorker,
             whenLoaded: () => _slot1Load,
         });
-        window.CwsBridge.send('ginexys:pdf-ready', {});
         window.addEventListener('message', e => {
             // MCP round-trip: extension host requests extracted text, reply with it
             if (e.data?.__ginexys && e.data.type === 'ginexys:mcp-extract-text') {
@@ -1373,7 +1372,49 @@ export function initFileInputs() {
                 _slot1Load = process.catch(() => {});
                 process.then(() => { if (mode) switchView(mode); });
             }
+
+            // A TEXT document (.html/.md) opened through DocTextEditorProvider.
+            // Unlike ginexys:pdf-bytes this carries the file's text directly —
+            // the host holds a real TextDocument, so there are no bytes to
+            // decode and the text is the single source of truth for both
+            // surfaces.
+            if (e.data?.type === 'ginexys:doc-text') {
+                const { text, fileName, ext } = e.data.payload || {};
+                if (typeof text !== 'string') return;
+                noteHostText(text);
+                const name = fileName ?? ('document' + (ext || '.html'));
+                const file = new File([new Blob([text], { type: mimeForFile(name) })],
+                                      name, { type: mimeForFile(name) });
+                const process = parseFile(file).then(parsed => mountParsedFile(parsed, 1));
+                _slot1Load = process.catch(() => {});
+                return;
+            }
+
+            // The file changed in the native editor (or on disk). Re-render the
+            // Doc from the new text. Guarded host-side against our own writes,
+            // so reaching here means the change came from somewhere else.
+            if (e.data?.type === 'ginexys:document-changed') {
+                const { text, ext } = e.data.payload || {};
+                if (typeof text !== 'string') return;
+                noteHostText(text);
+                const name = 'document' + (ext || '.html');
+                const file = new File([new Blob([text], { type: mimeForFile(name) })],
+                                      name, { type: mimeForFile(name) });
+                parseFile(file).then(parsed => mountParsedFile(parsed, 1)).catch(() => {});
+                return;
+            }
         });
+
+        // Announce ready ONLY after the listener above exists.
+        //
+        // This used to run before addEventListener on the very next line. The
+        // PDF path survived it because the host answers pdf-ready by reading
+        // bytes off disk first, which reliably takes longer than the remaining
+        // synchronous work here — the listener won the race by accident. A host
+        // that replies synchronously (DocTextEditorProvider answers with the
+        // document text it already holds) always beat it, and the reply was
+        // dropped with no error anywhere: the webview simply stayed empty.
+        window.CwsBridge.send('ginexys:pdf-ready', {});
     }
 }
 
@@ -2110,7 +2151,7 @@ export function unloadSlot(slot = 1) {
     _analysisPromise = null;
 
     $('#html-preview').html(
-        '<p class="empty-hint">Open a PDF to see the extracted HTML or Add Blank Page to Edit.</p>'
+        '<p class="empty-hint">Open a PDF to see the Doc or Add Blank Page to Edit.</p>'
     );
     $('#content-left').html('<div class="empty-state">Load Original File</div>');
 
@@ -2138,7 +2179,7 @@ function refreshCodeDiff() {
 
 export async function downloadExtractedHTML() {
     let html = state.pdf1.extractedHTML;
-    if (!html) { showToast('No extracted HTML yet; load a PDF first', 'error'); return; }
+    if (!html) { showToast('No Doc yet; load a PDF first', 'error'); return; }
 
     showToast('Preparing standalone HTML with embedded images...', 'info');
 

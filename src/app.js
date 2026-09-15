@@ -13,6 +13,7 @@ import { initToolbar } from './ui/pageNav.js';
 import { initTableEditing } from './ui/tableEditorInit.js';
 import { initMonacoEditor } from './editor/monacoSetup.js';
 import { initHTMLSync, patchPageHtml, onDocumentMounted } from './ui/htmlSync.js';
+import { initVscodeDocSync } from './ui/vscodeDocSync.js';
 import { initZoneToolbar } from './ui/zoneToolbar.js';
 import { initSelectionMode } from './ui/selectionMode.js';
 import { initViewCode } from './ui/viewCode.js';
@@ -576,6 +577,9 @@ $(() => {
     initToolbar();
     initMonacoEditor();
     initHTMLSync();
+    // VS Code only: click an element in the Doc to move the native editor's
+    // cursor, and follow the cursor back the other way. No-op in a browser.
+    initVscodeDocSync();
     initZoneToolbar();
     initExportSystem();
     initSelectionMode();

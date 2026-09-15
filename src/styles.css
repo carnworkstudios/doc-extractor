@@ -5068,3 +5068,20 @@ mark.diff-inline-add {
     transition: none !important;
   }
 }
+
+/* ── VS Code editor sync: the element under the native editor's cursor ──────
+   Marking it with an outline rather than a background keeps the document's own
+   colours readable — a Doc is mostly text on white, and tinting the block makes
+   the text underneath harder to read at exactly the moment the user is looking
+   at it. outline (not border) so no layout shifts when it appears. */
+.gx-vscode-source-selected {
+    outline: 2px solid var(--gx-accent, #2563eb);
+    outline-offset: 1px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--gx-accent, #2563eb) 7%, transparent);
+    transition: outline-color 0.15s ease, background 0.15s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gx-vscode-source-selected { transition: none; }
+}

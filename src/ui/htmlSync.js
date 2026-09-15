@@ -89,6 +89,11 @@ function _installLazyHtml() {
 export function markHtmlDirty() {
     if (_syncing) return;
     _htmlDirty = true;
+    // The write-back belongs HERE, not in applyHtmlEverywhere. That function
+    // runs on load, history and Monaco — never on a keystroke in the Doc view,
+    // which is the edit the user actually makes. Hooking it there meant typing
+    // in the Doc never reached the host at all, so sync looked one-way.
+    _queueHostEdit(() => state.pdf1.extractedHTML);
 }
 
 /**
@@ -123,6 +128,8 @@ function wirePreview(id) {
     el.addEventListener('input', () => {
         if (_syncing) return;
         _htmlDirty = true;
+        // Same reason as markHtmlDirty: this is the real edit path for typing.
+        _queueHostEdit(() => state.pdf1.extractedHTML);
     });
 }
 
@@ -148,12 +155,77 @@ export function stripTableRulers(html) {
  * @param {Element|null} skipEl  — surface to leave untouched (preserves caret
  *   on the surface the user is currently typing in). Pass null on extraction.
  */
+
+// ── VS Code write-back ──────────────────────────────────────────────────────
+// Inside the VS Code webview the Doc is a view onto a real TextDocument, so an
+// edit here has to become an edit there — that is what makes it participate in
+// undo, dirty state and Save like any typed change.
+//
+// Debounced: applyHtmlEverywhere runs on every keystroke, and a WorkspaceEdit
+// per character would fight the editor's own undo stack and make each keypress
+// its own undo step. 400ms is past the end of normal typing bursts.
+//
+// No-op outside VS Code, where there is no host document to write to.
+let _hostEditTimer = null;
+// Text the host most recently gave us. Re-rendering after a host change calls
+// applyHtmlEverywhere, which would otherwise push that same text straight back
+// and start a ping-pong between the two surfaces. The host has its own echo
+// guard; this is the matching half on this side.
+let _lastHostText = null;
+// Marks that the NEXT render came from the host, so the re-render it triggers
+// is not pushed straight back.
+//
+// This cannot be a text comparison against the file: the host sends raw source,
+// the Doc renders it through the parser, and what comes back out is normalised
+// (implicit <tbody>, closed tags, re-ordered attributes). Those two strings are
+// almost never equal, so comparing them would let every host-driven render echo
+// back as an edit. A one-shot flag is the honest mechanism; the host's own
+// echoGuard + lastWrittenContent is the authoritative half.
+let _suppressNextPush = false;
+export function noteHostText(text) {
+    _lastHostText = text;
+    _suppressNextPush = true;
+}
+
+function _pushEditToHost(html) {
+    if (!(window.CwsBridge && window.CwsBridge.isEmbedded)) return;
+    _queueHostEdit(() => html);
+}
+
+/**
+ * Schedule a write-back to the VS Code document.
+ *
+ * `read` is called when the timer fires, NOT now. Typing in the Doc only flips
+ * a dirty flag — assembling the document per keystroke is the cost this module
+ * exists to avoid — so the HTML must be read at the END of the debounce, once,
+ * via the lazy `extractedHTML` getter. Reading it up front would reintroduce
+ * exactly the per-keystroke serialize that markHtmlDirty was written to remove.
+ */
+function _queueHostEdit(read) {
+    if (!(window.CwsBridge && window.CwsBridge.isEmbedded)) return;
+    clearTimeout(_hostEditTimer);
+    _hostEditTimer = setTimeout(() => {
+        let html;
+        try { html = read(); } catch { return; }
+        if (typeof html !== 'string') return;
+        // Don't echo the host's own text back at it. Compared here rather than
+        // when queueing because the text is only assembled now.
+        if (_suppressNextPush) { _suppressNextPush = false; return; }
+        if (_lastHostText !== null && html === _lastHostText) return;
+        _lastHostText = html;
+        try {
+            window.CwsBridge.send('ginexys:edit', { content: html });
+        } catch { /* host gone; the in-memory doc is still correct */ }
+    }, 400);
+}
+
 export function applyHtmlEverywhere(html, skipEl = null) {
     if (_syncing) return;
     _syncing = true;
     try {
         const cleanForState = stripTableRulers(html);
         state.pdf1.extractedHTML = cleanForState;
+        _pushEditToHost(cleanForState);
 
         // Which surfaces actually need writing? On an edit the answer is
         // "none" — the caret is in the only surface there is, so it is the
