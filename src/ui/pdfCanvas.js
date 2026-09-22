@@ -139,12 +139,17 @@ function _release(entry) {
 async function _paint(entry, pdfDoc) {
     if (entry.painted) return;
     entry.painted = true;               // claim it first: entries can re-fire
-    entry.canvas.width = entry.viewport.width;
-    entry.canvas.height = entry.viewport.height;
+    // Backing store in device pixels; CSS box stays at the SCALE viewport.
+    const dpr = window.devicePixelRatio || 1;
+    entry.canvas.width = Math.round(entry.viewport.width * dpr);
+    entry.canvas.height = Math.round(entry.viewport.height * dpr);
+    // Read this, don't recompute it: a canvas keeps the ratio it was painted at.
+    entry.canvas.dataset.rasterScale = String(SCALE * dpr);
     try {
         const page = await pdfDoc.getPage(entry.pageNum);
         const ctx = entry.canvas.getContext('2d');
-        const task = page.render({ canvasContext: ctx, viewport: entry.viewport });
+        const renderViewport = dpr === 1 ? entry.viewport : page.getViewport({ scale: SCALE * dpr });
+        const task = page.render({ canvasContext: ctx, viewport: renderViewport });
         entry.task = task;
 
         // Build the text layer only if it is not already there. A page can be

@@ -78,8 +78,16 @@ export default defineConfig({
 
     resolve: {
         alias: {
+            // '@batch' removed 2026-09-19: batch scheduling is platform IP and a
+            // capability, so compiling it into this AGPL bundle put two
+            // separately licensed works in one artifact.
+            //
+            // '@os' still crosses the boundary — one import,
+            // assets/os/worker-broker.js. Flagged, not yet moved: it is backend
+            // ROUTING policy, but it also carries the in-browser fallback that
+            // makes a fork work at all, so the split needs a decision rather
+            // than a reflex. check:ip-boundary reports it.
             '@os': path.resolve(__dirname, '../../assets/os'),
-            '@batch': path.resolve(__dirname, '../../assets/pdf-processor/batch'),
         },
     },
 
@@ -101,9 +109,7 @@ export default defineConfig({
         rollupOptions: {
             // Only the real app entry points go here. The sub-page stubs
             // (visual-diff/, compare/, editor/) are now thin SEO shells that
-            // load gx-tool-shell.js from /assets/components/ — a path outside
-            // this submodule. build.sh copies the whole dist/ to the deploy
-            // folder alongside the parent's assets/, so the absolute path
+            // load gx-tool-shell.js from components
             // resolves correctly at runtime without Rollup bundling it.
             input: {
                 main:   path.resolve(__dirname, 'index.html'),
@@ -194,6 +200,43 @@ export default defineConfig({
         // applies to requests Vite treats as ESM imports, not plain static fetches.
         // Intercept these paths before Vite's resolver sees them so they're always
         // served as raw bytes, matching what actually happens in the built dist/.
+        // Serve /assets/* from the REPO ROOT during dev.
+        //
+        // The portfolio's shared assets live at <repo>/assets, but this config's
+        // `root` is the submodule, so Vite resolves /assets/... inside the tool
+        // and reports "Failed to load url /assets/components/gx-tool-shell.js".
+        // `server.fs.allow` does not help: that governs which files may be READ
+        // once a path resolves, and this path never resolves in the first place.
+        //
+        // Harmless in production (the platform serves /assets from the root) but
+        // it fails every module the sub-pages load through the shell, so the
+        // editor/compare/visual-diff pages are broken under `npm run dev`.
+        {
+            name: 'serve-portfolio-assets',
+            enforce: 'pre',
+            configureServer(server) {
+                const repoRoot = path.resolve(__dirname, '../..');
+                const MIME = {
+                    '.js': 'text/javascript', '.mjs': 'text/javascript',
+                    '.css': 'text/css', '.json': 'application/json',
+                    '.svg': 'image/svg+xml', '.png': 'image/png',
+                    '.jpg': 'image/jpeg', '.woff2': 'font/woff2',
+                };
+                server.middlewares.use((req, res, next) => {
+                    if (!req.url || !req.url.startsWith('/assets/')) return next();
+                    const urlPath = req.url.split('?')[0];
+                    // Keep the request inside <repo>/assets — a traversal here
+                    // would expose the private root over the dev server.
+                    const abs = path.resolve(repoRoot, '.' + urlPath);
+                    const assetsDir = path.join(repoRoot, 'assets');
+                    if (!abs.startsWith(assetsDir + path.sep)) return next();
+                    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return next();
+                    res.setHeader('Content-Type', MIME[path.extname(abs)] || 'application/octet-stream');
+                    fs.createReadStream(abs).pipe(res);
+                });
+            },
+        },
+
         {
             name: 'serve-runtime-model-assets',
             configureServer(server) {

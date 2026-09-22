@@ -5085,3 +5085,59 @@ mark.diff-inline-add {
 @media (prefers-reduced-motion: reduce) {
     .gx-vscode-source-selected { transition: none; }
 }
+
+/* ── Standalone notice: where the injected platform features live ───────────
+   Shown only when the intelligence layer is absent (a fork, or the tool run
+   standalone). On the platform these panels render their real content and this
+   never appears. */
+.gx-platform-notice {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    max-width: 380px;
+    margin: 48px auto;
+    padding: 28px 24px;
+    text-align: center;
+    color: var(--text-secondary, #475569);
+    background: var(--bg-subtle, #f8fafc);
+    border: 1px solid var(--border-subtle, #e2e8f0);
+    border-radius: 10px;
+}
+
+.gx-platform-notice-icon {
+    width: 28px;
+    height: 28px;
+    fill: none;
+    stroke: var(--accent, #2563eb);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.9;
+}
+
+.gx-platform-notice-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary, #0f172a);
+}
+
+.gx-platform-notice-body {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.6;
+}
+
+.gx-platform-notice-cta {
+    margin-top: 4px;
+    padding: 7px 14px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent, #2563eb);
+    border-radius: 6px;
+    text-decoration: none;
+}
+
+.gx-platform-notice-cta:hover { filter: brightness(1.08); }

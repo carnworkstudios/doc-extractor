@@ -91,8 +91,10 @@ export function unmountLayers(container) {
 
 function createSvg(wrapper, readOnly) {
     const canvas = wrapper.querySelector('canvas');
-    const pageW = parseFloat(wrapper.dataset.pageW) || ((canvas?.width || 0) / 1.5);
-    const pageH = parseFloat(wrapper.dataset.pageH) || ((canvas?.height || 0) / 1.5);
+    // Fallback only; data-page-w/h are authoritative.
+    const raster = parseFloat(canvas?.dataset.rasterScale) || 1.5;
+    const pageW = parseFloat(wrapper.dataset.pageW) || ((canvas?.width || 0) / raster);
+    const pageH = parseFloat(wrapper.dataset.pageH) || ((canvas?.height || 0) / raster);
     const pageNum = wrapper.dataset.page || '1';
     const svg = el('svg', {
         class: 'annotation-layer',

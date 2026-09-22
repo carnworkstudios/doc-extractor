@@ -6,8 +6,13 @@
 
 import $ from 'jquery';
 import { state } from '../state.js';
-import { BatchQueueManager } from '@batch/batchQueue.js';
-import { WorkerPool } from '@batch/workerPool.js';
+// Batch scheduling is platform IP
+// NOT imported. A build-time import would compile it into this AGPL bundle,
+// putting two separately licensed works in one artifact. See
+// architecture/three-tier-architecture.md.
+//
+// Absent (a fork, or the tool running standalone) the Batch view is simply not
+// available and the single-document path is unaffected.
 import { switchView } from './viewController.js';
 import { showToast } from './toast.js';
 import {
@@ -66,7 +71,18 @@ async function decodeDocument({ bytes, format, name, file }) {
     });
 }
 
+/** Is the injected batch scheduler present? */
+export function isBatchAvailable() {
+    return !!(window.GxBatch && window.GxBatch.WorkerPool && window.GxBatch.BatchQueueManager);
+}
+
 export function initBatchViewController() {
+    // Presence guard, not defensive style: "the tool runs without the injected
+    // layer" is the claim that keeps the two works separate, and it stops being
+    // true the moment any path here hard-depends on GxBatch.
+    if (!isBatchAvailable()) return false;
+    const { WorkerPool, BatchQueueManager } = window.GxBatch;
+
     // The pool owns scheduling; this tool owns the extraction worker. Passing
     // the factory in keeps the two independent — the pool never needs to know
     // where the engine lives.
@@ -100,6 +116,7 @@ export function initBatchViewController() {
     batchQueue.on('drain', updateBatchUI);
 
     _wireGlobalBatchEvents();
+    return true;
 }
 
 function _wireGlobalBatchEvents() {

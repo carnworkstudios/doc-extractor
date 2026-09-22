@@ -125,6 +125,9 @@ function _maskCanvasText(on, roots = _containers()) {
             ctx.putImageData(_pristine.get(canvas), 0, 0);
         }
 
+        // Span coords are display-space; this bitmap is not. Scale by the ratio
+        // it was painted at, not SCALE.
+        const raster = parseFloat(canvas.dataset.rasterScale) || SCALE;
         ctx.save();
         ctx.fillStyle = '#ffffff';
         wrapper.querySelectorAll('.pdf-text-span').forEach(span => {
@@ -133,12 +136,12 @@ function _maskCanvasText(on, roots = _containers()) {
             const w = parseFloat(span.dataset.w);
             const fs = parseFloat(span.dataset.fs);
             if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(fs)) return;
-            const pad = fs * SCALE * 0.28;
+            const pad = fs * raster * 0.28;
             ctx.fillRect(
-                x * SCALE - pad,
-                y * SCALE - pad,
-                Math.max((Number.isFinite(w) ? w : 0) * SCALE, fs * SCALE * 0.5) + pad * 2,
-                fs * SCALE + pad * 2,
+                x * raster - pad,
+                y * raster - pad,
+                Math.max((Number.isFinite(w) ? w : 0) * raster, fs * raster * 0.5) + pad * 2,
+                fs * raster + pad * 2,
             );
         });
         ctx.restore();

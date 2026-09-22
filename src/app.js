@@ -14,6 +14,7 @@ import { initTableEditing } from './ui/tableEditorInit.js';
 import { initMonacoEditor } from './editor/monacoSetup.js';
 import { initHTMLSync, patchPageHtml, onDocumentMounted } from './ui/htmlSync.js';
 import { initVscodeDocSync } from './ui/vscodeDocSync.js';
+import { initPlatformNotices } from './ui/platformNotice.js';
 import { initZoneToolbar } from './ui/zoneToolbar.js';
 import { initSelectionMode } from './ui/selectionMode.js';
 import { initViewCode } from './ui/viewCode.js';
@@ -621,7 +622,15 @@ $(() => {
         toggleMirror(state.activeView, 'editor');
         syncToolbarToView(state.activeView);
     });
-    initBatchViewController();
+    // Returns false when window.GxBatch was not injected (a fork, or standalone).
+    // Batch is a platform capability; its absence is a normal state, not an error.
+    if (!initBatchViewController()) {
+        document.querySelectorAll('[data-gx-requires="batch"]').forEach(el => { el.hidden = true; });
+    }
+
+    // Standalone/forked: say where Analyze and Batch live instead of leaving an
+    // empty panel, which is indistinguishable from a broken one.
+    initPlatformNotices();
 
     // Optional/best-effort add-ons. These are isolated because everything in
     // this handler shares one call stack: a throw here used to abort the rest

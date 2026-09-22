@@ -131,12 +131,16 @@ export function toggleToolLock() {
     _notify({ type: 'tool' });
 }
 
+// Freehand tools stay active across strokes; shape tools commit once.
+const CONTINUOUS_TOOLS = new Set(['ink', 'highlight']);
+
 /**
- * After a draw commit, revert to Select unless the tool is locked (Q).
- * Text stays on text so the user can place several notes.
+ * After a draw commit, revert to Select unless the tool is locked (Q) or
+ * continuous. Text stays on text so the user can place several notes.
  */
 function _maybeRevertTool() {
     if (_toolLock) return;
+    if (CONTINUOUS_TOOLS.has(_tool)) return;
     if (DRAW_TOOLS.has(_tool)) setTool('select');
 }
 
