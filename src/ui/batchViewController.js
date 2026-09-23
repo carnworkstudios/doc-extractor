@@ -77,9 +77,7 @@ export function isBatchAvailable() {
 }
 
 export function initBatchViewController() {
-    // Presence guard, not defensive style: "the tool runs without the injected
-    // layer" is the claim that keeps the two works separate, and it stops being
-    // true the moment any path here hard-depends on GxBatch.
+    
     if (!isBatchAvailable()) return false;
     const { WorkerPool, BatchQueueManager } = window.GxBatch;
 
