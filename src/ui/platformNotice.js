@@ -15,7 +15,7 @@
  * what it says. Nothing here reveals how Analyze or Batch work.
  */
 
-const PLATFORM_URL = 'https://ginexys.com/tools/pdf-processor';
+const PLATFORM_URL = 'https://ginexys.com/app/pdf';
 
 function _card({ title, body, cta }) {
     const wrap = document.createElement('div');
